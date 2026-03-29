@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { saveSettingsAction } from '@/app/actions';
 
 export interface Settings {
   mqtt_host: string;
@@ -13,6 +14,8 @@ export interface Settings {
   octopus_product_code: string;
   octopus_api_key: string;
   octopus_account: string;
+  octopus_mpan: string;
+  octopus_meter_serial: string;
   charge_hours: string;
   price_threshold: string;
   min_soc_target: string;
@@ -21,6 +24,9 @@ export interface Settings {
   default_work_mode: string;
   charge_rate: string;
   auto_schedule: string;
+  battery_capacity_kwh: string;
+  max_charge_power_kw: string;
+  estimated_consumption_w: string;
 }
 
 const tabs = [
@@ -88,20 +94,16 @@ export function useSettings() {
   };
 
   const save = async () => {
+    if (!settings) return;
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
-      const json = await res.json();
-      if (json.ok) {
+      const result = await saveSettingsAction(settings as unknown as Record<string, string>);
+      if (result.ok) {
         setMessage('Settings saved!');
-        setSettings(json.settings);
+        if (result.settings) setSettings(result.settings as unknown as Settings);
       } else {
-        setMessage('Failed to save settings');
+        setMessage(result.error || 'Failed to save settings');
       }
     } catch {
       setMessage('Failed to save settings');

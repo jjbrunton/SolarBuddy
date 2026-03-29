@@ -1,26 +1,9 @@
 import { EventEmitter } from 'events';
+import type { InverterState } from './types';
+import { INITIAL_STATE } from './types';
 
-export interface InverterState {
-  battery_soc: number | null;
-  pv_power: number | null;
-  grid_power: number | null;
-  load_power: number | null;
-  battery_power: number | null;
-  work_mode: string | null;
-  mqtt_connected: boolean;
-  last_updated: string | null;
-}
-
-const INITIAL_STATE: InverterState = {
-  battery_soc: null,
-  pv_power: null,
-  grid_power: null,
-  load_power: null,
-  battery_power: null,
-  work_mode: null,
-  mqtt_connected: false,
-  last_updated: null,
-};
+export type { InverterState };
+export { INITIAL_STATE };
 
 // Use globalThis to share state across Next.js workers
 const g = globalThis as unknown as {

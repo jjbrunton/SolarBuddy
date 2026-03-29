@@ -66,9 +66,49 @@ function initSchema(db: Database.Database) {
       message TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS carbon_intensity (
+      period_from TEXT NOT NULL,
+      period_to TEXT NOT NULL,
+      intensity_forecast INTEGER,
+      intensity_actual INTEGER,
+      intensity_index TEXT,
+      fetched_at TEXT NOT NULL,
+      PRIMARY KEY (period_from)
+    );
+
+    CREATE TABLE IF NOT EXISTS manual_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      slot_start TEXT NOT NULL,
+      slot_end TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_readings_date ON readings(date(timestamp));
     CREATE INDEX IF NOT EXISTS idx_rates_valid_from ON rates(valid_from);
     CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
+    CREATE INDEX IF NOT EXISTS idx_schedules_status ON schedules(status, date);
     CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_carbon_period ON carbon_intensity(period_from);
+    CREATE INDEX IF NOT EXISTS idx_overrides_date ON manual_overrides(date);
   `);
+
+  // Migrate: add new columns for expanded Solar Assistant data
+  const cols = db.prepare('PRAGMA table_info(readings)').all() as { name: string }[];
+  const colNames = new Set(cols.map((c) => c.name));
+  const newCols = [
+    'battery_voltage',
+    'battery_temperature',
+    'inverter_temperature',
+    'grid_voltage',
+    'grid_frequency',
+    'pv_power_1',
+    'pv_power_2',
+  ];
+  for (const col of newCols) {
+    if (!colNames.has(col)) {
+      db.exec(`ALTER TABLE readings ADD COLUMN ${col} REAL`);
+    }
+  }
 }

@@ -9,6 +9,8 @@ export interface AppSettings {
   octopus_product_code: string;
   octopus_api_key: string;
   octopus_account: string;
+  octopus_mpan: string;
+  octopus_meter_serial: string;
   charge_hours: string;
   price_threshold: string;
   min_soc_target: string;
@@ -17,6 +19,9 @@ export interface AppSettings {
   default_work_mode: string;
   charge_rate: string;
   auto_schedule: string;
+  battery_capacity_kwh: string;
+  max_charge_power_kw: string;
+  estimated_consumption_w: string;
 }
 
 const DEFAULTS: AppSettings = {
@@ -28,6 +33,8 @@ const DEFAULTS: AppSettings = {
   octopus_product_code: 'AGILE-24-10-01',
   octopus_api_key: '',
   octopus_account: '',
+  octopus_mpan: '',
+  octopus_meter_serial: '',
   charge_hours: '4',
   price_threshold: '0',
   min_soc_target: '80',
@@ -36,6 +43,9 @@ const DEFAULTS: AppSettings = {
   default_work_mode: 'Battery first',
   charge_rate: '100',
   auto_schedule: 'true',
+  battery_capacity_kwh: '5.12',
+  max_charge_power_kw: '3.6',
+  estimated_consumption_w: '500',
 };
 
 export function getSettings(): AppSettings {

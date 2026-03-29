@@ -40,3 +40,23 @@ export async function stopGridCharging(defaultMode: 'Battery first' | 'Load firs
   await setBatterySlot1(false);
   await setWorkMode(defaultMode);
 }
+
+export async function setOutputSourcePriority(priority: string) {
+  console.log(`[CMD] Output source priority: ${priority}`);
+  await publish(COMMAND_TOPICS.outputSourcePriority, priority);
+}
+
+export async function setChargerSourcePriority(priority: string) {
+  console.log(`[CMD] Charger source priority: ${priority}`);
+  await publish(COMMAND_TOPICS.chargerSourcePriority, priority);
+}
+
+export async function setMaxGridChargeCurrent(amps: number) {
+  console.log(`[CMD] Max grid charge current: ${amps}A`);
+  await publish(COMMAND_TOPICS.maxGridChargeCurrent, String(amps));
+}
+
+export async function setShutdownBatteryVoltage(voltage: number) {
+  console.log(`[CMD] Shutdown battery voltage: ${voltage}V`);
+  await publish(COMMAND_TOPICS.shutdownBatteryVoltage, String(voltage));
+}

@@ -1,7 +1,7 @@
 import mqtt, { MqttClient } from 'mqtt';
 import { getSettings } from '../config';
 import { updateState } from '../state';
-import { SUBSCRIBE_TOPICS, parseTopicKey } from './topics';
+import { SUBSCRIBE_TOPICS, parseTopicKey, STRING_KEYS } from './topics';
 
 // Use globalThis to share MQTT client across Next.js workers
 const g = globalThis as unknown as {
@@ -56,10 +56,10 @@ export function connectMqtt() {
     const key = parseTopicKey(topic);
     if (!key) return;
 
-    if (key === 'work_mode') {
-      updateState({ work_mode: value });
-    } else if (key === 'response') {
+    if (key === 'response') {
       console.log('[MQTT] Command response:', value);
+    } else if (STRING_KEYS.has(key)) {
+      updateState({ [key]: value });
     } else {
       const num = parseFloat(value);
       if (!isNaN(num)) {

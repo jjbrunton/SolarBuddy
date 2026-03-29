@@ -10,6 +10,7 @@ import {
   Battery,
   Sun,
   Activity,
+  BarChart3,
   Settings,
   Server,
   ChevronDown,
@@ -37,6 +38,18 @@ const NAV_ITEMS: NavItem[] = [
   { icon: Battery, label: 'Inverter', href: '/inverter' },
   { icon: Sun, label: 'Solar', href: '/solar' },
   { icon: Activity, label: 'Activity', href: '/activity' },
+  {
+    icon: BarChart3,
+    label: 'Analytics',
+    href: '/analytics',
+    children: [
+      { label: 'Cost Savings', href: '/analytics' },
+      { label: 'Energy Flow', href: '/analytics/energy' },
+      { label: 'Battery Health', href: '/analytics/battery' },
+      { label: 'Carbon', href: '/analytics/carbon' },
+      { label: 'Rate Trends', href: '/analytics/rates' },
+    ],
+  },
   {
     icon: Settings,
     label: 'Settings',

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1a1a1a"/>
+  <g transform="translate(256,256)">
+    <!-- Sun rays -->
+    <g stroke="#ff902b" stroke-width="20" stroke-linecap="round">
+      <line y1="-140" y2="-110"/>
+      <line y1="-140" y2="-110" transform="rotate(45)"/>
+      <line y1="-140" y2="-110" transform="rotate(90)"/>
+      <line y1="-140" y2="-110" transform="rotate(135)"/>
+      <line y1="-140" y2="-110" transform="rotate(180)"/>
+      <line y1="-140" y2="-110" transform="rotate(225)"/>
+      <line y1="-140" y2="-110" transform="rotate(270)"/>
+      <line y1="-140" y2="-110" transform="rotate(315)"/>
+    </g>
+    <!-- Sun circle -->
+    <circle r="80" fill="#ff902b"/>
+    <!-- Battery icon overlay -->
+    <rect x="-30" y="10" width="60" height="90" rx="6" fill="none" stroke="#1a1a1a" stroke-width="8"/>
+    <rect x="-10" y="2" width="20" height="10" rx="3" fill="#1a1a1a"/>
+    <rect x="-22" y="40" width="44" height="52" rx="3" fill="#27c24c"/>
+  </g>
+</svg>

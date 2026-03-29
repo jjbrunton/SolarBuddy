@@ -20,6 +20,27 @@
   --color-sb-input-focus: #5d9cec;
 }
 
+/* Light theme overrides */
+html.light {
+  --color-sb-bg: #f5f5f5;
+  --color-sb-sidebar: #ffffff;
+  --color-sb-header: #ffffff;
+  --color-sb-card: #ffffff;
+  --color-sb-card-hover: #f0f0f0;
+  --color-sb-active: #e8e8e8;
+  --color-sb-border: #e0e0e0;
+  --color-sb-text: #1a1a1a;
+  --color-sb-text-muted: #666666;
+  --color-sb-accent: #4a89d9;
+  --color-sb-accent-hover: #3a79c9;
+  --color-sb-success: #22a845;
+  --color-sb-warning: #e67e22;
+  --color-sb-danger: #e04040;
+  --color-sb-info: #4a89d9;
+  --color-sb-input: #f0f0f0;
+  --color-sb-input-focus: #4a89d9;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
@@ -29,11 +50,11 @@
   background: var(--color-sb-bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: #444;
+  background: var(--color-sb-border);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: var(--color-sb-text-muted);
 }
 
 /* Sidebar transition */
@@ -43,4 +64,46 @@
 .sidebar-enter-active {
   transform: translateX(0);
   transition: transform 200ms ease-out;
+}
+
+/* Energy flow animated dashes */
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+.animate-flow {
+  animation: flow-dash 1.2s linear infinite;
+}
+
+/* Gauge arc fill animation */
+@keyframes gauge-fill {
+  from {
+    stroke-dashoffset: var(--gauge-circumference);
+  }
+}
+
+/* Value change highlight */
+@keyframes value-pop {
+  0% {
+    opacity: 0.6;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-value-pop {
+  animation: value-pop 0.3s ease-out;
+}
+
+/* Pulse glow for active indicators */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  50% {
+    box-shadow: 0 0 8px 2px currentColor;
+  }
 }

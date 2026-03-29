@@ -11,6 +11,8 @@ interface Settings {
   octopus_product_code: string;
   octopus_api_key: string;
   octopus_account: string;
+  octopus_mpan: string;
+  octopus_meter_serial: string;
   charge_hours: string;
   price_threshold: string;
   min_soc_target: string;
