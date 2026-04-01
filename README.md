@@ -2,11 +2,23 @@
 
 A self-hosted dashboard for managing solar battery charging with Octopus Energy Agile tariff integration. Automatically schedules battery charging during the cheapest half-hour slots each day.
 
+## Documentation
+
+- [Documentation Index](docs/README.md)
+- [Software Architecture](docs/architecture.md)
+- [API Reference](docs/api.md)
+- [Development and Verification](docs/development.md)
+- [Design System](docs/design-system.md)
+
 ## Features
 
 - Real-time inverter monitoring via Solar Assistant (MQTT)
+- Browser-side fallback for live telemetry: the UI restores the last known inverter state after a reload and shows a global status banner while waiting for fresh MQTT data
+- Live MQTT traffic log on the System Logs page for broker troubleshooting
+- Dashboard current-rate card with live Agile slot, next-slot preview, and loaded rate benchmarks
+- Inverter configuration read-back, including compatibility fallbacks for renamed Solar Assistant settings and clear unavailable-state messaging when an inverter does not publish a read-back value
 - Octopus Energy Agile rate tracking and visualization
-- Automatic charge scheduling based on cheapest rate slots
+- Automatic charge scheduling with selectable Night Fill and Opportunistic Top-up strategies
 - Manual charge window and work mode overrides
 - Activity log and system status
 
@@ -50,7 +62,22 @@ All settings are managed through the web UI under **Settings**:
 
 1. **MQTT** — Solar Assistant host, port, and credentials
 2. **Octopus Energy** — API key and account number (region and tariff are auto-detected)
-3. **Charging** — Number of slots, price threshold, SOC target, charge window, work mode
+3. **Charging** — Strategy, max slots, price threshold, SOC target, night window, work mode
+
+### Dashboard Highlights
+
+- The dashboard includes a dedicated **Current Rate** card showing the active Agile half-hour slot, the next slot price, and low/average benchmarks from the currently loaded rates.
+- Click the current-rate card or the rate chart to jump to the full `/rates` view for detailed rate inspection and manual scheduling actions.
+
+#### Scheduling Notes
+
+- `Night Fill` uses the configured overnight window and tries to reach the target SOC by selecting the cheapest eligible slots needed, capped by the configured max slot count.
+- `Opportunistic Top-up` ignores the overnight window and plans across the current and future slots in the currently published Agile tariff horizon.
+- `Price Threshold` is an optional eligibility ceiling for either strategy. If it is greater than `0`, SolarBuddy only plans slots at or below that price.
+- `Max Charge Slots` is now a cap rather than a fixed target. When live battery SOC and charge-power settings are available, SolarBuddy trims the plan to only the slots needed to reach the target SOC.
+- Charge window times are evaluated in UK local time (`Europe/London`), including daylight saving changes.
+- Overnight schedules can only be generated once Octopus has published the relevant upcoming Agile rates, which is typically later the same day.
+- Running the scheduler with valid rates but no eligible slots clears any existing planned schedule for that day and reports that no charge windows matched the current configuration.
 
 #### Octopus Energy Setup
 
@@ -59,7 +86,9 @@ All settings are managed through the web UI under **Settings**:
 3. Click **Verify Account** — your region, tariff, MPAN, and meter serial are auto-detected
 4. Click **Save Settings**
 
-## API Routes
+## Key API Routes
+
+For the full route inventory, see [docs/api.md](docs/api.md).
 
 | Method | Route | Purpose |
 |--------|-------|---------|
@@ -74,6 +103,7 @@ All settings are managed through the web UI under **Settings**:
 | GET | `/api/events` | SSE stream of real-time events |
 | GET | `/api/events-log` | Historical event log |
 | GET | `/api/system` | System health info |
+| GET | `/api/system/mqtt-log` | SSE stream of recent MQTT connection and topic activity |
 
 ## Testing
 
@@ -84,6 +114,8 @@ npm run test:watch  # Run in watch mode
 
 Tests use [Vitest](https://vitest.dev/) and live in `__tests__/` directories alongside source files.
 
+For local setup and verification workflow details, see [docs/development.md](docs/development.md).
+
 ## Data Storage
 
 SQLite database at `data/solarbuddy.db`. Tables:
@@ -91,5 +123,8 @@ SQLite database at `data/solarbuddy.db`. Tables:
 - `settings` — key-value configuration store
 - `rates` — cached Agile tariff rates
 - `readings` — inverter telemetry snapshots
-- `events_log` — system event history
-- `schedule` — computed charge windows
+- `events` — system event history
+- `mqtt_logs` — recent MQTT connection, topic, and command activity
+- `schedules` — computed charge windows
+- `carbon_intensity` — cached grid carbon intensity data
+- `manual_overrides` — operator-defined charge slots for the current day

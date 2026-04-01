@@ -25,28 +25,28 @@ export function WidgetWrapper({
   children,
 }: WidgetWrapperProps) {
   return (
-    <div className={`relative ${editing ? 'rounded-lg ring-1 ring-sb-border ring-dashed' : ''}`}>
+    <div className={`relative ${editing ? 'rounded-[1.25rem] ring-1 ring-dashed ring-sb-border-strong' : ''}`}>
       {editing && (
-        <div className="flex items-center justify-between rounded-t-lg bg-sb-card/80 px-3 py-1.5">
-          <span className="text-xs font-medium text-sb-text-muted">{title}</span>
+        <div className="flex items-center justify-between rounded-t-[1.25rem] border-b border-sb-border bg-sb-card/90 px-4 py-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">{title}</span>
           <div className="flex items-center gap-1">
             <button
               onClick={onMoveUp}
               disabled={isFirst}
-              className="rounded p-1 text-sb-text-muted hover:bg-sb-active hover:text-sb-text disabled:opacity-30"
+              className="rounded-lg p-1.5 text-sb-text-muted hover:bg-sb-active hover:text-sb-text disabled:opacity-30"
             >
               <ChevronUp size={14} />
             </button>
             <button
               onClick={onMoveDown}
               disabled={isLast}
-              className="rounded p-1 text-sb-text-muted hover:bg-sb-active hover:text-sb-text disabled:opacity-30"
+              className="rounded-lg p-1.5 text-sb-text-muted hover:bg-sb-active hover:text-sb-text disabled:opacity-30"
             >
               <ChevronDown size={14} />
             </button>
             <button
               onClick={onHide}
-              className="rounded p-1 text-sb-text-muted hover:bg-sb-danger/20 hover:text-sb-danger"
+              className="rounded-lg p-1.5 text-sb-text-muted hover:bg-sb-danger/20 hover:text-sb-danger"
             >
               <EyeOff size={14} />
             </button>

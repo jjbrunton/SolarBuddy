@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { saveSettingsAction } from '@/app/actions';
+import { Button } from '@/components/ui/Button';
+import { SegmentedLinkTabs } from '@/components/ui/Tabs';
 
 export interface Settings {
   mqtt_host: string;
@@ -16,6 +16,11 @@ export interface Settings {
   octopus_account: string;
   octopus_mpan: string;
   octopus_meter_serial: string;
+  tariff_type: string;
+  tariff_offpeak_rate: string;
+  tariff_peak_rate: string;
+  tariff_standard_rate: string;
+  charging_strategy: string;
   charge_hours: string;
   price_threshold: string;
   min_soc_target: string;
@@ -27,6 +32,12 @@ export interface Settings {
   battery_capacity_kwh: string;
   max_charge_power_kw: string;
   estimated_consumption_w: string;
+  negative_price_charging: string;
+  negative_price_pre_discharge: string;
+  peak_protection: string;
+  peak_period_start: string;
+  peak_period_end: string;
+  peak_soc_target: string;
 }
 
 const tabs = [
@@ -37,7 +48,27 @@ const tabs = [
 ];
 
 export const inputClass =
-  'w-full rounded-md border border-sb-border bg-sb-input px-3 py-2 text-sm text-sb-text focus:border-sb-accent focus:outline-none';
+  'w-full rounded-2xl border border-sb-border bg-sb-input px-4 py-3 text-sm text-sb-text shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-[border-color,box-shadow,background-color] outline-none placeholder:text-sb-text-subtle focus:border-sb-border-strong focus:bg-sb-card focus:ring-2 focus:ring-sb-accent/20';
+
+export function SettingsSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold tracking-[-0.02em] text-sb-text">{title}</h2>
+        {description ? <p className="text-sm leading-6 text-sb-text-muted">{description}</p> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export function Field({
   label,
@@ -49,33 +80,16 @@ export function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-sb-text">{label}</label>
-      {description && <p className="mb-1.5 text-xs text-sb-text-muted">{description}</p>}
+    <div className="space-y-2.5">
+      <label className="block text-sm font-medium text-sb-text">{label}</label>
+      {description ? <p className="text-xs leading-5 text-sb-text-muted">{description}</p> : null}
       {children}
     </div>
   );
 }
 
-export function SettingsTabs() {
-  const pathname = usePathname();
-  return (
-    <div className="mb-6 flex gap-1 rounded-lg bg-sb-card p-1">
-      {tabs.map((tab) => (
-        <Link
-          key={tab.href}
-          href={tab.href}
-          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            pathname === tab.href
-              ? 'bg-sb-active text-sb-text'
-              : 'text-sb-text-muted hover:bg-sb-active/50 hover:text-sb-text'
-          }`}
-        >
-          {tab.label}
-        </Link>
-      ))}
-    </div>
-  );
+export function SettingsTabs({ pathname }: { pathname: string }) {
+  return <SegmentedLinkTabs items={tabs} activeHref={pathname} className="w-full overflow-x-auto" />;
 }
 
 export function useSettings() {
@@ -100,7 +114,7 @@ export function useSettings() {
     try {
       const result = await saveSettingsAction(settings as unknown as Record<string, string>);
       if (result.ok) {
-        setMessage('Settings saved!');
+        setMessage('Settings saved successfully.');
         if (result.settings) setSettings(result.settings as unknown as Settings);
       } else {
         setMessage(result.error || 'Failed to save settings');
@@ -124,19 +138,15 @@ export function SaveButton({
   onSave: () => void;
 }) {
   return (
-    <div className="flex items-center gap-4">
-      <button
-        onClick={onSave}
-        disabled={saving}
-        className="rounded-md bg-sb-accent px-6 py-2 text-sm font-medium text-white hover:bg-sb-accent-hover disabled:opacity-50"
-      >
-        {saving ? 'Saving...' : 'Save Settings'}
-      </button>
-      {message && (
+    <div className="flex flex-wrap items-center gap-4">
+      <Button onClick={onSave} disabled={saving}>
+        {saving ? 'Saving…' : 'Save Settings'}
+      </Button>
+      {message ? (
         <span className={`text-sm ${message.includes('Failed') ? 'text-sb-danger' : 'text-sb-success'}`}>
           {message}
         </span>
-      )}
+      ) : null}
     </div>
   );
 }

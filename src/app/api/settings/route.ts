@@ -14,6 +14,7 @@ export async function POST(request: Request) {
     'mqtt_host', 'mqtt_port', 'mqtt_username', 'mqtt_password',
     'octopus_region', 'octopus_product_code', 'octopus_api_key', 'octopus_account',
     'octopus_mpan', 'octopus_meter_serial',
+    'charging_strategy',
     'charge_hours', 'price_threshold', 'min_soc_target',
     'charge_window_start', 'charge_window_end', 'default_work_mode',
     'charge_rate', 'auto_schedule',

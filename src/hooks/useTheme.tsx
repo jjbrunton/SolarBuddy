@@ -55,15 +55,18 @@ export function useChartColors() {
     if (typeof window === 'undefined') {
       // SSR fallback — return dark theme defaults
       return {
-        text: '#e1e2e3',
-        muted: '#999999',
-        accent: '#5d9cec',
-        success: '#27c24c',
-        warning: '#ff902b',
-        danger: '#f05050',
-        border: '#333333',
-        card: '#2a2a2a',
-        cardBorder: '#333333',
+        text: '#f2f7fb',
+        muted: '#9db1bf',
+        accent: '#44b0c9',
+        success: '#54c27a',
+        warning: '#f2b056',
+        danger: '#f07a71',
+        border: 'rgba(114, 145, 165, 0.16)',
+        card: 'rgba(13, 25, 32, 0.82)',
+        cardBorder: 'rgba(157, 189, 205, 0.28)',
+        solar: '#ffbe55',
+        grid: '#78c1ff',
+        load: '#b89dff',
       };
     }
     const style = getComputedStyle(document.documentElement);
@@ -78,6 +81,9 @@ export function useChartColors() {
       border: get('--color-sb-border') || '#333333',
       card: get('--color-sb-card') || '#2a2a2a',
       cardBorder: get('--color-sb-border') || '#333333',
+      solar: get('--color-sb-solar') || '#ffbe55',
+      grid: get('--color-sb-grid') || '#78c1ff',
+      load: get('--color-sb-load') || '#b89dff',
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);

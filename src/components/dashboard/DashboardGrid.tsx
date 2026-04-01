@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Settings2, RotateCcw, Plus, X } from 'lucide-react';
 import { WidgetWrapper } from './WidgetWrapper';
+import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export interface WidgetDefinition {
   id: string;
@@ -91,43 +93,39 @@ export function DashboardGrid({ widgets }: { widgets: WidgetDefinition[] }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-sb-text">Dashboard</h1>
-        <button
-          onClick={() => setEditing(!editing)}
-          className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-            editing
-              ? 'bg-sb-warning text-white'
-              : 'bg-sb-card text-sb-text-muted hover:bg-sb-active hover:text-sb-text'
-          }`}
-        >
-          {editing ? <X size={14} /> : <Settings2 size={14} />}
-          {editing ? 'Done' : 'Edit Dashboard'}
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Overview"
+        title="System dashboard"
+        description="Pin the most useful operational signals at the top of the app and tune the widget order to match your daily workflow."
+        actions={(
+          <Button variant={editing ? 'warning' : 'secondary'} size="sm" onClick={() => setEditing(!editing)}>
+            {editing ? <X size={14} /> : <Settings2 size={14} />}
+            {editing ? 'Done' : 'Edit dashboard'}
+          </Button>
+        )}
+      />
 
       {/* Edit mode: reset + add hidden widgets */}
       {editing && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={resetLayout}
-            className="flex items-center gap-1 rounded-md bg-sb-card px-3 py-1.5 text-xs text-sb-text-muted hover:bg-sb-active"
-          >
+        <div className="flex flex-wrap items-center gap-2 rounded-[1.25rem] border border-sb-border bg-sb-card/70 p-4">
+          <Button onClick={resetLayout} variant="secondary" size="sm">
             <RotateCcw size={12} />
-            Reset Layout
-          </button>
+            Reset layout
+          </Button>
           {hiddenWidgets.map((hw) => {
             const def = widgetMap.get(hw.id);
             if (!def) return null;
             return (
-              <button
+              <Button
                 key={hw.id}
                 onClick={() => toggleVisibility(hw.id)}
-                className="flex items-center gap-1 rounded-md border border-dashed border-sb-border bg-sb-card px-3 py-1.5 text-xs text-sb-text-muted hover:border-sb-accent hover:text-sb-text"
+                variant="ghost"
+                size="sm"
+                className="border border-dashed border-sb-border"
               >
                 <Plus size={12} />
                 {def.label}
-              </button>
+              </Button>
             );
           })}
         </div>

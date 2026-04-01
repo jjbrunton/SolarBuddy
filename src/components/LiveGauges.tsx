@@ -4,6 +4,7 @@ import { Battery, Sun, Zap, Home, ArrowUpDown, Gauge, Thermometer, Activity } fr
 import type { InverterState } from '@/lib/types';
 import type { LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
 import { StatusIndicator } from '@/components/ui/StatusIndicator';
 import { AnimatedGauge } from '@/components/ui/AnimatedGauge';
 
@@ -33,9 +34,13 @@ function GaugeCard({
         <Icon size={16} className={accent} />
         <span>{label}</span>
       </div>
-      <div className="mt-2 text-2xl font-bold text-sb-text">
-        {value !== null ? `${value}${unit}` : '\u2014'}
-      </div>
+      {value !== null ? (
+        <div className="mt-2 text-2xl font-bold text-sb-text">{value}{unit}</div>
+      ) : (
+        <div className="mt-2">
+          <PlaceholderValue />
+        </div>
+      )}
       {subtitle && <p className="mt-1 text-xs text-sb-text-muted">{subtitle}</p>}
     </div>
   );
@@ -53,7 +58,11 @@ function BatteryGauge({ soc, voltage }: { soc: number | null; voltage: number | 
         <span>Battery</span>
       </div>
       <div className="mt-2 flex items-end gap-2">
-        <span className={`text-2xl font-bold ${color}`}>{soc !== null ? `${soc}%` : '\u2014'}</span>
+        {soc !== null ? (
+          <span className={`text-2xl font-bold ${color}`}>{soc}%</span>
+        ) : (
+          <PlaceholderValue />
+        )}
         {voltage !== null && (
           <span className="mb-0.5 text-xs text-sb-text-muted">{voltage}V</span>
         )}

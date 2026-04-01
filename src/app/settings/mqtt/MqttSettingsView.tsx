@@ -1,20 +1,30 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
-import { useSettings, SettingsTabs, Field, inputClass, SaveButton } from '@/components/settings/shared';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 
 export default function MqttSettingsView() {
+  const pathname = usePathname();
   const { settings, update, save, saving, message } = useSettings();
 
   if (!settings) return <Card><p className="text-sb-text-muted">Loading settings...</p></Card>;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">Settings</h1>
-      <SettingsTabs />
+      <PageHeader
+        eyebrow="Configuration"
+        title="MQTT connectivity"
+        description="Connect SolarBuddy to Solar Assistant and keep credentials in one consistent operator-facing flow."
+      />
+      <SettingsTabs pathname={pathname} />
 
       <Card>
-        <h3 className="mb-4 font-medium text-sb-text">Solar Assistant (MQTT)</h3>
+        <SettingsSection
+          title="Solar Assistant broker"
+          description="SolarBuddy listens to Solar Assistant MQTT topics for live inverter telemetry and command publishing."
+        >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="MQTT Host" description="IP address of your Solar Assistant device">
             <input
@@ -47,6 +57,7 @@ export default function MqttSettingsView() {
             />
           </Field>
         </div>
+        </SettingsSection>
       </Card>
 
       <SaveButton saving={saving} message={message} onSave={save} />

@@ -1,6 +1,7 @@
 import mqtt, { MqttClient } from 'mqtt';
 import { getSettings } from '../config';
 import { updateState } from '../state';
+import { appendMqttLog } from './logs';
 import { SUBSCRIBE_TOPICS, parseTopicKey, STRING_KEYS } from './topics';
 
 // Use globalThis to share MQTT client across Next.js workers
@@ -16,6 +17,12 @@ export function connectMqtt() {
   const settings = getSettings();
   if (!settings.mqtt_host) {
     console.log('[MQTT] No host configured, skipping connection');
+    appendMqttLog({
+      level: 'warning',
+      direction: 'system',
+      topic: null,
+      payload: 'Connection skipped because no MQTT host is configured',
+    });
     return;
   }
 
@@ -36,23 +43,53 @@ export function connectMqtt() {
   }
 
   console.log(`[MQTT] Connecting to ${url}...`);
+  appendMqttLog({
+    level: 'info',
+    direction: 'system',
+    topic: null,
+    payload: `Connecting to ${url}`,
+  });
   const client = mqtt.connect(url, options);
   g.__solarbuddy_mqtt = client;
 
   client.on('connect', () => {
     console.log('[MQTT] Connected');
+    appendMqttLog({
+      level: 'success',
+      direction: 'system',
+      topic: null,
+      payload: `Connected to ${url}`,
+    });
     updateState({ mqtt_connected: true });
     client.subscribe(SUBSCRIBE_TOPICS as unknown as string[], (err) => {
       if (err) {
         console.error('[MQTT] Subscribe error:', err.message);
+        appendMqttLog({
+          level: 'error',
+          direction: 'system',
+          topic: null,
+          payload: `Subscribe error: ${err.message}`,
+        });
       } else {
         console.log('[MQTT] Subscribed to', SUBSCRIBE_TOPICS.length, 'topics');
+        appendMqttLog({
+          level: 'success',
+          direction: 'system',
+          topic: null,
+          payload: `Subscribed to ${SUBSCRIBE_TOPICS.length} topics`,
+        });
       }
     });
   });
 
   client.on('message', (topic: string, payload: Buffer) => {
     const value = payload.toString();
+    appendMqttLog({
+      level: 'info',
+      direction: 'inbound',
+      topic,
+      payload: value,
+    });
     const key = parseTopicKey(topic);
     if (!key) return;
 
@@ -70,15 +107,33 @@ export function connectMqtt() {
 
   client.on('error', (err) => {
     console.error('[MQTT] Error:', err.message);
+    appendMqttLog({
+      level: 'error',
+      direction: 'system',
+      topic: null,
+      payload: `MQTT error: ${err.message}`,
+    });
   });
 
   client.on('close', () => {
     console.log('[MQTT] Connection closed');
+    appendMqttLog({
+      level: 'warning',
+      direction: 'system',
+      topic: null,
+      payload: 'Connection closed',
+    });
     updateState({ mqtt_connected: false });
   });
 
   client.on('reconnect', () => {
     console.log('[MQTT] Reconnecting...');
+    appendMqttLog({
+      level: 'info',
+      direction: 'system',
+      topic: null,
+      payload: 'Reconnecting to broker',
+    });
   });
 }
 
@@ -86,6 +141,12 @@ export function disconnectMqtt() {
   if (g.__solarbuddy_mqtt) {
     g.__solarbuddy_mqtt.end(true);
     g.__solarbuddy_mqtt = null;
+    appendMqttLog({
+      level: 'info',
+      direction: 'system',
+      topic: null,
+      payload: 'Disconnected by application',
+    });
     updateState({ mqtt_connected: false });
   }
 }

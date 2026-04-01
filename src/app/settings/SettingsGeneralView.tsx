@@ -1,20 +1,31 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
-import { useSettings, SettingsTabs, Field, inputClass, SaveButton } from '@/components/settings/shared';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 
 export default function SettingsGeneralView() {
+  const pathname = usePathname();
   const { settings, update, save, saving, message } = useSettings();
 
   if (!settings) return <Card><p className="text-sb-text-muted">Loading settings...</p></Card>;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">Settings</h1>
-      <SettingsTabs />
+      <PageHeader
+        eyebrow="Configuration"
+        title="General settings"
+        description="Set the default operating mode SolarBuddy should restore after managed charging and decide whether daily automation is active."
+      />
+      <SettingsTabs pathname={pathname} />
 
       <Card>
-        <div className="space-y-4">
+        <SettingsSection
+          title="Automation defaults"
+          description="These values shape the baseline operating behavior once scheduled windows complete."
+        >
+          <div className="space-y-4">
           <Field label="Default Work Mode" description="Mode to revert to after scheduled charging completes">
             <select
               className={inputClass}
@@ -35,7 +46,8 @@ export default function SettingsGeneralView() {
               <option value="false">Disabled</option>
             </select>
           </Field>
-        </div>
+          </div>
+        </SettingsSection>
       </Card>
 
       <SaveButton saving={saving} message={message} onSave={save} />

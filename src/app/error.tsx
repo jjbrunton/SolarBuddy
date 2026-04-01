@@ -1,5 +1,9 @@
 'use client';
 
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { PageHeader } from '@/components/ui/PageHeader';
+
 export default function Error({
   error,
   reset,
@@ -8,17 +12,20 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center">
-      <h2 className="text-xl font-bold text-sb-text">Something went wrong</h2>
-      <p className="max-w-md text-sm text-sb-text-muted">
-        {error.message || 'An unexpected error occurred.'}
-      </p>
-      <button
-        onClick={reset}
-        className="rounded-md bg-sb-accent px-4 py-2 text-sm font-medium text-white hover:bg-sb-accent-hover"
-      >
-        Try again
-      </button>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Exception"
+        title="Something went wrong"
+        description="SolarBuddy hit an unexpected route-level error while rendering this page."
+      />
+      <Card className="mx-auto max-w-xl text-center">
+        <p className="text-sm leading-6 text-sb-text-muted">
+          {error.message || 'An unexpected error occurred.'}
+        </p>
+        <div className="mt-4 flex justify-center">
+          <Button onClick={reset}>Try again</Button>
+        </div>
+      </Card>
     </div>
   );
 }

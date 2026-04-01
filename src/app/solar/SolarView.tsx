@@ -8,6 +8,9 @@ import { useChartColors } from '@/hooks/useTheme';
 import { MpptCard } from '@/components/solar/MpptCard';
 import { Activity, Sun } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { ChartTooltip, ChartTooltipRow } from '@/components/ui/ChartTooltip';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
 
 interface Reading {
   timestamp: string;
@@ -21,6 +24,59 @@ interface DailySummary {
   date: string;
   max_pv: number;
   readings_count: number;
+}
+
+function MpptTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: { payload?: { name: string; power: number; fill: string } }[];
+}) {
+  if (!active || !payload?.length || !payload[0]?.payload) return null;
+
+  const point = payload[0].payload;
+
+  return (
+    <ChartTooltip label={point.name}>
+      <ChartTooltipRow label="Power" value={`${point.power}W`} color={point.fill} emphasized />
+    </ChartTooltip>
+  );
+}
+
+function PowerFlowTooltip({
+  active,
+  label,
+  payload,
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: { dataKey?: string; color?: string; value?: number }[];
+}) {
+  if (!active || !payload?.length) return null;
+
+  const seriesLabels: Record<string, string> = {
+    solar: 'Solar',
+    load: 'Load',
+    grid: 'Grid',
+  };
+
+  return (
+    <ChartTooltip label={label}>
+      {payload.map((entry) => {
+        if (!entry.dataKey || entry.value == null) return null;
+
+        return (
+          <ChartTooltipRow
+            key={entry.dataKey}
+            label={seriesLabels[entry.dataKey] ?? entry.dataKey}
+            value={`${entry.value}W`}
+            color={entry.color}
+          />
+        );
+      })}
+    </ChartTooltip>
+  );
 }
 
 export default function SolarView() {
@@ -58,18 +114,25 @@ export default function SolarView() {
     { name: 'MPPT 2', power: state.pv_power_2 ?? 0, fill: '#fb923c' },
   ];
   const hasMpptData = state.pv_power_1 != null || state.pv_power_2 != null;
+  const renderCardValue = (value: string | null, className: string) =>
+    value ? <p className={className}>{value}</p> : <div className="mt-3"><PlaceholderValue /></div>;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">Solar Production</h1>
+      <PageHeader
+        eyebrow="Live Telemetry"
+        title="Solar production"
+        description="Understand total PV output, per-string MPPT performance, and how generation is flowing between load, battery, and grid."
+      />
 
       {/* Overview cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <p className="text-xs text-sb-text-muted">Total Output</p>
-          <p className="mt-1 text-2xl font-bold text-yellow-400">
-            {state.pv_power !== null ? `${state.pv_power}W` : '\u2014'}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Total Output</p>
+          {renderCardValue(
+            state.pv_power !== null ? `${state.pv_power}W` : null,
+            'mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-sb-solar',
+          )}
           {hasMpptData && (
             <p className="mt-1 text-xs text-sb-text-muted">
               MPPT1: {state.pv_power_1 ?? 0}W + MPPT2: {state.pv_power_2 ?? 0}W
@@ -77,26 +140,29 @@ export default function SolarView() {
           )}
         </Card>
         <Card>
-          <p className="text-xs text-sb-text-muted">Peak Today</p>
-          <p className="mt-1 text-2xl font-bold text-sb-text">
-            {maxPvToday > 0 ? `${maxPvToday}W` : '\u2014'}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Peak Today</p>
+          {renderCardValue(
+            maxPvToday > 0 ? `${maxPvToday}W` : null,
+            'mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-sb-text',
+          )}
         </Card>
         <Card>
-          <p className="text-xs text-sb-text-muted">Grid Power</p>
-          <p className="mt-1 text-2xl font-bold text-sb-text">
-            {state.grid_power !== null
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Grid Power</p>
+          {renderCardValue(
+            state.grid_power !== null
               ? `${state.grid_power > 0 ? 'Importing' : state.grid_power < 0 ? 'Exporting' : 'Neutral'} ${Math.abs(state.grid_power)}W`
-              : '\u2014'}
-          </p>
+              : null,
+            'mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-sb-text',
+          )}
         </Card>
         <Card>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-sb-text-muted">Grid Frequency</p>
-              <p className="mt-1 text-2xl font-bold text-sb-text">
-                {state.grid_frequency != null ? `${state.grid_frequency}Hz` : '\u2014'}
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Grid Frequency</p>
+              {renderCardValue(
+                state.grid_frequency != null ? `${state.grid_frequency}Hz` : null,
+                'mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-sb-text',
+              )}
             </div>
             <Activity size={20} className="text-sb-text-muted" />
           </div>
@@ -107,8 +173,8 @@ export default function SolarView() {
       {hasMpptData && (
         <>
           <div className="flex items-center gap-2">
-            <Sun size={16} className="text-yellow-400" />
-            <h2 className="text-base font-semibold text-sb-text">MPPT String Detail</h2>
+            <Sun size={16} className="text-sb-solar" />
+            <h2 className="text-base font-semibold tracking-[-0.02em] text-sb-text">MPPT string detail</h2>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <MpptCard
@@ -135,15 +201,7 @@ export default function SolarView() {
                 <BarChart data={mpptData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
                   <XAxis type="number" tick={{ fill: colors.muted, fontSize: 10 }} />
                   <YAxis type="category" dataKey="name" tick={{ fill: colors.muted, fontSize: 11 }} width={55} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: colors.card,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '8px',
-                      color: colors.text,
-                    }}
-                    formatter={(value) => [`${value}W`, 'Power']}
-                  />
+                  <Tooltip content={<MpptTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                   <Bar dataKey="power" radius={[0, 4, 4, 0]} barSize={20}>
                     {mpptData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
@@ -158,7 +216,7 @@ export default function SolarView() {
 
       {/* Production chart */}
       <Card>
-        <CardHeader title="Today's Power Flow" />
+        <CardHeader title="Today's power flow" subtitle="Overlay solar generation, load demand, and grid flow across the current day." />
         {chartData.length === 0 ? (
           <p className="py-12 text-center text-sb-text-muted">
             No readings recorded yet. Data will appear as the inverter reports values.
@@ -180,14 +238,7 @@ export default function SolarView() {
               <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                 <XAxis dataKey="time" tick={{ fill: colors.muted, fontSize: 10 }} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: colors.muted, fontSize: 10 }} width={45} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: colors.card,
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: '8px',
-                    color: colors.text,
-                  }}
-                />
+                <Tooltip content={<PowerFlowTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                 <Line type="monotone" dataKey="solar" stroke="#facc15" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="load" stroke="#c084fc" strokeWidth={1.5} dot={false} />
                 <Line type="monotone" dataKey="grid" stroke="#5d9cec" strokeWidth={1.5} dot={false} />
@@ -200,22 +251,22 @@ export default function SolarView() {
       {/* Daily summary */}
       {dailySummaries.length > 0 && (
         <Card>
-          <CardHeader title="Recent Days" />
+          <CardHeader title="Recent days" subtitle="Recent peak PV output and sample density from stored telemetry snapshots." />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-sb-border text-left text-sb-text-muted">
-                  <th className="pb-2 font-medium">Date</th>
-                  <th className="pb-2 font-medium">Peak Solar</th>
-                  <th className="pb-2 font-medium">Readings</th>
+                <tr className="border-b border-sb-border text-left text-xs uppercase tracking-[0.16em] text-sb-text-subtle">
+                  <th className="px-3 py-3 font-medium">Date</th>
+                  <th className="px-3 py-3 font-medium">Peak Solar</th>
+                  <th className="px-3 py-3 font-medium">Readings</th>
                 </tr>
               </thead>
               <tbody>
                 {dailySummaries.map((d) => (
                   <tr key={d.date} className="border-b border-sb-border/50">
-                    <td className="py-2.5 text-sb-text">{d.date}</td>
-                    <td className="py-2.5 text-yellow-400">{d.max_pv}W</td>
-                    <td className="py-2.5 text-sb-text-muted">{d.readings_count}</td>
+                    <td className="px-3 py-3 text-sb-text">{d.date}</td>
+                    <td className="px-3 py-3 text-sb-solar">{d.max_pv}W</td>
+                    <td className="px-3 py-3 text-sb-text-muted">{d.readings_count}</td>
                   </tr>
                 ))}
               </tbody>

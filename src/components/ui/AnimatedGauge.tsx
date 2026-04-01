@@ -1,5 +1,7 @@
 'use client';
 
+import { getAnimatedGaugeLayout } from './animatedGaugeLayout';
+
 interface Threshold {
   value: number;
   color: string;
@@ -31,9 +33,7 @@ export function AnimatedGauge({
   size = 'md',
 }: AnimatedGaugeProps) {
   const cfg = SIZES[size];
-  const radius = (cfg.width - cfg.strokeWidth) / 2;
-  const circumference = Math.PI * radius; // half-circle
-  const center = cfg.width / 2;
+  const { radius, circumference, center, svgHeight, unitY, valueY } = getAnimatedGaugeLayout(cfg);
 
   const pct = value !== null ? Math.max(0, Math.min(1, (value - min) / (max - min))) : 0;
   const offset = circumference - pct * circumference;
@@ -50,8 +50,8 @@ export function AnimatedGauge({
     <div className="flex flex-col items-center gap-1">
       <svg
         width={cfg.width}
-        height={cfg.width / 2 + cfg.strokeWidth}
-        viewBox={`0 0 ${cfg.width} ${cfg.width / 2 + cfg.strokeWidth}`}
+        height={svgHeight}
+        viewBox={`0 0 ${cfg.width} ${svgHeight}`}
       >
         {/* Background arc */}
         <path
@@ -75,7 +75,7 @@ export function AnimatedGauge({
         {/* Value text */}
         <text
           x={center}
-          y={center - 4}
+          y={valueY}
           textAnchor="middle"
           fill="var(--color-sb-text)"
           fontSize={cfg.fontSize}
@@ -85,7 +85,7 @@ export function AnimatedGauge({
         </text>
         <text
           x={center}
-          y={center + cfg.fontSize * 0.6}
+          y={unitY}
           textAnchor="middle"
           fill="var(--color-sb-text-muted)"
           fontSize={cfg.labelSize}

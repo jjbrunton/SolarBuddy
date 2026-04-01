@@ -9,6 +9,8 @@ import { TemperatureIndicator } from '@/components/inverter/TemperatureIndicator
 import { ConfigReadback } from '@/components/config/ConfigReadback';
 import { StatusIndicator } from '@/components/ui/StatusIndicator';
 import { AnimatedGauge } from '@/components/ui/AnimatedGauge';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
 import { useEffect, useState } from 'react';
 
 interface Settings {
@@ -39,14 +41,21 @@ export default function InverterView() {
             ? 'text-sb-warning'
             : 'text-sb-danger';
 
+  const renderCardValue = (value: string | null, className: string) =>
+    value ? <p className={className}>{value}</p> : <div className="mt-3"><PlaceholderValue /></div>;
+
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">Inverter</h1>
+      <PageHeader
+        eyebrow="Live Telemetry"
+        title="Inverter status"
+        description="Track the inverter’s operating mode, electrical readings, thermal conditions, and live configuration read-back from Solar Assistant."
+      />
 
       {/* Status overview — row 1 */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>
-          <p className="text-xs text-sb-text-muted">Connection</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Connection</p>
           <div className="mt-2">
             <Badge kind={state.mqtt_connected ? 'success' : 'danger'}>
               {state.mqtt_connected ? 'Connected' : 'Disconnected'}
@@ -54,14 +63,21 @@ export default function InverterView() {
           </div>
         </Card>
         <Card>
-          <p className="text-xs text-sb-text-muted">Work Mode</p>
-          <p className="mt-1 text-lg font-bold text-sb-text">{state.work_mode || '\u2014'}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Work Mode</p>
+          {renderCardValue(
+            state.work_mode,
+            'mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-text',
+          )}
         </Card>
         <Card>
-          <p className="text-xs text-sb-text-muted">Battery SOC</p>
-          <p className={`mt-1 text-3xl font-bold ${socColor}`}>
-            {soc !== null ? `${soc}%` : '\u2014'}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Battery SOC</p>
+          {soc !== null ? (
+            <p className={`mt-3 text-4xl font-semibold tracking-[-0.04em] ${socColor}`}>{soc}%</p>
+          ) : (
+            <div className="mt-3">
+              <PlaceholderValue />
+            </div>
+          )}
           {soc !== null && (
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-sb-border">
               <div
@@ -86,7 +102,7 @@ export default function InverterView() {
         <Card>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-sb-text-muted">Device Mode</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Device Mode</p>
               <div className="mt-2">
                 <StatusIndicator label="" value={state.device_mode} size="md" />
               </div>
@@ -94,16 +110,18 @@ export default function InverterView() {
           </div>
         </Card>
         <Card>
-          <p className="text-xs text-sb-text-muted">Battery Voltage</p>
-          <p className="mt-1 text-2xl font-bold text-sb-text">
-            {state.battery_voltage != null ? `${state.battery_voltage}V` : '\u2014'}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Battery Voltage</p>
+          {renderCardValue(
+            state.battery_voltage != null ? `${state.battery_voltage}V` : null,
+            'mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-sb-text',
+          )}
         </Card>
         <Card>
-          <p className="text-xs text-sb-text-muted">Grid Voltage</p>
-          <p className="mt-1 text-2xl font-bold text-sb-text">
-            {state.grid_voltage != null ? `${state.grid_voltage}V` : '\u2014'}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Grid Voltage</p>
+          {renderCardValue(
+            state.grid_voltage != null ? `${state.grid_voltage}V` : null,
+            'mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-sb-text',
+          )}
           {state.grid_frequency != null && (
             <p className="mt-1 text-xs text-sb-text-muted">{state.grid_frequency}Hz</p>
           )}
@@ -112,7 +130,7 @@ export default function InverterView() {
 
       {/* Animated gauges row */}
       <Card>
-        <CardHeader title="System Gauges" />
+        <CardHeader title="System gauges" subtitle="Live analogue-style indicators for the most important electrical measurements." />
         <div className="flex flex-wrap items-center justify-around gap-4">
           <AnimatedGauge
             value={state.battery_soc}
@@ -188,7 +206,7 @@ export default function InverterView() {
 
       {/* Live Readings */}
       <Card>
-        <CardHeader title="Live Readings" />
+        <CardHeader title="Live readings" subtitle="Current telemetry snapshot from the live SSE state store." />
         <DescriptionList
           items={[
             { label: 'PV (Solar) Power', value: state.pv_power != null ? `${state.pv_power} W` : '\u2014' },
@@ -220,7 +238,7 @@ export default function InverterView() {
 
       {/* Configuration Read-back (Tier 3) */}
       <Card>
-        <CardHeader title="Inverter Configuration">
+        <CardHeader title="Inverter configuration" subtitle="Live settings read-back published over MQTT.">
           <span className="text-xs text-sb-text-muted">Live from MQTT</span>
         </CardHeader>
         <ConfigReadback state={state} />
@@ -228,7 +246,7 @@ export default function InverterView() {
 
       {/* Connection info */}
       <Card>
-        <CardHeader title="Connection Details" />
+        <CardHeader title="Connection details" subtitle="Broker and browser-stream status for the live telemetry pipeline." />
         <DescriptionList
           items={[
             { label: 'MQTT Broker', value: settings ? `${settings.mqtt_host}:${settings.mqtt_port}` : 'Loading...' },
@@ -258,8 +276,8 @@ export default function InverterView() {
           <div>
             <p className="font-medium text-sb-text">Battery First</p>
             <p className="text-sb-text-muted">
-              Prioritizes battery usage. Discharges battery to power loads before drawing from grid.
-              Best for maximizing self-consumption during peak rate hours.
+              Solar charges the battery first, excess powers loads. Best for building up stored
+              energy before peak hours.
             </p>
           </div>
           <div>

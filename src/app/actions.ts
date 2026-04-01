@@ -8,6 +8,7 @@ const VALID_SETTING_KEYS = new Set<string>([
   'mqtt_host', 'mqtt_port', 'mqtt_username', 'mqtt_password',
   'octopus_region', 'octopus_product_code', 'octopus_api_key', 'octopus_account',
   'octopus_mpan', 'octopus_meter_serial',
+  'charging_strategy',
   'charge_hours', 'price_threshold', 'min_soc_target',
   'charge_window_start', 'charge_window_end', 'default_work_mode',
   'charge_rate', 'auto_schedule',
@@ -59,15 +60,16 @@ export async function fetchRatesAction(): Promise<{ ok: boolean; error?: string;
   }
 }
 
-export async function runScheduleAction(): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const { runScheduleCycle } = await import('@/lib/scheduler/cron');
-    await runScheduleCycle();
-    revalidatePath('/schedule');
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' };
+export async function runScheduleAction(): Promise<{ ok: boolean; error?: string; message?: string; status?: string }> {
+  const { runScheduleCycle } = await import('@/lib/scheduler/cron');
+  const result = await runScheduleCycle();
+  revalidatePath('/schedule');
+
+  if (!result.ok) {
+    return { ok: false, error: result.message, status: result.status };
   }
+
+  return { ok: true, message: result.message, status: result.status };
 }
 
 export async function saveOverridesAction(

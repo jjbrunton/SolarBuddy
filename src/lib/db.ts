@@ -66,6 +66,15 @@ function initSchema(db: Database.Database) {
       message TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS mqtt_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      level TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      topic TEXT,
+      payload TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS carbon_intensity (
       period_from TEXT NOT NULL,
       period_to TEXT NOT NULL,
@@ -90,6 +99,7 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
     CREATE INDEX IF NOT EXISTS idx_schedules_status ON schedules(status, date);
     CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_mqtt_logs_ts ON mqtt_logs(timestamp);
     CREATE INDEX IF NOT EXISTS idx_carbon_period ON carbon_intensity(period_from);
     CREATE INDEX IF NOT EXISTS idx_overrides_date ON manual_overrides(date);
   `);
@@ -110,5 +120,26 @@ function initSchema(db: Database.Database) {
     if (!colNames.has(col)) {
       db.exec(`ALTER TABLE readings ADD COLUMN ${col} REAL`);
     }
+  }
+
+  // Migrate: add action column to manual_overrides
+  const overrideCols = db.prepare('PRAGMA table_info(manual_overrides)').all() as { name: string }[];
+  const overrideColNames = new Set(overrideCols.map((c) => c.name));
+  if (!overrideColNames.has('action')) {
+    db.exec("ALTER TABLE manual_overrides ADD COLUMN action TEXT DEFAULT 'charge'");
+  }
+
+  // Migrate: add source column to rates (api vs tariff-generated)
+  const rateCols = db.prepare('PRAGMA table_info(rates)').all() as { name: string }[];
+  const rateColNames = new Set(rateCols.map((c) => c.name));
+  if (!rateColNames.has('source')) {
+    db.exec("ALTER TABLE rates ADD COLUMN source TEXT DEFAULT 'api'");
+  }
+
+  // Migrate: add type column to schedules (charge vs discharge)
+  const scheduleCols = db.prepare('PRAGMA table_info(schedules)').all() as { name: string }[];
+  const scheduleColNames = new Set(scheduleCols.map((c) => c.name));
+  if (!scheduleColNames.has('type')) {
+    db.exec("ALTER TABLE schedules ADD COLUMN type TEXT DEFAULT 'charge'");
   }
 }

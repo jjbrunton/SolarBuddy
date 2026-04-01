@@ -1,5 +1,7 @@
 import { getDb } from '../db';
 import { getSettings } from '../config';
+import { getTariffDefinition } from '../tariffs/definitions';
+import { generateSyntheticRates } from '../tariffs/rate-generator';
 
 export interface AgileRate {
   valid_from: string;
@@ -64,6 +66,22 @@ export function storeRates(rates: AgileRate[]) {
 
 export async function fetchAndStoreRates(periodFrom?: string, periodTo?: string): Promise<AgileRate[]> {
   const rates = await fetchRates(periodFrom, periodTo);
+  if (rates.length > 0) {
+    storeRates(rates);
+  }
+  return rates;
+}
+
+export async function resolveRates(periodFrom: string, periodTo: string): Promise<AgileRate[]> {
+  const settings = getSettings();
+  const tariff = getTariffDefinition(settings.tariff_type);
+
+  if (tariff.usesApiRates) {
+    return fetchAndStoreRates(periodFrom, periodTo);
+  }
+
+  // Generate synthetic rates for non-Agile tariffs
+  const rates = generateSyntheticRates(tariff, settings, periodFrom, periodTo);
   if (rates.length > 0) {
     storeRates(rates);
   }

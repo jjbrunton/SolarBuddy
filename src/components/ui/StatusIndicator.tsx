@@ -1,5 +1,7 @@
 'use client';
 
+import { PlaceholderValue } from './PlaceholderValue';
+
 interface StatusIndicatorProps {
   label: string;
   value: string | null;
@@ -19,8 +21,9 @@ const DEFAULT_COLOR_MAP: Record<string, string> = {
 
 export function StatusIndicator({ label, value, colorMap, size = 'md' }: StatusIndicatorProps) {
   const map = colorMap ?? DEFAULT_COLOR_MAP;
-  const dotColor = value ? (map[value] ?? 'bg-sb-accent') : 'bg-sb-text-muted';
-  const isActive = value !== null && value !== 'Off' && value !== 'Standby';
+  const hasValue = value !== null && value.trim().length > 0;
+  const dotColor = hasValue ? (map[value] ?? 'bg-sb-accent') : 'bg-sb-text-muted';
+  const isActive = hasValue && value !== 'Off' && value !== 'Standby';
 
   return (
     <div className="flex items-center gap-2.5">
@@ -33,7 +36,7 @@ export function StatusIndicator({ label, value, colorMap, size = 'md' }: StatusI
       <div className={size === 'sm' ? '' : ''}>
         <span className="text-xs text-sb-text-muted">{label}</span>
         <p className={`font-semibold text-sb-text ${size === 'sm' ? 'text-sm' : 'text-base'}`}>
-          {value ?? '\u2014'}
+          {hasValue ? value : <PlaceholderValue tone="text" />}
         </p>
       </div>
     </div>

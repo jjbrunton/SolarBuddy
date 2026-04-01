@@ -1,16 +1,38 @@
 import { getMqttClient } from './client';
+import { appendMqttLog } from './logs';
 import { COMMAND_TOPICS } from './topics';
 
 function publish(topic: string, value: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const client = getMqttClient();
     if (!client || !client.connected) {
+      appendMqttLog({
+        level: 'error',
+        direction: 'outbound',
+        topic,
+        payload: value,
+      });
       reject(new Error('MQTT not connected'));
       return;
     }
     client.publish(topic, value, { qos: 1 }, (err) => {
-      if (err) reject(err);
-      else resolve();
+      if (err) {
+        appendMqttLog({
+          level: 'error',
+          direction: 'outbound',
+          topic,
+          payload: value,
+        });
+        reject(err);
+      } else {
+        appendMqttLog({
+          level: 'success',
+          direction: 'outbound',
+          topic,
+          payload: value,
+        });
+        resolve();
+      }
     });
   });
 }
@@ -38,6 +60,18 @@ export async function startGridCharging(chargeRate: number) {
 
 export async function stopGridCharging(defaultMode: 'Battery first' | 'Load first' = 'Battery first') {
   await setBatterySlot1(false);
+  await setWorkMode(defaultMode);
+}
+
+export async function startGridDischarge() {
+  console.log('[CMD] Starting grid discharge (sell-back)');
+  await setWorkMode('Battery first');
+  await setOutputSourcePriority('SBU');
+}
+
+export async function stopGridDischarge(defaultMode: 'Battery first' | 'Load first' = 'Battery first') {
+  console.log('[CMD] Stopping grid discharge');
+  await setOutputSourcePriority('USB');
   await setWorkMode(defaultMode);
 }
 

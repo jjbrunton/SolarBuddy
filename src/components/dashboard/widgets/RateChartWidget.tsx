@@ -7,6 +7,7 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { computeSOCForecast } from '@/lib/soc-forecast';
+import type { PlanAction } from '@/lib/plan-actions';
 
 interface RatePoint {
   time: string;
@@ -98,10 +99,14 @@ export default function RateChartWidget() {
 
   const ratesWithSOC = useMemo(() => {
     if (rates.length === 0 || state.battery_soc === null || !settings) return rates;
+    const slotActions = new Map<number, PlanAction>();
+    for (const index of scheduledIndices) {
+      slotActions.set(index, 'charge');
+    }
     const forecast = computeSOCForecast({
       currentSOC: state.battery_soc,
       currentSlotIndex,
-      scheduledSlots: scheduledIndices,
+      slotActions,
       totalSlots: rates.length,
       chargeRatePercent: parseFloat(settings.charge_rate) || 100,
       batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,

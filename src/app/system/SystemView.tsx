@@ -6,6 +6,7 @@ import { FieldSet } from '@/components/ui/FieldSet';
 import { DescriptionList } from '@/components/ui/DescriptionList';
 import { Badge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { ConfigReadback } from '@/components/config/ConfigReadback';
 import { useSSE } from '@/hooks/useSSE';
 import { CheckCircle, XCircle, ExternalLink, Settings } from 'lucide-react';
@@ -16,6 +17,8 @@ interface SystemInfo {
     rates_fresh: boolean;
     last_rate_fetch: string | null;
     last_schedule: string | null;
+    scheduler_configured: boolean;
+    auto_schedule_enabled: boolean;
   };
   stats: {
     readings_count: number;
@@ -62,7 +65,11 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
   if (!info) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-bold text-sb-text">System</h1>
+        <PageHeader
+          eyebrow="Diagnostics"
+          title="System status"
+          description="Review health indicators, runtime metadata, and the latest inverter configuration read-back from the broker."
+        />
         <Card><p className="text-sb-text-muted">Loading system information...</p></Card>
       </div>
     );
@@ -70,11 +77,15 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">System Status</h1>
+      <PageHeader
+        eyebrow="Diagnostics"
+        title="System status"
+        description="Review health indicators, runtime metadata, and the latest inverter configuration read-back from the broker."
+      />
 
       {/* Health checks */}
       <Card>
-        <CardHeader title="Health" />
+        <CardHeader title="Health" subtitle="Core infrastructure checks for the broker, rates, and scheduler services." />
         <div className="space-y-2">
           <HealthCheck label="MQTT Connection" ok={info.health.mqtt_connected} />
           <HealthCheck label="Rate Data Fresh (< 24h)" ok={info.health.rates_fresh} />
@@ -83,8 +94,8 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
             ok={info.health.last_rate_fetch !== null}
           />
           <HealthCheck
-            label="Scheduler Active"
-            ok={info.health.last_schedule !== null}
+            label="Scheduler Configured"
+            ok={info.health.scheduler_configured}
           />
         </div>
       </Card>
@@ -102,7 +113,7 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
 
       {/* Database stats */}
       <Card>
-        <CardHeader title="Database" />
+        <CardHeader title="Database" subtitle="Operational persistence footprint and record counts stored in SQLite." />
         <DescriptionList
           items={[
             { label: 'Database Size', value: formatBytes(info.stats.db_size_bytes) },
@@ -136,6 +147,14 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
               value: info.health.last_schedule
                 ? new Date(info.health.last_schedule).toLocaleString('en-GB')
                 : 'Never',
+            },
+            {
+              label: 'Auto Schedule',
+              value: (
+                <Badge kind={info.health.auto_schedule_enabled ? 'success' : 'default'}>
+                  {info.health.auto_schedule_enabled ? 'Enabled' : 'Disabled'}
+                </Badge>
+              ),
             },
           ]}
         />

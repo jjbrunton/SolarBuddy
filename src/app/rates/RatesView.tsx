@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { Card, CardHeader } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { RefreshCw, Play, Pencil, X, Save } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
@@ -24,6 +27,12 @@ interface Schedule {
 interface Override {
   slot_start: string;
   slot_end: string;
+}
+
+interface ScheduleRunResponse {
+  ok: boolean;
+  status: 'scheduled' | 'no_rates' | 'no_windows' | 'missing_config' | 'error';
+  message: string;
 }
 
 interface ChartData {
@@ -61,6 +70,7 @@ export default function RatesView() {
   const [data, setData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [runMessage, setRunMessage] = useState<{ kind: 'success' | 'warning'; text: string } | null>(null);
   const [stats, setStats] = useState<{ min: number; max: number; avg: number } | null>(null);
   const [currentSlotIndex, setCurrentSlotIndex] = useState(0);
   const [scheduledIndices, setScheduledIndices] = useState<Set<number>>(new Set());
@@ -182,10 +192,11 @@ export default function RatesView() {
   }, []);
 
   // Combine scheduled + manual override slots for SOC forecast
-  const allChargeSlots = useMemo(() => {
-    const combined = new Set(scheduledIndices);
-    for (const idx of selectedIndices) combined.add(idx);
-    return combined;
+  const allSlotActions = useMemo(() => {
+    const actions = new Map<number, 'charge'>();
+    for (const idx of scheduledIndices) actions.set(idx, 'charge');
+    for (const idx of selectedIndices) actions.set(idx, 'charge');
+    return actions;
   }, [scheduledIndices, selectedIndices]);
 
   // Compute SOC forecast
@@ -195,7 +206,7 @@ export default function RatesView() {
     const forecast = computeSOCForecast({
       currentSOC: state.battery_soc,
       currentSlotIndex,
-      scheduledSlots: allChargeSlots,
+      slotActions: allSlotActions,
       totalSlots: data.length,
       chargeRatePercent: parseFloat(settings.charge_rate) || 100,
       batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
@@ -207,7 +218,7 @@ export default function RatesView() {
       ...d,
       forecastSOC: forecast[i] ?? undefined,
     }));
-  }, [data, state.battery_soc, currentSlotIndex, allChargeSlots, settings]);
+  }, [data, state.battery_soc, currentSlotIndex, allSlotActions, settings]);
 
   const handleFetchRates = async () => {
     setLoading(true);
@@ -222,9 +233,22 @@ export default function RatesView() {
 
   const handleRunSchedule = async () => {
     try {
-      await fetch('/api/schedule', { method: 'POST' });
+      const res = await fetch('/api/schedule', { method: 'POST' });
+      const json = await res.json() as ScheduleRunResponse;
+      if (!res.ok || !json.ok) {
+        setRunMessage(null);
+        setError(json.message || 'Failed to run schedule');
+        return;
+      }
+
+      setError(null);
+      setRunMessage({
+        kind: json.status === 'scheduled' ? 'success' : 'warning',
+        text: json.message,
+      });
       await fetchData();
     } catch {
+      setRunMessage(null);
       setError('Failed to run schedule');
     }
   };
@@ -273,61 +297,59 @@ export default function RatesView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-sb-text">Energy Rates</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setEditMode(!editMode)}
-            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              editMode
-                ? 'bg-sb-warning text-white'
-                : 'bg-sb-card text-sb-text-muted hover:bg-sb-active hover:text-sb-text'
-            }`}
-          >
-            {editMode ? <X size={14} /> : <Pencil size={14} />}
-            {editMode ? 'Cancel' : 'Edit Slots'}
-          </button>
-          <button
-            onClick={handleFetchRates}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-md bg-sb-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-sb-accent-hover disabled:opacity-50"
-          >
-            <RefreshCw size={14} />
-            Fetch Rates
-          </button>
-          <button
-            onClick={handleRunSchedule}
-            className="flex items-center gap-2 rounded-md bg-sb-success px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-          >
-            <Play size={14} />
-            Run Schedule
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Tariffs"
+        title="Energy rates"
+        description="Review the current Agile price horizon, compare it to the scheduler output, and set manual slot overrides directly on the chart."
+        actions={(
+          <>
+            <Button onClick={() => setEditMode(!editMode)} variant={editMode ? 'warning' : 'secondary'} size="sm">
+              {editMode ? <X size={14} /> : <Pencil size={14} />}
+              {editMode ? 'Cancel' : 'Edit slots'}
+            </Button>
+            <Button onClick={handleFetchRates} disabled={loading} size="sm">
+              <RefreshCw size={14} />
+              Fetch rates
+            </Button>
+            <Button onClick={handleRunSchedule} variant="success" size="sm">
+              <Play size={14} />
+              Run schedule
+            </Button>
+          </>
+        )}
+      />
 
       {/* Stats row */}
       {stats && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Card>
-            <p className="text-xs text-sb-text-muted">Minimum</p>
-            <p className="mt-1 text-lg font-bold text-sb-success">{stats.min}p/kWh</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Minimum</p>
+            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-success">{stats.min}p/kWh</p>
           </Card>
           <Card>
-            <p className="text-xs text-sb-text-muted">Average</p>
-            <p className="mt-1 text-lg font-bold text-sb-text">{stats.avg}p/kWh</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Average</p>
+            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-text">{stats.avg}p/kWh</p>
           </Card>
           <Card>
-            <p className="text-xs text-sb-text-muted">Maximum</p>
-            <p className="mt-1 text-lg font-bold text-sb-danger">{stats.max}p/kWh</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Maximum</p>
+            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-danger">{stats.max}p/kWh</p>
           </Card>
         </div>
       )}
 
       {error && <p className="text-sm text-sb-danger">{error}</p>}
+      {runMessage && (
+        <p className={`text-sm ${runMessage.kind === 'success' ? 'text-sb-success' : 'text-sb-warning'}`}>
+          {runMessage.text}
+        </p>
+      )}
 
       {/* Chart */}
       <Card>
-        <CardHeader title="Agile Rates (p/kWh)" />
+        <CardHeader
+          title="Agile rates (p/kWh)"
+          subtitle="Manual overrides appear in teal and take precedence over the planner for SOC forecasting."
+        />
         <div className="mb-3 flex flex-wrap gap-4 text-xs text-sb-text-muted">
           <span className="flex items-center gap-1">
             <span className="inline-block h-2.5 w-2.5 rounded bg-sb-accent" /> Rate
@@ -350,9 +372,10 @@ export default function RatesView() {
         {loading && data.length === 0 ? (
           <p className="py-12 text-center text-sb-text-muted">Loading rates...</p>
         ) : data.length === 0 ? (
-          <p className="py-12 text-center text-sb-text-muted">
-            No rates loaded. Click &quot;Fetch Rates&quot; to get current Agile prices.
-          </p>
+          <EmptyState
+            title="No rates loaded yet"
+            description="Fetch the current Agile price horizon to populate the chart and enable scheduling analysis."
+          />
         ) : (
           <div
             ref={chartContainerRef}
@@ -403,28 +426,20 @@ export default function RatesView() {
 
         {/* Edit mode toolbar */}
         {editMode && data.length > 0 && (
-          <div className="mt-3 flex items-center justify-between rounded-md bg-sb-bg px-4 py-2.5">
+          <div className="mt-4 flex items-center justify-between rounded-2xl border border-sb-border bg-sb-surface-muted px-4 py-3">
             <p className="text-sm text-sb-text-muted">
               {selectedCount > 0
                 ? `${selectedCount} slot${selectedCount !== 1 ? 's' : ''} selected (${selectedHours}h)`
                 : 'Click and drag on the chart to select charge slots'}
             </p>
             <div className="flex gap-2">
-              <button
-                onClick={handleClearOverrides}
-                disabled={selectedCount === 0}
-                className="rounded-md bg-sb-card px-3 py-1.5 text-sm text-sb-text-muted hover:bg-sb-active disabled:opacity-50"
-              >
-                Clear All
-              </button>
-              <button
-                onClick={handleSaveOverrides}
-                disabled={saving}
-                className="flex items-center gap-2 rounded-md bg-sb-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-sb-accent-hover disabled:opacity-50"
-              >
+              <Button onClick={handleClearOverrides} disabled={selectedCount === 0} variant="secondary" size="sm">
+                Clear all
+              </Button>
+              <Button onClick={handleSaveOverrides} disabled={saving} size="sm">
                 <Save size={14} />
-                {saving ? 'Saving...' : 'Save'}
-              </button>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
             </div>
           </div>
         )}

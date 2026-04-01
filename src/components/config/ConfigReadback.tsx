@@ -2,6 +2,8 @@
 
 import type { InverterState } from '@/lib/types';
 import { Badge } from '@/components/ui/Badge';
+import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
+import { resolveMaxChargeCurrentDisplay, resolveOutputSourcePriority } from '@/lib/inverter/settings';
 import { Settings, Zap, Battery, Gauge } from 'lucide-react';
 
 interface ConfigReadbackProps {
@@ -19,7 +21,7 @@ function ConfigRow({ label, value, unit, kind = 'number' }: ConfigItem) {
   let display: React.ReactNode;
 
   if (value === null || value === undefined) {
-    display = <span className="text-sb-text-muted">\u2014</span>;
+    display = <PlaceholderValue />;
   } else if (kind === 'badge') {
     display = <Badge kind="info">{String(value)}</Badge>;
   } else {
@@ -66,6 +68,9 @@ function ConfigGroup({
 }
 
 export function ConfigReadback({ state }: ConfigReadbackProps) {
+  const outputSourcePriority = resolveOutputSourcePriority(state);
+  const maxChargeCurrent = resolveMaxChargeCurrentDisplay(state);
+
   return (
     <div className="grid gap-5 md:grid-cols-2">
       <ConfigGroup
@@ -76,7 +81,7 @@ export function ConfigReadback({ state }: ConfigReadbackProps) {
           { label: 'Charge Rate', value: state.battery_first_charge_rate, unit: '%' },
           { label: 'Grid Charge', value: state.battery_first_grid_charge, kind: 'badge' },
           { label: 'Stop Charge At', value: state.battery_first_stop_charge, unit: '%' },
-          { label: 'Max Charge Current', value: state.max_charge_current, unit: 'A' },
+          { label: 'Max Charge Current', value: maxChargeCurrent.value, unit: maxChargeCurrent.unit },
         ]}
       />
       <ConfigGroup
@@ -103,7 +108,7 @@ export function ConfigReadback({ state }: ConfigReadbackProps) {
         icon={Settings}
         accent="text-purple-400"
         items={[
-          { label: 'Output Source', value: state.output_source_priority, kind: 'badge' },
+          { label: 'Output Source', value: outputSourcePriority, kind: 'badge' },
           { label: 'Work Mode', value: state.work_mode, kind: 'badge' },
         ]}
       />

@@ -11,17 +11,17 @@ export async function GET() {
 }
 
 export async function POST() {
-  try {
-    await runScheduleCycle();
-    const db = getDb();
-    const schedules = db
-      .prepare("SELECT * FROM schedules WHERE date >= date('now', '-1 day') ORDER BY slot_start ASC")
-      .all();
-    return NextResponse.json({ ok: true, schedules });
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
+  const result = await runScheduleCycle();
+  const db = getDb();
+  const schedules = db
+    .prepare("SELECT * FROM schedules WHERE date >= date('now', '-1 day') ORDER BY slot_start ASC")
+    .all();
+
+  const statusCode = result.status === 'missing_config'
+    ? 400
+    : result.ok
+      ? 200
+      : 500;
+
+  return NextResponse.json({ ...result, schedules }, { status: statusCode });
 }

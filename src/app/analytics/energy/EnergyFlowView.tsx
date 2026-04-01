@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Card, CardHeader } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { PeriodSelector } from '@/components/analytics/PeriodSelector';
 import { StatCard } from '@/components/analytics/StatCard';
 
@@ -55,10 +57,12 @@ export default function EnergyFlowView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-sb-text">Energy Flow</h1>
-        <PeriodSelector periods={PERIODS} selected={period} />
-      </div>
+      <PageHeader
+        eyebrow="Analytics"
+        title="Energy flow"
+        description="Measure generation, import, export, and self-sufficiency over time to understand how the whole system is performing."
+        actions={<PeriodSelector periods={PERIODS} selected={period} />}
+      />
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -91,13 +95,14 @@ export default function EnergyFlowView() {
       )}
 
       <Card>
-        <CardHeader title="Daily Energy Flows" />
+        <CardHeader title="Daily energy flows" subtitle="Daily totals for generation, import, export, and household consumption." />
         {isLoading && daily.length === 0 ? (
           <p className="py-12 text-center text-sb-text-muted">Loading energy data...</p>
         ) : daily.length === 0 ? (
-          <p className="py-12 text-center text-sb-text-muted">
-            No readings data available yet.
-          </p>
+          <EmptyState
+            title="No energy data yet"
+            description="Stored inverter readings are required before SolarBuddy can calculate daily energy flow metrics."
+          />
         ) : (
           <EnergyFlowChart data={daily} />
         )}

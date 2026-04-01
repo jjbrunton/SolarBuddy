@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getDb } from '@/lib/db';
+import { getSettings } from '@/lib/config';
 import { getState } from '@/lib/state';
 import fs from 'fs';
 import path from 'path';
@@ -11,6 +12,7 @@ const startTime = Date.now();
 
 export default function SystemPage() {
   const db = getDb();
+  const settings = getSettings();
   const state = getState();
 
   const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'solarbuddy.db');
@@ -48,6 +50,8 @@ export default function SystemPage() {
         : false,
       last_rate_fetch: latestRate?.latest || null,
       last_schedule: latestSchedule?.latest || null,
+      scheduler_configured: Boolean(settings.octopus_region),
+      auto_schedule_enabled: settings.auto_schedule === 'true',
     },
     stats: {
       readings_count: readingsCount.count,

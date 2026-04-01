@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/Card';
+import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
 import { useSSE } from '@/hooks/useSSE';
 import { calculateCostForecast, formatCost, type RateSlot } from '@/lib/forecast';
 
@@ -68,36 +69,43 @@ export default function QuickStatsWidget() {
     );
   }, [schedules, rawRates, chargeSettings, state.battery_soc]);
 
+  const renderCardValue = (value: string | null, className: string) =>
+    value ? <p className={className}>{value}</p> : <div className="mt-3"><PlaceholderValue /></div>;
+
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Card>
-        <p className="text-xs text-sb-text-muted">Current Rate</p>
-        <p className="mt-1 text-lg font-bold text-sb-text">
-          {currentRate !== null ? `${currentRate}p/kWh` : '\u2014'}
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Current Rate</p>
+        {renderCardValue(
+          currentRate !== null ? `${currentRate}p/kWh` : null,
+          'mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-text',
+        )}
       </Card>
       <Card>
-        <p className="text-xs text-sb-text-muted">Work Mode</p>
-        <p className="mt-1 text-lg font-bold text-sb-text">{state.work_mode || '\u2014'}</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Work Mode</p>
+        {renderCardValue(
+          state.work_mode,
+          'mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-text',
+        )}
       </Card>
       <Card>
-        <p className="text-xs text-sb-text-muted">Est. Charge Cost</p>
-        <p className="mt-1 text-lg font-bold text-sb-success">
-          {costForecast ? formatCost(costForecast.total_cost_pence) : '\u2014'}
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Est. Charge Cost</p>
+        {renderCardValue(
+          costForecast ? formatCost(costForecast.total_cost_pence) : null,
+          'mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-success',
+        )}
         {costForecast && (
-          <p className="text-xs text-sb-text-muted">
+          <p className="mt-2 text-xs leading-5 text-sb-text-muted">
             {costForecast.total_energy_kwh.toFixed(1)} kWh &middot; {costForecast.windows.length} window{costForecast.windows.length !== 1 ? 's' : ''}
           </p>
         )}
       </Card>
       <Card>
-        <p className="text-xs text-sb-text-muted">Battery Flow</p>
-        <p className="mt-1 text-lg font-bold text-sb-text">
-          {state.battery_power !== null
-            ? `${state.battery_power > 0 ? '+' : ''}${state.battery_power}W`
-            : '\u2014'}
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Battery Flow</p>
+        {renderCardValue(
+          state.battery_power !== null ? `${state.battery_power > 0 ? '+' : ''}${state.battery_power}W` : null,
+          'mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-text',
+        )}
       </Card>
     </div>
   );

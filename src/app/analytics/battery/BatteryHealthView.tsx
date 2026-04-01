@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Card, CardHeader } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { PeriodSelector } from '@/components/analytics/PeriodSelector';
 import { StatCard } from '@/components/analytics/StatCard';
 
@@ -55,10 +57,12 @@ export default function BatteryHealthView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-sb-text">Battery Health</h1>
-        <PeriodSelector periods={PERIODS} selected={period} />
-      </div>
+      <PageHeader
+        eyebrow="Analytics"
+        title="Battery health"
+        description="Track depth of discharge, equivalent cycles, and average minimum state of charge over time."
+        actions={<PeriodSelector periods={PERIODS} selected={period} />}
+      />
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -85,13 +89,14 @@ export default function BatteryHealthView() {
       )}
 
       <Card>
-        <CardHeader title="Daily Battery Cycles" />
+        <CardHeader title="Daily battery cycles" subtitle="Equivalent cycle count and depth-of-discharge trend across the selected period." />
         {isLoading && daily.length === 0 ? (
           <p className="py-12 text-center text-sb-text-muted">Loading battery data...</p>
         ) : daily.length === 0 ? (
-          <p className="py-12 text-center text-sb-text-muted">
-            No battery SOC data available yet.
-          </p>
+          <EmptyState
+            title="No battery SOC data yet"
+            description="Battery health analytics start appearing once SolarBuddy has enough stored SOC readings to build a daily cycle history."
+          />
         ) : (
           <BatteryCycleChart data={daily} />
         )}

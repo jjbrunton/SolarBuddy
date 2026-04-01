@@ -1,6 +1,7 @@
 'use client';
 
 import { Thermometer } from 'lucide-react';
+import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
 
 interface TemperatureIndicatorProps {
   label: string;
@@ -46,9 +47,11 @@ export function TemperatureIndicator({
           <Thermometer size={18} className={color} />
           <span className="text-sm text-sb-text-muted">{label}</span>
         </div>
-        <span className={`text-2xl font-bold ${color}`}>
-          {value !== null ? `${value}°C` : '\u2014'}
-        </span>
+        {value !== null ? (
+          <span className={`text-2xl font-bold ${color}`}>{value}°C</span>
+        ) : (
+          <PlaceholderValue />
+        )}
       </div>
 
       {/* Temperature bar */}

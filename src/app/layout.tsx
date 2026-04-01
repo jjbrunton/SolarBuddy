@@ -1,6 +1,17 @@
 import type { Metadata, Viewport } from 'next';
+import { JetBrains_Mono, Manrope } from 'next/font/google';
 import { AppShell } from '@/components/layout/AppShell';
 import './globals.css';
+
+const sans = Manrope({
+  subsets: ['latin'],
+  variable: '--font-sb-sans',
+});
+
+const mono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-sb-mono',
+});
 
 export const metadata: Metadata = {
   title: { default: 'SolarBuddy', template: '%s | SolarBuddy' },
@@ -17,7 +28,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#5d9cec',
+  themeColor: '#44b0c9',
   maximumScale: 1,
 };
 
@@ -31,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="min-h-screen bg-sb-bg text-sb-text">
+      <body className={`${sans.variable} ${mono.variable} min-h-screen bg-sb-bg font-[family-name:var(--font-sb-sans)] text-sb-text antialiased`}>
         <AppShell>{children}</AppShell>
       </body>
     </html>

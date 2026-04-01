@@ -1,6 +1,7 @@
 'use client';
 
 import { Sun } from 'lucide-react';
+import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
 
 interface MpptCardProps {
   stringNumber: 1 | 2;
@@ -46,19 +47,19 @@ export function MpptCard({ stringNumber, voltage, current, power, maxPower = 300
           <div>
             <p className="text-xs text-sb-text-muted">Voltage</p>
             <p className="text-sm font-semibold text-sb-text">
-              {voltage != null ? `${voltage}V` : '\u2014'}
+              {voltage != null ? `${voltage}V` : <PlaceholderValue tone="text" />}
             </p>
           </div>
           <div>
             <p className="text-xs text-sb-text-muted">Current</p>
             <p className="text-sm font-semibold text-sb-text">
-              {current != null ? `${current}A` : '\u2014'}
+              {current != null ? `${current}A` : <PlaceholderValue tone="text" />}
             </p>
           </div>
           <div>
             <p className="text-xs text-sb-text-muted">Power</p>
             <p className="text-sm font-semibold text-sb-text">
-              {power != null ? `${power}W` : '\u2014'}
+              {power != null ? `${power}W` : <PlaceholderValue tone="text" />}
             </p>
           </div>
         </div>

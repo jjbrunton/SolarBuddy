@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
+import { SegmentedTabs } from '@/components/ui/Tabs';
 
 interface PeriodOption {
   label: string;
@@ -31,21 +32,5 @@ export function PeriodSelector({
     router.replace(`${pathname}?${params.toString()}`);
   }
 
-  return (
-    <div className="flex gap-1 rounded-lg bg-sb-card p-1">
-      {periods.map((p) => (
-        <button
-          key={p.value}
-          onClick={() => handleChange(p.value)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-            selected === p.value
-              ? 'bg-sb-accent text-white'
-              : 'text-sb-text-muted hover:text-sb-text'
-          }`}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <SegmentedTabs items={periods} activeValue={selected} onChange={handleChange} />;
 }

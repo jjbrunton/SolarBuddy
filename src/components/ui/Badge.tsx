@@ -1,12 +1,12 @@
 type BadgeKind = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
 
 const kindClasses: Record<BadgeKind, string> = {
-  default: 'bg-sb-active text-sb-text-muted',
-  primary: 'bg-sb-accent/20 text-sb-accent',
-  success: 'bg-sb-success/20 text-sb-success',
-  warning: 'bg-sb-warning/20 text-sb-warning',
-  danger: 'bg-sb-danger/20 text-sb-danger',
-  info: 'bg-sb-info/20 text-sb-info',
+  default: 'border-sb-border bg-sb-surface-muted text-sb-text-muted',
+  primary: 'border-sb-accent/30 bg-sb-accent/12 text-sb-accent',
+  success: 'border-sb-success/30 bg-sb-success/12 text-sb-success',
+  warning: 'border-sb-warning/30 bg-sb-warning/14 text-sb-warning',
+  danger: 'border-sb-danger/30 bg-sb-danger/14 text-sb-danger',
+  info: 'border-sb-info/30 bg-sb-info/14 text-sb-info',
 };
 
 interface BadgeProps {
@@ -18,7 +18,7 @@ interface BadgeProps {
 export function Badge({ children, kind = 'default', className = '' }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${kindClasses[kind]} ${className}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.14em] ${kindClasses[kind]} ${className}`}
     >
       {children}
     </span>

@@ -15,7 +15,7 @@ export default function SystemHealthWidget() {
   if (!hasData) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-sb-border/60 bg-sb-card/50 px-4 py-2">
+    <div className="flex flex-wrap items-center gap-3 rounded-[1.15rem] border border-sb-border/70 bg-sb-surface-muted/75 px-4 py-3">
       {state.device_mode && (
         <span className="text-xs text-sb-text-muted">
           Mode: <span className="font-semibold text-sb-text">{state.device_mode}</span>

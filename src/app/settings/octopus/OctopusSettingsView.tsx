@@ -1,8 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
-import { useSettings, SettingsTabs, Field, inputClass, SaveButton } from '@/components/settings/shared';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { DescriptionList } from '@/components/ui/DescriptionList';
+import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 import { REGION_NAMES } from '@/lib/octopus/regions';
 
 interface AccountInfo {
@@ -16,12 +21,12 @@ interface AccountInfo {
 }
 
 export default function OctopusSettingsView() {
+  const pathname = usePathname();
   const { settings, update, save, saving, message } = useSettings();
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
 
-  // Reconstruct display from saved settings on load (no API call needed)
   useEffect(() => {
     if (
       settings &&
@@ -77,80 +82,134 @@ export default function OctopusSettingsView() {
     setVerifying(false);
   };
 
+  const tariffType = settings.tariff_type || 'agile';
+  const isAgile = tariffType === 'agile';
+  const showPeakRate = tariffType === 'flux';
+
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">Settings</h1>
-      <SettingsTabs />
+      <PageHeader
+        eyebrow="Configuration"
+        title="Octopus tariff setup"
+        description="Select the tariff model SolarBuddy should optimize against, and verify Agile account details when dynamic pricing is in use."
+      />
+      <SettingsTabs pathname={pathname} />
 
       <Card>
-        <h3 className="mb-4 font-medium text-sb-text">Octopus Energy Account</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="API Key" description="Find this in your Octopus account under Developer Settings">
-            <input
-              className={inputClass}
-              type="password"
-              value={settings.octopus_api_key}
-              onChange={(e) => update('octopus_api_key', e.target.value)}
-            />
-          </Field>
-          <Field label="Account Number">
-            <input
-              className={inputClass}
-              value={settings.octopus_account}
-              onChange={(e) => update('octopus_account', e.target.value)}
-              placeholder="A-1234ABCD"
-            />
-          </Field>
-        </div>
+        <SettingsSection
+          title="Tariff shape"
+          description="Static products use the rates you enter here. Agile keeps using live half-hourly prices fetched from Octopus."
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Tariff" description="Select your Octopus Energy tariff product">
+              <select
+                className={inputClass}
+                value={tariffType}
+                onChange={(e) => update('tariff_type', e.target.value)}
+              >
+                <option value="agile">Agile</option>
+                <option value="go">Go / Intelligent Go</option>
+                <option value="flux">Flux</option>
+                <option value="cosy">Cosy</option>
+              </select>
+            </Field>
+          </div>
 
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            onClick={verify}
-            disabled={!canVerify || verifying}
-            className="rounded-md bg-sb-card-alt px-4 py-2 text-sm font-medium text-sb-text border border-sb-border hover:bg-sb-active disabled:opacity-50"
-          >
-            {verifying ? 'Verifying...' : 'Verify Account'}
-          </button>
-          {verifyError && (
-            <span className="text-sm text-sb-danger">{verifyError}</span>
-          )}
-        </div>
+          {!isAgile ? (
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Off-Peak Rate (p/kWh)" description="Price during cheap periods">
+                <input
+                  className={inputClass}
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={settings.tariff_offpeak_rate}
+                  onChange={(e) => update('tariff_offpeak_rate', e.target.value)}
+                />
+              </Field>
+              {showPeakRate ? (
+                <Field label="Peak Rate (p/kWh)" description="Price during peak periods (Flux 16:00-19:00)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={settings.tariff_peak_rate}
+                    onChange={(e) => update('tariff_peak_rate', e.target.value)}
+                  />
+                </Field>
+              ) : null}
+              <Field label="Standard Rate (p/kWh)" description="Price outside off-peak or peak windows">
+                <input
+                  className={inputClass}
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={settings.tariff_standard_rate}
+                  onChange={(e) => update('tariff_standard_rate', e.target.value)}
+                />
+              </Field>
+            </div>
+          ) : null}
+        </SettingsSection>
       </Card>
 
-      {accountInfo && (
-        <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <h3 className="font-medium text-sb-text">Account Details</h3>
-            <span className="rounded-full bg-sb-success/20 px-2.5 py-0.5 text-xs font-medium text-sb-success">
-              Verified
-            </span>
-          </div>
-          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
-            <div>
-              <dt className="text-sb-text-muted">Region</dt>
-              <dd className="font-medium text-sb-text">{accountInfo.region} — {accountInfo.regionName}</dd>
-            </div>
-            <div>
-              <dt className="text-sb-text-muted">Product Code</dt>
-              <dd className="font-medium text-sb-text">{accountInfo.productCode}</dd>
-            </div>
-            <div>
-              <dt className="text-sb-text-muted">Tariff Code</dt>
-              <dd className="font-medium text-sb-text">{accountInfo.tariffCode}</dd>
-            </div>
-            <div>
-              <dt className="text-sb-text-muted">MPAN</dt>
-              <dd className="font-medium text-sb-text">{accountInfo.mpan}</dd>
-            </div>
-            {accountInfo.meterSerial && (
-              <div>
-                <dt className="text-sb-text-muted">Meter Serial</dt>
-                <dd className="font-medium text-sb-text">{accountInfo.meterSerial}</dd>
+      {isAgile ? (
+        <>
+          <Card>
+            <SettingsSection
+              title="Agile account verification"
+              description="Verification populates the region and tariff metadata used for live rate imports and schedule planning."
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="API Key" description="Find this in your Octopus account under Developer Settings">
+                  <input
+                    className={inputClass}
+                    type="password"
+                    value={settings.octopus_api_key}
+                    onChange={(e) => update('octopus_api_key', e.target.value)}
+                  />
+                </Field>
+                <Field label="Account Number">
+                  <input
+                    className={inputClass}
+                    value={settings.octopus_account}
+                    onChange={(e) => update('octopus_account', e.target.value)}
+                    placeholder="A-1234ABCD"
+                  />
+                </Field>
               </div>
-            )}
-          </dl>
-        </Card>
-      )}
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Button onClick={verify} disabled={!canVerify || verifying} variant="secondary">
+                  {verifying ? 'Verifying…' : 'Verify account'}
+                </Button>
+                {verifyError ? <span className="text-sm text-sb-danger">{verifyError}</span> : null}
+              </div>
+            </SettingsSection>
+          </Card>
+
+          {accountInfo ? (
+            <Card>
+              <div className="mb-5 flex items-center gap-2">
+                <h3 className="text-lg font-semibold tracking-[-0.02em] text-sb-text">Detected account details</h3>
+                <Badge kind="success">Verified</Badge>
+              </div>
+              <DescriptionList
+                items={[
+                  { label: 'Region', value: `${accountInfo.region} — ${accountInfo.regionName}` },
+                  { label: 'Product Code', value: accountInfo.productCode },
+                  { label: 'Tariff Code', value: accountInfo.tariffCode },
+                  { label: 'MPAN', value: accountInfo.mpan },
+                  ...(accountInfo.meterSerial
+                    ? [{ label: 'Meter Serial', value: accountInfo.meterSerial }]
+                    : []),
+                ]}
+              />
+            </Card>
+          ) : null}
+        </>
+      ) : null}
 
       <SaveButton saving={saving} message={message} onSave={save} />
     </div>

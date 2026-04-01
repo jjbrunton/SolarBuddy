@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Card, CardHeader } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { PeriodSelector } from '@/components/analytics/PeriodSelector';
 import { StatCard } from '@/components/analytics/StatCard';
 
@@ -66,10 +68,12 @@ export default function RateTrendsView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-sb-text">Rate Trends</h1>
-        <PeriodSelector periods={PERIODS} selected={period} />
-      </div>
+      <PageHeader
+        eyebrow="Analytics"
+        title="Rate trends"
+        description="Compare today’s slot prices with recent history to spot whether the current tariff horizon is unusually cheap or expensive."
+        actions={<PeriodSelector periods={PERIODS} selected={period} />}
+      />
 
       {data && (
         <div className="grid grid-cols-3 gap-3">
@@ -94,13 +98,14 @@ export default function RateTrendsView() {
       )}
 
       <Card>
-        <CardHeader title="Today vs Historical (by time of day)" />
+        <CardHeader title="Today vs historical (by time of day)" subtitle="Time-of-day comparison between the current day and the selected historical baseline." />
         {isLoading && !data ? (
           <p className="py-12 text-center text-sb-text-muted">Loading rate trends...</p>
         ) : !data?.time_of_day.length ? (
-          <p className="py-12 text-center text-sb-text-muted">
-            Not enough historical rate data for comparison.
-          </p>
+          <EmptyState
+            title="Not enough historical rate data"
+            description="SolarBuddy needs a larger history of imported rates before it can compare today's slot prices against prior periods."
+          />
         ) : (
           <RateComparisonChart data={data.time_of_day} />
         )}
@@ -108,26 +113,26 @@ export default function RateTrendsView() {
 
       {data && data.daily_averages.length > 0 && (
         <Card>
-          <CardHeader title="Daily Averages" />
+          <CardHeader title="Daily averages" subtitle="Average, minimum, and maximum rate for each stored day in the comparison period." />
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-sb-border text-xs text-sb-text-muted">
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2">Avg</th>
-                  <th className="px-3 py-2">Min</th>
-                  <th className="px-3 py-2">Max</th>
-                  <th className="px-3 py-2">Negative Slots</th>
+                <tr className="border-b border-sb-border text-xs uppercase tracking-[0.16em] text-sb-text-subtle">
+                  <th className="px-3 py-3">Date</th>
+                  <th className="px-3 py-3">Avg</th>
+                  <th className="px-3 py-3">Min</th>
+                  <th className="px-3 py-3">Max</th>
+                  <th className="px-3 py-3">Negative Slots</th>
                 </tr>
               </thead>
               <tbody>
                 {data.daily_averages.map((d) => (
                   <tr key={d.date} className="border-b border-sb-border/50">
-                    <td className="px-3 py-2 text-sb-text">{d.date}</td>
-                    <td className="px-3 py-2 text-sb-text">{d.avg_price}p</td>
-                    <td className="px-3 py-2 text-sb-success">{d.min_price}p</td>
-                    <td className="px-3 py-2 text-sb-danger">{d.max_price}p</td>
-                    <td className="px-3 py-2 text-sb-text-muted">{d.negative_slots}</td>
+                    <td className="px-3 py-3 text-sb-text">{d.date}</td>
+                    <td className="px-3 py-3 text-sb-text">{d.avg_price}p</td>
+                    <td className="px-3 py-3 text-sb-success">{d.min_price}p</td>
+                    <td className="px-3 py-3 text-sb-danger">{d.max_price}p</td>
+                    <td className="px-3 py-3 text-sb-text-muted">{d.negative_slots}</td>
                   </tr>
                 ))}
               </tbody>

@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { AlertCircle, CheckCircle, Info, AlertTriangle } from 'lucide-react';
 
 interface Event {
@@ -37,14 +39,24 @@ export default function ActivityView({ initialEvents }: { initialEvents: { id: n
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">Activity</h1>
+      <PageHeader
+        eyebrow="Operations"
+        title="Activity log"
+        description="Monitor the latest operator-facing events and system decisions in a single chronological feed."
+      />
 
       <Card>
-        <CardHeader title="Recent Events" />
+        <CardHeader
+          title="Recent events"
+          subtitle="This stream captures notable scheduler, telemetry, and integration events as SolarBuddy runs."
+        />
         {loading ? (
           <p className="text-sb-text-muted">Loading events...</p>
         ) : events.length === 0 ? (
-          <p className="text-sb-text-muted">No events recorded yet. Events will appear as the system operates.</p>
+          <EmptyState
+            title="No events recorded yet"
+            description="Events will appear here once SolarBuddy starts recording scheduler runs, telemetry transitions, and integration activity."
+          />
         ) : (
           <div className="space-y-2">
             {events.map((event) => {
@@ -52,7 +64,7 @@ export default function ActivityView({ initialEvents }: { initialEvents: { id: n
               return (
                 <div
                   key={event.id}
-                  className="flex items-start gap-3 rounded-md bg-sb-bg px-3 py-2.5"
+                  className="flex items-start gap-3 rounded-2xl border border-sb-border/70 bg-sb-surface-muted/80 px-4 py-3"
                 >
                   <Icon size={16} className={`mt-0.5 shrink-0 text-sb-${kind === 'danger' ? 'danger' : kind}`} />
                   <div className="flex-1 min-w-0">

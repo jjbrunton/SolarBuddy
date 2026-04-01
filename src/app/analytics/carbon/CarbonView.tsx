@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Card, CardHeader } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { PeriodSelector } from '@/components/analytics/PeriodSelector';
 import { StatCard } from '@/components/analytics/StatCard';
 
@@ -56,10 +58,12 @@ export default function CarbonView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-sb-text">Carbon Intensity</h1>
-        <PeriodSelector periods={PERIODS} selected={period} />
-      </div>
+      <PageHeader
+        eyebrow="Analytics"
+        title="Carbon intensity"
+        description="Track grid carbon intensity and estimate how much carbon your solar generation has already avoided."
+        actions={<PeriodSelector periods={PERIODS} selected={period} />}
+      />
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -95,13 +99,14 @@ export default function CarbonView() {
       )}
 
       <Card>
-        <CardHeader title="Half-Hourly Carbon Intensity" />
+        <CardHeader title="Half-hourly carbon intensity" subtitle="Current and forecast grid intensity over the selected horizon." />
         {isLoading && halfhourly.length === 0 ? (
           <p className="py-12 text-center text-sb-text-muted">Loading carbon data...</p>
         ) : halfhourly.length === 0 ? (
-          <p className="py-12 text-center text-sb-text-muted">
-            No carbon intensity data available.
-          </p>
+          <EmptyState
+            title="No carbon data available"
+            description="SolarBuddy needs imported carbon intensity records before this chart can be rendered."
+          />
         ) : (
           <CarbonIntensityChart data={halfhourly} />
         )}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getSettings } from '@/lib/config';
 import { getState } from '@/lib/state';
 import fs from 'fs';
 import path from 'path';
@@ -8,6 +9,7 @@ const startTime = Date.now();
 
 export async function GET() {
   const db = getDb();
+  const settings = getSettings();
   const state = getState();
 
   // DB file size
@@ -50,6 +52,8 @@ export async function GET() {
         : false,
       last_rate_fetch: latestRate?.latest || null,
       last_schedule: latestSchedule?.latest || null,
+      scheduler_configured: Boolean(settings.octopus_region),
+      auto_schedule_enabled: settings.auto_schedule === 'true',
     },
     stats: {
       readings_count: readingsCount.count,

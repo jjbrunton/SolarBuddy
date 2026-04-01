@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardHeader } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Play, RefreshCw } from 'lucide-react';
 
 interface TaskResult {
@@ -48,15 +50,19 @@ export default function TasksView() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-sb-text">Scheduled Tasks</h1>
+      <PageHeader
+        eyebrow="Operations"
+        title="Scheduled tasks"
+        description="Run key background tasks manually and check the latest outcome reported by each server-side job."
+      />
 
       {tasks.map((task) => (
         <Card key={task.name}>
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="font-medium text-sb-text">{task.name}</h3>
-              <p className="mt-1 text-sm text-sb-text-muted">{task.description}</p>
-              <p className="mt-2 text-xs text-sb-text-muted">Schedule: {task.schedule}</p>
+              <h3 className="text-lg font-semibold tracking-[-0.02em] text-sb-text">{task.name}</h3>
+              <p className="mt-1 text-sm leading-6 text-sb-text-muted">{task.description}</p>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Schedule: {task.schedule}</p>
               {results[task.name] && (
                 <div className="mt-2">
                   <Badge kind={results[task.name].success ? 'success' : 'danger'}>
@@ -65,14 +71,14 @@ export default function TasksView() {
                 </div>
               )}
             </div>
-            <button
+            <Button
               onClick={() => runTask(task.name, task.endpoint)}
               disabled={running === task.name}
-              className="flex items-center gap-2 rounded-md bg-sb-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-sb-accent-hover disabled:opacity-50"
+              size="sm"
             >
               <task.icon size={14} className={running === task.name ? 'animate-spin' : ''} />
-              {running === task.name ? 'Running...' : 'Run Now'}
-            </button>
+              {running === task.name ? 'Running…' : 'Run now'}
+            </Button>
           </div>
         </Card>
       ))}
