@@ -1,19 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { saveSettings, getSettings, type AppSettings } from '@/lib/config';
+import { saveSettings, getSettings, SETTING_KEY_SET, type AppSettings } from '@/lib/config';
 import { getDb } from '@/lib/db';
-
-const VALID_SETTING_KEYS = new Set<string>([
-  'mqtt_host', 'mqtt_port', 'mqtt_username', 'mqtt_password',
-  'octopus_region', 'octopus_product_code', 'octopus_api_key', 'octopus_account',
-  'octopus_mpan', 'octopus_meter_serial',
-  'charging_strategy',
-  'charge_hours', 'price_threshold', 'min_soc_target',
-  'charge_window_start', 'charge_window_end', 'default_work_mode',
-  'charge_rate', 'auto_schedule',
-  'battery_capacity_kwh', 'max_charge_power_kw', 'estimated_consumption_w',
-]);
 
 export async function saveSettingsAction(
   settings: Record<string, string>,
@@ -21,7 +10,7 @@ export async function saveSettingsAction(
   // Validate: only allow known keys with string values
   const validated: Partial<AppSettings> = {};
   for (const [key, value] of Object.entries(settings)) {
-    if (!VALID_SETTING_KEYS.has(key)) continue;
+    if (!SETTING_KEY_SET.has(key)) continue;
     if (typeof value !== 'string') {
       return { ok: false, error: `Invalid value for ${key}: must be a string` };
     }

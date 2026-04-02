@@ -31,6 +31,9 @@ export interface AppSettings {
   // Negative pricing
   negative_price_charging: string;
   negative_price_pre_discharge: string;
+  smart_discharge: string;
+  discharge_price_threshold: string;
+  discharge_soc_floor: string;
   // Peak protection
   peak_protection: string;
   peak_period_start: string;
@@ -38,7 +41,7 @@ export interface AppSettings {
   peak_soc_target: string;
 }
 
-const DEFAULTS: AppSettings = {
+export const DEFAULT_SETTINGS: AppSettings = {
   mqtt_host: '',
   mqtt_port: '1883',
   mqtt_username: '',
@@ -67,11 +70,17 @@ const DEFAULTS: AppSettings = {
   tariff_standard_rate: '24.5',
   negative_price_charging: 'true',
   negative_price_pre_discharge: 'false',
+  smart_discharge: 'false',
+  discharge_price_threshold: '0',
+  discharge_soc_floor: '20',
   peak_protection: 'false',
   peak_period_start: '16:00',
   peak_period_end: '19:00',
   peak_soc_target: '90',
 };
+
+export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];
+export const SETTING_KEY_SET = new Set<string>(SETTING_KEYS);
 
 export function getSettings(): AppSettings {
   const db = getDb();
@@ -80,13 +89,13 @@ export function getSettings(): AppSettings {
   for (const row of rows) {
     stored[row.key] = row.value;
   }
-  return { ...DEFAULTS, ...stored };
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export function getSetting(key: keyof AppSettings): string {
   const db = getDb();
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
-  return row?.value ?? DEFAULTS[key];
+  return row?.value ?? DEFAULT_SETTINGS[key];
 }
 
 export function saveSettings(settings: Partial<AppSettings>) {

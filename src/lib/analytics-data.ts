@@ -462,37 +462,3 @@ export function getRatesCompareData(compare: string) {
     time_of_day,
   };
 }
-
-/* ─── Events Log ─── */
-
-export interface EventLogEntry {
-  id: number;
-  timestamp: string;
-  level: string;
-  category: string;
-  message: string;
-}
-
-export function getEventsLog(): EventLogEntry[] {
-  const db = getDb();
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-      level TEXT NOT NULL DEFAULT 'info',
-      category TEXT NOT NULL,
-      message TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
-  `);
-
-  return db
-    .prepare(
-      `SELECT id, timestamp, level, category, message
-       FROM events
-       ORDER BY timestamp DESC
-       LIMIT 100`
-    )
-    .all() as EventLogEntry[];
-}

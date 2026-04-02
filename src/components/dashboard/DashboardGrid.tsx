@@ -3,14 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Settings2, RotateCcw, Plus, X } from 'lucide-react';
 import { WidgetWrapper } from './WidgetWrapper';
+import type { WidgetDefinition } from './widget-registry';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/ui/PageHeader';
-
-export interface WidgetDefinition {
-  id: string;
-  label: string;
-  component: React.ComponentType;
-}
 
 interface WidgetState {
   id: string;

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getEventsLog } from '@/lib/analytics-data';
+import { getEventsLog } from '@/lib/events';
 import { getRecentMqttLogs } from '@/lib/mqtt/logs';
 import LogsView from './LogsView';
 

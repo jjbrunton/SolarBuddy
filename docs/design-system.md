@@ -38,6 +38,7 @@ This document is the canonical guide for styling work in the UI. Read it before 
 - Summary numbers should use large, high-contrast typography with restrained supporting copy.
 - Tables should use the same header treatment: uppercase micro-labels, subtle borders, and padded rows.
 - Description lists should use the shared [`src/components/ui/DescriptionList.tsx`](../src/components/ui/DescriptionList.tsx) component rather than bespoke label-value layouts.
+- Dashboard overview widgets should not repeat the same signal in multiple panels. If a live metric is already visible in a primary widget, neighbouring widgets should add context or link to a deeper workflow instead of restating that value.
 
 ### 5. Keep forms consistent
 
@@ -101,6 +102,15 @@ When a new visual pattern appears in more than one route, move it into this shar
 - Empty or loading states should use the same copy and alignment conventions as the rest of the app.
 - Missing field values should use the shared placeholder treatment instead of raw `--` or em-dash fallbacks.
 - For chart tooltips, prefer the shared tooltip primitives in [`src/components/ui/ChartTooltip.tsx`](../src/components/ui/ChartTooltip.tsx).
+- Time-series charts must use a unique slot identifier such as the ISO `valid_from` value for `XAxis.dataKey`, then format the visible tick text separately. Do not use a display-only `HH:MM` string as the category key because repeated wall-clock times can misalign hover state and tooltips.
+
+## Live Telemetry Diagrams
+
+- The dashboard energy-flow widget should allocate directed paths from the current telemetry rather than assuming a single source per node.
+- `grid_power > 0` means import and `grid_power < 0` means export.
+- `battery_power > 0` means the battery is charging and `battery_power < 0` means it is discharging.
+- When the battery is charging, the diagram should only render `solar -> battery` after solar has first covered the current home load. Any remaining battery charge demand must render as `grid -> battery`.
+- Export can continue to use the shared `home -> grid` route as the outbound path even when the surplus originated from solar or battery discharge.
 
 ## Dos and Don'ts
 

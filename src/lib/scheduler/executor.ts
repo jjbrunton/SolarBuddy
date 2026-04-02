@@ -197,11 +197,25 @@ function updateScheduleStatus(window: ChargeWindow, status: string, notes?: stri
     const update = notes
       ? db.prepare('UPDATE schedules SET status = ?, executed_at = ?, notes = ? WHERE slot_start = ? AND status != ?')
       : db.prepare('UPDATE schedules SET status = ?, executed_at = ? WHERE slot_start = ? AND status != ?');
+    const slotAction = window.type === 'discharge' ? 'discharge' : 'charge';
+    const updatePlanSlots = notes
+      ? db.prepare(
+          `UPDATE plan_slots
+           SET status = ?, executed_at = ?, notes = ?
+           WHERE slot_start >= ? AND slot_end <= ? AND action = ? AND status != ?`,
+        )
+      : db.prepare(
+          `UPDATE plan_slots
+           SET status = ?, executed_at = ?
+           WHERE slot_start >= ? AND slot_end <= ? AND action = ? AND status != ?`,
+        );
 
     if (notes) {
       update.run(status, new Date().toISOString(), notes, window.slot_start, 'completed');
+      updatePlanSlots.run(status, new Date().toISOString(), notes, window.slot_start, window.slot_end, slotAction, 'completed');
     } else {
       update.run(status, new Date().toISOString(), window.slot_start, 'completed');
+      updatePlanSlots.run(status, new Date().toISOString(), window.slot_start, window.slot_end, slotAction, 'completed');
     }
   } catch (err) {
     console.error('[Executor] Failed to update schedule status:', err);

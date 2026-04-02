@@ -1,5 +1,6 @@
 import { AgileRate } from '../octopus/rates';
 import { AppSettings } from '../config';
+import { toSlotKey } from '../slot-key';
 import { ChargeWindow, mergeAdjacentSlots } from './engine';
 
 export function findNegativePriceSlots(
@@ -23,7 +24,7 @@ export function findPreDischargeSlots(
   if (settings.negative_price_pre_discharge !== 'true') return [];
   if (negativeWindows.length === 0) return [];
 
-  const rateMap = new Map(rates.map((r) => [r.valid_from, r]));
+  const rateMap = new Map(rates.map((r) => [toSlotKey(r.valid_from), r]));
   const dischargeSlots: AgileRate[] = [];
 
   for (const window of negativeWindows) {
@@ -31,9 +32,7 @@ export function findPreDischargeSlots(
     const windowStart = new Date(window.slot_start);
     const preSlotStart = new Date(windowStart.getTime() - 30 * 60 * 1000);
 
-    // Try both ISO formats (with and without milliseconds) for lookup
-    const preRate = rateMap.get(preSlotStart.toISOString())
-      ?? rateMap.get(preSlotStart.toISOString().replace('.000Z', 'Z'));
+    const preRate = rateMap.get(toSlotKey(preSlotStart));
 
     if (preRate && preRate.price_inc_vat >= 0) {
       dischargeSlots.push(preRate);

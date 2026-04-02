@@ -1,5 +1,8 @@
 import { AgileRate } from '../octopus/rates';
 import { AppSettings } from '../config';
+import { type PlanAction } from '../plan-actions';
+import { computeSOCForecast } from '../soc-forecast';
+import { buildSmartDischargePlan } from './discharge';
 import { findNegativePriceSlots, findPreDischargeSlots } from './negative';
 import { findPeakPrepSlots } from './peak';
 
@@ -25,6 +28,20 @@ export interface ChargeWindow {
 export interface PlanningContext {
   currentSoc?: number | null;
   now?: Date;
+}
+
+export interface PlannedSlot {
+  slot_start: string;
+  slot_end: string;
+  action: PlanAction;
+  reason: string;
+  expected_soc_after: number | null;
+  expected_value: number | null;
+}
+
+export interface SchedulePlan {
+  windows: ChargeWindow[];
+  slots: PlannedSlot[];
 }
 
 export function getChargingStrategy(settings: Pick<AppSettings, 'charging_strategy'>): ChargingStrategy {
@@ -112,7 +129,7 @@ function clampPercentage(value: number): number | null {
   return Math.min(100, Math.max(0, value));
 }
 
-function isEligibleRate(
+export function isEligibleRate(
   rate: AgileRate,
   settings: AppSettings,
   strategy: ChargingStrategy,
@@ -194,23 +211,58 @@ export function buildChargePlan(
   settings: AppSettings,
   context: PlanningContext = {},
 ): ChargeWindow[] {
+  return buildSchedulePlan(rates, settings, context).windows;
+}
+
+export function buildSchedulePlan(
+  rates: AgileRate[],
+  settings: AppSettings,
+  context: PlanningContext = {},
+): SchedulePlan {
+  const now = context.now ?? new Date();
   const baseWindows = findCheapestSlots(rates, settings, context);
   const negativeWindows = findNegativePriceSlots(rates, settings);
   const preDischargeWindows = findPreDischargeSlots(rates, negativeWindows, settings);
   const peakPrepWindows = findPeakPrepSlots(rates, settings, context);
+  const smartDischargePlan = buildSmartDischargePlan(
+    rates,
+    settings,
+    [...baseWindows, ...negativeWindows, ...peakPrepWindows],
+    preDischargeWindows,
+    context,
+  );
 
-  return deduplicateAndMerge([
+  const windows = deduplicateAndMerge([
     ...baseWindows,
     ...negativeWindows,
+    ...smartDischargePlan.extraChargeWindows,
     ...peakPrepWindows,
-  ], preDischargeWindows);
+  ], [
+    ...preDischargeWindows,
+    ...smartDischargePlan.dischargeWindows,
+  ]);
+
+  return {
+    windows,
+    slots: buildPlannedSlots(rates, windows, {
+      now,
+      currentSoc: context.currentSoc ?? null,
+      settings,
+      sourceKeys: {
+        negativeCharge: flattenWindowSlotKeys(negativeWindows),
+        peakCharge: flattenWindowSlotKeys(peakPrepWindows),
+        extraCharge: flattenWindowSlotKeys(smartDischargePlan.extraChargeWindows),
+        preDischarge: flattenWindowSlotKeys(preDischargeWindows),
+        smartDischarge: flattenWindowSlotKeys(smartDischargePlan.dischargeWindows),
+      },
+    }),
+  };
 }
 
 export function deduplicateAndMerge(
   chargeWindows: ChargeWindow[],
   dischargeWindows: ChargeWindow[] = [],
 ): ChargeWindow[] {
-  // Flatten charge windows to individual slots, deduplicate by valid_from
   const chargeSlotMap = new Map<string, AgileRate>();
   for (const w of chargeWindows) {
     for (const slot of w.slots) {
@@ -224,19 +276,207 @@ export function deduplicateAndMerge(
 
   const merged = mergeAdjacentSlots(chargeSlots);
 
-  // Discharge windows are kept separate (don't merge with charge)
-  // but remove any discharge slot that overlaps a charge slot
-  const dischargeFiltered: ChargeWindow[] = [];
+  const dischargeSlotMap = new Map<string, AgileRate>();
   for (const dw of dischargeWindows) {
-    const nonOverlapping = dw.slots.filter((s) => !chargeSlotMap.has(s.valid_from));
-    if (nonOverlapping.length > 0) {
-      nonOverlapping.sort((a, b) => a.valid_from.localeCompare(b.valid_from));
-      dischargeFiltered.push(...mergeAdjacentSlots(nonOverlapping, 'discharge'));
+    for (const slot of dw.slots) {
+      if (!chargeSlotMap.has(slot.valid_from)) {
+        dischargeSlotMap.set(slot.valid_from, slot);
+      }
     }
   }
 
-  // Discharge windows go first (they happen before negative charge windows)
-  return [...dischargeFiltered, ...merged].sort((a, b) =>
+  const dischargeSlots = [...dischargeSlotMap.values()].sort((a, b) =>
+    a.valid_from.localeCompare(b.valid_from),
+  );
+  const mergedDischarge = mergeAdjacentSlots(dischargeSlots, 'discharge');
+
+  return [...mergedDischarge, ...merged].sort((a, b) =>
     a.slot_start.localeCompare(b.slot_start),
   );
+}
+
+function buildPlannedSlots(
+  rates: AgileRate[],
+  windows: ChargeWindow[],
+  {
+    now,
+    currentSoc,
+    settings,
+    sourceKeys,
+  }: {
+    now: Date;
+    currentSoc: number | null;
+    settings: AppSettings;
+    sourceKeys: {
+      negativeCharge: Set<string>;
+      peakCharge: Set<string>;
+      extraCharge: Set<string>;
+      preDischarge: Set<string>;
+      smartDischarge: Set<string>;
+    };
+  },
+): PlannedSlot[] {
+  const futureRates = [...rates]
+    .sort((a, b) => a.valid_from.localeCompare(b.valid_from))
+    .filter((rate) => new Date(rate.valid_to).getTime() > now.getTime());
+
+  const chargeKeys = new Set<string>();
+  const dischargeKeys = new Set<string>();
+  for (const window of windows) {
+    for (const slot of window.slots) {
+      if (window.type === 'discharge') {
+        dischargeKeys.add(slot.valid_from);
+      } else {
+        chargeKeys.add(slot.valid_from);
+      }
+    }
+  }
+
+  const actions: PlanAction[] = futureRates.map((rate) => {
+    if (chargeKeys.has(rate.valid_from)) return 'charge' as const;
+    if (dischargeKeys.has(rate.valid_from)) return 'discharge' as const;
+    return 'do_nothing' as const;
+  });
+
+  const holdIndices = deriveHoldIndices(futureRates, actions);
+  const strategicHoldKeys = new Set<string>(
+    [...holdIndices].map((index) => futureRates[index]?.valid_from).filter((value): value is string => Boolean(value)),
+  );
+
+  for (let index = 0; index < actions.length; index += 1) {
+    if (actions[index] === 'do_nothing') {
+      actions[index] = 'hold';
+    }
+  }
+
+  const slotActions = new Map<number, PlanAction>();
+  actions.forEach((action, index) => {
+    if (action !== 'do_nothing') {
+      slotActions.set(index, action);
+    }
+  });
+
+  const expectedSocAfter =
+    currentSoc === null
+      ? futureRates.map(() => null)
+      : computeSOCForecast({
+          currentSOC: currentSoc,
+          currentSlotIndex: 0,
+          slotActions,
+          totalSlots: futureRates.length,
+          chargeRatePercent: parseFloat(settings.charge_rate) || 100,
+          batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
+          maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
+          estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
+        }).map((value) => Math.round(value * 10) / 10);
+
+  const perSlotEnergyKwh = ((parseFloat(settings.max_charge_power_kw) || 3.6) * ((parseFloat(settings.charge_rate) || 100) / 100)) * HALF_HOUR_HOURS;
+
+  return futureRates.map((rate, index) => {
+    const action = actions[index];
+    let expectedValue: number | null = null;
+
+    if (action === 'charge') {
+      expectedValue = Math.round(-perSlotEnergyKwh * rate.price_inc_vat * 100) / 100;
+    } else if (action === 'discharge') {
+      expectedValue = Math.round(perSlotEnergyKwh * rate.price_inc_vat * 100) / 100;
+    }
+
+    return {
+      slot_start: rate.valid_from,
+      slot_end: rate.valid_to,
+      action,
+      reason: describePlannedAction(action, rate.valid_from, sourceKeys, strategicHoldKeys),
+      expected_soc_after: expectedSocAfter[index],
+      expected_value: expectedValue,
+    };
+  });
+}
+
+function flattenWindowSlotKeys(windows: ChargeWindow[]): Set<string> {
+  const keys = new Set<string>();
+  for (const window of windows) {
+    for (const slot of window.slots) {
+      keys.add(slot.valid_from);
+    }
+  }
+  return keys;
+}
+
+function deriveHoldIndices(rates: AgileRate[], actions: PlanAction[]): Set<number> {
+  const holdIndices = new Set<number>();
+  const chargeIndices = new Set<number>();
+  const dischargeIndices: number[] = [];
+
+  actions.forEach((action, index) => {
+    if (action === 'charge') {
+      chargeIndices.add(index);
+    } else if (action === 'discharge') {
+      dischargeIndices.push(index);
+    }
+  });
+
+  for (let index = 0; index < actions.length; index += 1) {
+    if (actions[index] !== 'do_nothing') continue;
+
+    const nextDischarge = dischargeIndices.find((candidateIndex) => candidateIndex > index);
+    if (nextDischarge === undefined) continue;
+
+    const hasChargeBeforeNextDischarge = [...chargeIndices].some((candidateIndex) =>
+      candidateIndex > index && candidateIndex < nextDischarge,
+    );
+    if (hasChargeBeforeNextDischarge) continue;
+
+    if (rates[index].price_inc_vat < rates[nextDischarge].price_inc_vat) {
+      holdIndices.add(index);
+    }
+  }
+
+  return holdIndices;
+}
+
+function describePlannedAction(
+  action: PlanAction,
+  slotStart: string,
+  sourceKeys: {
+    negativeCharge: Set<string>;
+    peakCharge: Set<string>;
+    extraCharge: Set<string>;
+    preDischarge: Set<string>;
+    smartDischarge: Set<string>;
+  },
+  strategicHoldKeys: Set<string>,
+): string {
+  if (action === 'charge') {
+    if (sourceKeys.negativeCharge.has(slotStart)) {
+      return 'Negative-price charge slot.';
+    }
+    if (sourceKeys.extraCharge.has(slotStart)) {
+      return 'Cheap recharge slot added to keep a later discharge or SOC target feasible.';
+    }
+    if (sourceKeys.peakCharge.has(slotStart)) {
+      return 'Pre-charge slot selected for peak protection.';
+    }
+    return 'Charge slot selected by the planner.';
+  }
+
+  if (action === 'discharge') {
+    if (sourceKeys.preDischarge.has(slotStart)) {
+      return 'Pre-discharge slot reserved before a negative-price charging window.';
+    }
+    if (sourceKeys.smartDischarge.has(slotStart)) {
+      return 'Discharge slot selected by the arbitrage planner.';
+    }
+    return 'Discharge slot selected by the planner.';
+  }
+
+  if (action === 'hold') {
+    if (strategicHoldKeys.has(slotStart)) {
+      return 'Hold battery for a better discharge opportunity later in the tariff horizon.';
+    }
+
+    return 'Hold battery and prevent discharge in this slot.';
+  }
+
+  return 'No forced battery action planned for this slot.';
 }

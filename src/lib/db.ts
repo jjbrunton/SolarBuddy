@@ -50,6 +50,22 @@ function initSchema(db: Database.Database) {
       notes TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS plan_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      slot_start TEXT NOT NULL,
+      slot_end TEXT NOT NULL,
+      action TEXT NOT NULL,
+      reason TEXT,
+      expected_soc_after REAL,
+      expected_value REAL,
+      status TEXT DEFAULT 'planned',
+      created_at TEXT NOT NULL,
+      executed_at TEXT,
+      notes TEXT,
+      UNIQUE(slot_start)
+    );
+
     CREATE TABLE IF NOT EXISTS readings (
       timestamp TEXT NOT NULL,
       battery_soc REAL,
@@ -98,6 +114,9 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_rates_valid_from ON rates(valid_from);
     CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
     CREATE INDEX IF NOT EXISTS idx_schedules_status ON schedules(status, date);
+    CREATE INDEX IF NOT EXISTS idx_plan_slots_date ON plan_slots(date);
+    CREATE INDEX IF NOT EXISTS idx_plan_slots_status ON plan_slots(status, date);
+    CREATE INDEX IF NOT EXISTS idx_plan_slots_start ON plan_slots(slot_start);
     CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_mqtt_logs_ts ON mqtt_logs(timestamp);
     CREATE INDEX IF NOT EXISTS idx_carbon_period ON carbon_intensity(period_from);
@@ -141,5 +160,31 @@ function initSchema(db: Database.Database) {
   const scheduleColNames = new Set(scheduleCols.map((c) => c.name));
   if (!scheduleColNames.has('type')) {
     db.exec("ALTER TABLE schedules ADD COLUMN type TEXT DEFAULT 'charge'");
+  }
+
+  const planSlotCols = db.prepare('PRAGMA table_info(plan_slots)').all() as { name: string }[];
+  const planSlotColNames = new Set(planSlotCols.map((c) => c.name));
+  if (planSlotCols.length > 0) {
+    if (!planSlotColNames.has('reason')) {
+      db.exec('ALTER TABLE plan_slots ADD COLUMN reason TEXT');
+    }
+    if (!planSlotColNames.has('expected_soc_after')) {
+      db.exec('ALTER TABLE plan_slots ADD COLUMN expected_soc_after REAL');
+    }
+    if (!planSlotColNames.has('expected_value')) {
+      db.exec('ALTER TABLE plan_slots ADD COLUMN expected_value REAL');
+    }
+    if (!planSlotColNames.has('status')) {
+      db.exec("ALTER TABLE plan_slots ADD COLUMN status TEXT DEFAULT 'planned'");
+    }
+    if (!planSlotColNames.has('created_at')) {
+      db.exec("ALTER TABLE plan_slots ADD COLUMN created_at TEXT DEFAULT ''");
+    }
+    if (!planSlotColNames.has('executed_at')) {
+      db.exec('ALTER TABLE plan_slots ADD COLUMN executed_at TEXT');
+    }
+    if (!planSlotColNames.has('notes')) {
+      db.exec('ALTER TABLE plan_slots ADD COLUMN notes TEXT');
+    }
   }
 }

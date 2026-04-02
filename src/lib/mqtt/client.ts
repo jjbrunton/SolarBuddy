@@ -1,6 +1,7 @@
 import mqtt, { MqttClient } from 'mqtt';
 import { getSettings } from '../config';
 import { updateState } from '../state';
+import { appendEvent } from '../events';
 import { appendMqttLog } from './logs';
 import { SUBSCRIBE_TOPICS, parseTopicKey, STRING_KEYS } from './topics';
 
@@ -17,6 +18,11 @@ export function connectMqtt() {
   const settings = getSettings();
   if (!settings.mqtt_host) {
     console.log('[MQTT] No host configured, skipping connection');
+    appendEvent({
+      level: 'warning',
+      category: 'mqtt',
+      message: 'Connection skipped because no MQTT host is configured.',
+    });
     appendMqttLog({
       level: 'warning',
       direction: 'system',
@@ -54,6 +60,11 @@ export function connectMqtt() {
 
   client.on('connect', () => {
     console.log('[MQTT] Connected');
+    appendEvent({
+      level: 'success',
+      category: 'mqtt',
+      message: `Connected to ${url}.`,
+    });
     appendMqttLog({
       level: 'success',
       direction: 'system',
@@ -64,6 +75,11 @@ export function connectMqtt() {
     client.subscribe(SUBSCRIBE_TOPICS as unknown as string[], (err) => {
       if (err) {
         console.error('[MQTT] Subscribe error:', err.message);
+        appendEvent({
+          level: 'error',
+          category: 'mqtt',
+          message: `Subscribe error: ${err.message}`,
+        });
         appendMqttLog({
           level: 'error',
           direction: 'system',
@@ -107,6 +123,11 @@ export function connectMqtt() {
 
   client.on('error', (err) => {
     console.error('[MQTT] Error:', err.message);
+    appendEvent({
+      level: 'error',
+      category: 'mqtt',
+      message: `MQTT error: ${err.message}`,
+    });
     appendMqttLog({
       level: 'error',
       direction: 'system',
@@ -117,6 +138,11 @@ export function connectMqtt() {
 
   client.on('close', () => {
     console.log('[MQTT] Connection closed');
+    appendEvent({
+      level: 'warning',
+      category: 'mqtt',
+      message: 'Connection closed.',
+    });
     appendMqttLog({
       level: 'warning',
       direction: 'system',
@@ -128,6 +154,11 @@ export function connectMqtt() {
 
   client.on('reconnect', () => {
     console.log('[MQTT] Reconnecting...');
+    appendEvent({
+      level: 'info',
+      category: 'mqtt',
+      message: 'Reconnecting to broker.',
+    });
     appendMqttLog({
       level: 'info',
       direction: 'system',
@@ -141,6 +172,11 @@ export function disconnectMqtt() {
   if (g.__solarbuddy_mqtt) {
     g.__solarbuddy_mqtt.end(true);
     g.__solarbuddy_mqtt = null;
+    appendEvent({
+      level: 'info',
+      category: 'mqtt',
+      message: 'Disconnected by application.',
+    });
     appendMqttLog({
       level: 'info',
       direction: 'system',

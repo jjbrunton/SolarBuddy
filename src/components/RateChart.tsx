@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
+import { ACTION_COLORS, ACTION_LABELS, type PlanAction } from '@/lib/plan-actions';
 
 interface Rate {
   valid_from: string;
@@ -13,12 +15,17 @@ interface Schedule {
   slot_start: string;
   slot_end: string;
   status: string;
+  type?: 'charge' | 'discharge';
+}
+
+interface PlannedSlotRow {
+  slot_start: string;
+  action: PlanAction;
 }
 
 interface ChartData {
-  time: string;
   price: number;
-  isScheduled: boolean;
+  plannedAction: PlanAction;
   isCurrent: boolean;
   fullTime: string;
 }
@@ -37,32 +44,32 @@ export default function RateChart() {
 
       const rates: Rate[] = ratesJson.rates || [];
       const schedules: Schedule[] = scheduleJson.schedules || [];
+      const plannedSlots: PlannedSlotRow[] = scheduleJson.plan_slots || [];
 
       const now = new Date();
 
-      const scheduledTimes = new Set<string>();
+      const plannedActionMap = new Map<string, PlanAction>();
+      for (const slot of plannedSlots) {
+        plannedActionMap.set(toSlotKey(slot.slot_start), slot.action);
+      }
+
       for (const s of schedules) {
         if (s.status === 'planned' || s.status === 'active') {
-          // Mark all half-hour slots in this window
-          let cursor = new Date(s.slot_start);
-          const end = new Date(s.slot_end);
-          while (cursor < end) {
-            scheduledTimes.add(cursor.toISOString());
-            cursor = new Date(cursor.getTime() + 30 * 60 * 1000);
+          for (const slotKey of expandHalfHourSlotKeys(s.slot_start, s.slot_end)) {
+            if (!plannedActionMap.has(slotKey)) {
+              plannedActionMap.set(slotKey, s.type === 'discharge' ? 'discharge' : 'charge');
+            }
           }
         }
       }
 
       const chartData: ChartData[] = rates.map((rate) => {
         const dt = new Date(rate.valid_from);
-        const hours = dt.getHours().toString().padStart(2, '0');
-        const mins = dt.getMinutes().toString().padStart(2, '0');
         const isCurrent = now >= dt && now < new Date(rate.valid_to);
 
         return {
-          time: `${hours}:${mins}`,
           price: Math.round(rate.price_inc_vat * 100) / 100,
-          isScheduled: scheduledTimes.has(rate.valid_from),
+          plannedAction: plannedActionMap.get(toSlotKey(rate.valid_from)) ?? 'do_nothing',
           isCurrent,
           fullTime: rate.valid_from,
         };
@@ -143,9 +150,11 @@ export default function RateChart() {
             <span className="flex items-center gap-1">
               <span className="inline-block h-3 w-3 rounded bg-blue-500" /> Rate
             </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-3 w-3 rounded bg-green-500" /> Scheduled Charge
-            </span>
+            {(['charge', 'discharge', 'hold'] as PlanAction[]).map((action) => (
+              <span key={action} className="flex items-center gap-1">
+                <span className="inline-block h-3 w-3 rounded" style={{ backgroundColor: ACTION_COLORS[action] }} /> {ACTION_LABELS[action]}
+              </span>
+            ))}
             <span className="flex items-center gap-1">
               <span className="inline-block h-3 w-3 rounded border-2 border-yellow-400" /> Current
             </span>
@@ -153,10 +162,11 @@ export default function RateChart() {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
               <XAxis
-                dataKey="time"
+                dataKey="fullTime"
                 tick={{ fill: '#a1a1aa', fontSize: 11 }}
                 interval="preserveStartEnd"
                 tickCount={12}
+                tickFormatter={formatSlotTimeLabel}
               />
               <YAxis tick={{ fill: '#a1a1aa', fontSize: 11 }} />
               <Tooltip
@@ -166,7 +176,7 @@ export default function RateChart() {
                   borderRadius: '8px',
                   color: '#fafafa',
                 }}
-                labelFormatter={(label) => `Time: ${label}`}
+                labelFormatter={(label) => `Time: ${formatSlotTooltipLabel(label)}`}
                 formatter={(value) => [`${value}p/kWh`, 'Price']}
               />
               <ReferenceLine y={0} stroke="#666" />
@@ -174,7 +184,7 @@ export default function RateChart() {
                 {data.map((entry, index) => (
                   <Cell
                     key={index}
-                    fill={entry.isScheduled ? '#22c55e' : entry.price < 0 ? '#f59e0b' : '#3b82f6'}
+                    fill={entry.plannedAction !== 'do_nothing' ? ACTION_COLORS[entry.plannedAction] : entry.price < 0 ? '#f59e0b' : '#3b82f6'}
                     stroke={entry.isCurrent ? '#facc15' : 'none'}
                     strokeWidth={entry.isCurrent ? 2 : 0}
                   />

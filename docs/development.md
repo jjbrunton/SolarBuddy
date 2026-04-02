@@ -23,9 +23,12 @@ Most runtime configuration is managed through the web UI under **Settings**:
 
 1. Configure MQTT connectivity for Solar Assistant.
 2. Enter Octopus API credentials and verify the account.
-3. Configure charging behavior such as strategy, max charge slots, SOC target, overnight window for Night Fill, and auto-scheduling.
+3. Configure charging behavior such as strategy, max charge slots, SOC targets, discharge reserve floor, overnight window for Night Fill, and auto-scheduling.
    - `Night Fill` uses the overnight window and the max-slot cap.
    - `Opportunistic Top-up` plans across the currently published tariff horizon and uses live telemetry to avoid forcing grid charging while solar surplus is available.
+   - `Smart Discharge` simulates the future charge/discharge horizon, so it can add cheap recharge slots when needed before scheduling later expensive discharge windows.
+   - The scheduler now persists a canonical `plan_slots` timeline with `charge`, `discharge`, and `hold` actions, then derives execution windows into `schedules`.
+   - `hold` is no longer just a UI label. The watchdog maps it to an explicit inverter state intended to prevent battery discharge during that slot.
 
 The current settings model is defined in [`src/lib/config.ts`](../src/lib/config.ts).
 
@@ -46,6 +49,7 @@ There is currently no separate lint script in `package.json`. `npm test` runs th
 - When logic changes, add or update tests rather than relying on a successful build alone.
 - Documentation-only changes should still record the verification commands that were run for the change set.
 - Scheduling logic changes should verify both the planning engine and any execution-path behavior that depends on live inverter telemetry.
+- Scheduler changes should verify both the canonical `plan_slots.action` output and the derived `schedules.type` values used for execution history.
 
 ## Data and Runtime Notes
 

@@ -75,6 +75,13 @@ export async function stopGridDischarge(defaultMode: 'Battery first' | 'Load fir
   await setWorkMode(defaultMode);
 }
 
+export async function startBatteryHold() {
+  console.log('[CMD] Holding battery (prevent discharge)');
+  await setBatterySlot1(false);
+  await setOutputSourcePriority('USB');
+  await setWorkMode('Load first');
+}
+
 export async function setOutputSourcePriority(priority: string) {
   console.log(`[CMD] Output source priority: ${priority}`);
   await publish(COMMAND_TOPICS.outputSourcePriority, priority);

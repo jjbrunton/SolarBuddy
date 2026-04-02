@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findCheapestSlots } from '../engine';
+import { buildSchedulePlan, findCheapestSlots } from '../engine';
 import type { AgileRate } from '../../octopus/rates';
 import type { AppSettings } from '../../config';
 
@@ -32,6 +32,9 @@ const baseSettings: AppSettings = {
   tariff_standard_rate: '24.5',
   negative_price_charging: 'true',
   negative_price_pre_discharge: 'false',
+  smart_discharge: 'false',
+  discharge_price_threshold: '0',
+  discharge_soc_floor: '20',
   peak_protection: 'false',
   peak_period_start: '16:00',
   peak_period_end: '19:00',
@@ -137,5 +140,60 @@ describe('findCheapestSlots', () => {
       slot_end: '2026-03-30T11:30:00Z',
       avg_price: 1,
     });
+  });
+});
+
+describe('buildSchedulePlan', () => {
+  it('emits hold slots when preserving battery for a later planned discharge', () => {
+    const rates = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 8),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 12),
+      rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 45),
+    ];
+
+    const plan = buildSchedulePlan(rates, {
+      ...baseSettings,
+      charging_strategy: 'opportunistic_topup',
+      smart_discharge: 'true',
+      discharge_price_threshold: '40',
+      estimated_consumption_w: '0',
+      min_soc_target: '0',
+    }, {
+      currentSoc: 60,
+      now: new Date('2026-04-01T09:55:00Z'),
+    });
+
+    expect(plan.slots.map((slot) => slot.action)).toEqual(['hold', 'hold', 'discharge']);
+    expect(plan.slots[0].reason).toContain('Hold battery');
+  });
+
+  it('returns slot-level reasons and expected SOC values for the planned actions', () => {
+    const rates = [
+      rate('2026-04-01T22:00:00Z', '2026-04-01T22:30:00Z', 4),
+      rate('2026-04-01T22:30:00Z', '2026-04-01T23:00:00Z', 42),
+    ];
+
+    const plan = buildSchedulePlan(rates, {
+      ...baseSettings,
+      charging_strategy: 'opportunistic_topup',
+      smart_discharge: 'true',
+      discharge_price_threshold: '40',
+      min_soc_target: '50',
+      charge_hours: '2',
+      estimated_consumption_w: '0',
+    }, {
+      currentSoc: 40,
+      now: new Date('2026-04-01T21:55:00Z'),
+    });
+
+    expect(plan.slots[0]).toMatchObject({
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    });
+    expect(plan.slots[1]).toMatchObject({
+      action: 'hold',
+      reason: 'Hold battery and prevent discharge in this slot.',
+    });
+    expect(plan.slots.every((slot) => slot.expected_soc_after !== null)).toBe(true);
   });
 });

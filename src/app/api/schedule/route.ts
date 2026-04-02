@@ -2,20 +2,33 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { runScheduleCycle } from '@/lib/scheduler/cron';
 
-export async function GET() {
+const SCHEDULE_HISTORY_WINDOW_DAYS = 30;
+
+function getRecentPlanData() {
   const db = getDb();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - SCHEDULE_HISTORY_WINDOW_DAYS);
+  cutoff.setHours(0, 0, 0, 0);
+  const cutoffIso = cutoff.toISOString();
+
   const schedules = db
-    .prepare("SELECT * FROM schedules WHERE date >= date('now', '-1 day') ORDER BY slot_start ASC")
-    .all();
-  return NextResponse.json({ schedules });
+    .prepare('SELECT * FROM schedules WHERE slot_end >= ? ORDER BY slot_start ASC, created_at ASC')
+    .all(cutoffIso);
+  const plan_slots = db
+    .prepare('SELECT * FROM plan_slots WHERE slot_end >= ? ORDER BY slot_start ASC, created_at ASC')
+    .all(cutoffIso);
+
+  return { schedules, plan_slots };
+}
+
+export async function GET() {
+  const { schedules, plan_slots } = getRecentPlanData();
+  return NextResponse.json({ schedules, plan_slots });
 }
 
 export async function POST() {
   const result = await runScheduleCycle();
-  const db = getDb();
-  const schedules = db
-    .prepare("SELECT * FROM schedules WHERE date >= date('now', '-1 day') ORDER BY slot_start ASC")
-    .all();
+  const { schedules, plan_slots } = getRecentPlanData();
 
   const statusCode = result.status === 'missing_config'
     ? 400
@@ -23,5 +36,5 @@ export async function POST() {
       ? 200
       : 500;
 
-  return NextResponse.json({ ...result, schedules }, { status: statusCode });
+  return NextResponse.json({ ...result, schedules, plan_slots }, { status: statusCode });
 }

@@ -10,7 +10,9 @@ import { RefreshCw, Play, Pencil, X, Save } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { computeSOCForecast } from '@/lib/soc-forecast';
+import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import { useSlotSelection } from '@/hooks/useSlotSelection';
+import { ACTION_COLORS, ACTION_LABELS, type PlanAction } from '@/lib/plan-actions';
 
 interface Rate {
   valid_from: string;
@@ -22,6 +24,13 @@ interface Schedule {
   slot_start: string;
   slot_end: string;
   status: string;
+  type?: 'charge' | 'discharge';
+}
+
+interface PlannedSlotRow {
+  slot_start: string;
+  slot_end: string;
+  action: PlanAction;
 }
 
 interface Override {
@@ -36,9 +45,8 @@ interface ScheduleRunResponse {
 }
 
 interface ChartData {
-  time: string;
   price: number;
-  isScheduled: boolean;
+  plannedAction: PlanAction;
   isCurrent: boolean;
   isOverride: boolean;
   forecastSOC?: number;
@@ -56,7 +64,7 @@ function RateTooltip({ active, payload, label }: { active?: boolean; payload?: {
   const soc = payload.find((p) => p.dataKey === 'forecastSOC');
   return (
     <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
-      <p className="text-xs text-sb-text-muted">{label}</p>
+      <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
       {price && <p className="text-sm font-semibold text-sb-text">{price.value}p/kWh</p>}
       {soc && soc.value != null && <p className="text-xs text-sb-text-muted">SOC: {soc.value}%</p>}
     </div>
@@ -73,7 +81,6 @@ export default function RatesView() {
   const [runMessage, setRunMessage] = useState<{ kind: 'success' | 'warning'; text: string } | null>(null);
   const [stats, setStats] = useState<{ min: number; max: number; avg: number } | null>(null);
   const [currentSlotIndex, setCurrentSlotIndex] = useState(0);
-  const [scheduledIndices, setScheduledIndices] = useState<Set<number>>(new Set());
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<{
@@ -114,32 +121,34 @@ export default function RatesView() {
 
       const rates: Rate[] = ratesJson.rates || [];
       const schedules: Schedule[] = scheduleJson.schedules || [];
+      const plannedSlots: PlannedSlotRow[] = scheduleJson.plan_slots || [];
       const overrides: Override[] = overridesJson.overrides || [];
       const now = new Date();
+
+      const plannedActionMap = new Map<string, PlanAction>();
+      for (const slot of plannedSlots) {
+        plannedActionMap.set(toSlotKey(slot.slot_start), slot.action);
+      }
 
       const scheduledTimes = new Set<string>();
       for (const s of schedules) {
         if (s.status === 'planned' || s.status === 'active') {
-          let cursor = new Date(s.slot_start);
-          const end = new Date(s.slot_end);
-          while (cursor < end) {
-            scheduledTimes.add(cursor.toISOString());
-            cursor = new Date(cursor.getTime() + 30 * 60 * 1000);
+          for (const slotKey of expandHalfHourSlotKeys(s.slot_start, s.slot_end)) {
+            scheduledTimes.add(slotKey);
+            if (!plannedActionMap.has(slotKey)) {
+              plannedActionMap.set(slotKey, s.type === 'discharge' ? 'discharge' : 'charge');
+            }
           }
         }
       }
 
       const overrideTimes = new Set<string>();
       for (const o of overrides) {
-        let cursor = new Date(o.slot_start);
-        const end = new Date(o.slot_end);
-        while (cursor < end) {
-          overrideTimes.add(cursor.toISOString());
-          cursor = new Date(cursor.getTime() + 30 * 60 * 1000);
+        for (const slotKey of expandHalfHourSlotKeys(o.slot_start, o.slot_end)) {
+          overrideTimes.add(slotKey);
         }
       }
 
-      const newScheduledIndices = new Set<number>();
       const overrideIndices = new Set<number>();
       let curSlotIdx = 0;
 
@@ -147,15 +156,14 @@ export default function RatesView() {
         const dt = new Date(rate.valid_from);
         const isCurrent = now >= dt && now < new Date(rate.valid_to);
         if (isCurrent) curSlotIdx = i;
-        const isScheduled = scheduledTimes.has(rate.valid_from);
-        const isOverride = overrideTimes.has(rate.valid_from);
-        if (isScheduled) newScheduledIndices.add(i);
+        const slotKey = toSlotKey(rate.valid_from);
+        const plannedAction = plannedActionMap.get(slotKey) ?? 'do_nothing';
+        const isOverride = overrideTimes.has(slotKey);
         if (isOverride) overrideIndices.add(i);
 
         return {
-          time: `${dt.getHours().toString().padStart(2, '0')}:${dt.getMinutes().toString().padStart(2, '0')}`,
           price: Math.round(rate.price_inc_vat * 100) / 100,
-          isScheduled,
+          plannedAction,
           isCurrent,
           isOverride,
           validFrom: rate.valid_from,
@@ -164,7 +172,6 @@ export default function RatesView() {
       });
 
       setCurrentSlotIndex(curSlotIdx);
-      setScheduledIndices(newScheduledIndices);
       setSelectedIndices(overrideIndices);
 
       if (rates.length > 0) {
@@ -193,11 +200,15 @@ export default function RatesView() {
 
   // Combine scheduled + manual override slots for SOC forecast
   const allSlotActions = useMemo(() => {
-    const actions = new Map<number, 'charge'>();
-    for (const idx of scheduledIndices) actions.set(idx, 'charge');
+    const actions = new Map<number, PlanAction>();
+    data.forEach((entry, index) => {
+      if (entry.plannedAction !== 'do_nothing') {
+        actions.set(index, entry.plannedAction);
+      }
+    });
     for (const idx of selectedIndices) actions.set(idx, 'charge');
     return actions;
-  }, [scheduledIndices, selectedIndices]);
+  }, [data, selectedIndices]);
 
   // Compute SOC forecast
   const chartDataWithSOC = useMemo(() => {
@@ -287,7 +298,7 @@ export default function RatesView() {
     const isSelected = selectedIndices.has(index);
     if (isInDragRange) return TEAL + 'aa';
     if (isSelected) return TEAL;
-    if (entry.isScheduled) return colors.success;
+    if (entry.plannedAction !== 'do_nothing') return ACTION_COLORS[entry.plannedAction];
     if (entry.price < 0) return colors.warning;
     return colors.accent;
   };
@@ -354,9 +365,11 @@ export default function RatesView() {
           <span className="flex items-center gap-1">
             <span className="inline-block h-2.5 w-2.5 rounded bg-sb-accent" /> Rate
           </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded bg-sb-success" /> Scheduled Charge
-          </span>
+          {(['charge', 'discharge', 'hold'] as PlanAction[]).map((action) => (
+            <span key={action} className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS[action] }} /> {ACTION_LABELS[action]}
+            </span>
+          ))}
           <span className="flex items-center gap-1">
             <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: TEAL }} /> Manual Override
           </span>
@@ -385,7 +398,13 @@ export default function RatesView() {
             {editMode && <div className="absolute inset-0 z-10" {...dragHandlers} />}
             <ResponsiveContainer width="100%" height={350}>
               <ComposedChart data={chartDataWithSOC} margin={{ top: 5, right: 50, bottom: 5, left: 5 }}>
-                <XAxis dataKey="time" tick={{ fill: colors.muted, fontSize: 11 }} interval="preserveStartEnd" tickCount={12} />
+                <XAxis
+                  dataKey="validFrom"
+                  tick={{ fill: colors.muted, fontSize: 11 }}
+                  interval="preserveStartEnd"
+                  tickCount={12}
+                  tickFormatter={formatSlotTimeLabel}
+                />
                 <YAxis yAxisId="price" tick={{ fill: colors.muted, fontSize: 11 }} />
                 <YAxis
                   yAxisId="soc"

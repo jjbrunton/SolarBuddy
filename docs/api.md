@@ -18,18 +18,19 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `POST` | `/api/octopus/verify` | Verify Octopus account details and infer tariff metadata. |
 | `GET` | `/api/rates` | Return stored Agile rates, optionally filtered by query range. |
 | `POST` | `/api/rates` | Fetch the latest Agile rates from Octopus and store them. |
-| `GET` | `/api/schedule` | Return recent planned and executed schedules. |
-| `POST` | `/api/schedule` | Trigger a scheduling cycle and return the resulting schedules. |
+| `GET` | `/api/schedule` | Return recent schedule history for the Charge Plan page, including persisted charge/discharge windows and the canonical slot-by-slot battery plan for roughly the last 30 days plus any future stored horizon. |
+| `POST` | `/api/schedule` | Trigger a scheduling cycle and return the refreshed recent schedule history payload. |
 | `GET` | `/api/overrides` | Return manual charge-slot overrides for the current day. |
-| `POST` | `/api/overrides` | Replace the current day’s manual overrides with the provided slots. |
-| `DELETE` | `/api/overrides` | Clear the current day’s manual overrides. |
+| `POST` | `/api/overrides` | Replace the current day’s manual overrides with the provided slots and immediately reconcile the inverter if the current slot changed. |
+| `PATCH` | `/api/overrides` | Upsert a single override slot and immediately reconcile the inverter when that slot is active now. |
+| `DELETE` | `/api/overrides` | Clear one or all current-day overrides and immediately reconcile the inverter state. |
 
 ## Telemetry and Event Streams
 
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/events` | Stream live inverter state over server-sent events. |
-| `GET` | `/api/events-log` | Return persisted event history for operator review. |
+| `GET` | `/api/events-log` | Return operator-facing event history for review. If the dedicated `events` table is still empty, the response synthesizes recent scheduler and MQTT lifecycle activity so existing installs do not render a blank activity feed. |
 | `GET` | `/api/system/mqtt-log` | Stream recent MQTT connection and topic activity over server-sent events. |
 | `GET` | `/api/readings` | Return persisted telemetry readings for charting and history views. |
 
@@ -49,6 +50,14 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 - Request validation is performed at the route boundary before data is persisted or services are invoked.
 - Most routes either query SQLite directly for simple reads or delegate to focused modules under `src/lib/`.
 - `/api/events` and `/api/system/mqtt-log` are streaming endpoints. The rest return JSON responses.
+- `/api/overrides` now doubles as an actuator trigger for the live slot: after override writes complete, the scheduler watchdog recalculates the desired inverter state and sends MQTT commands when the inverter is not already compliant.
+
+## `/api/schedule` Response Notes
+
+- `GET /api/schedule` returns `{ schedules, plan_slots }`.
+- `plan_slots` is the canonical planner output for each future half-hour slot and includes the planned `action`, planner `reason`, `expected_soc_after`, and `expected_value`. Normal future planner output should now be `charge`, `discharge`, or `hold`, where `hold` means the runtime should actively prevent battery discharge in that slot.
+- `schedules` is the derived charge/discharge window view used for execution history and timer scheduling. Discharge windows are marked with `type = 'discharge'`.
+- `POST /api/schedule` returns the same `schedules` and `plan_slots` collections plus the schedule-cycle result metadata (`ok`, `status`, and any operator-facing message).
 
 ## Change Management
 

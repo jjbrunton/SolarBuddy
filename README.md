@@ -1,6 +1,6 @@
 # SolarBuddy
 
-A self-hosted dashboard for managing solar battery charging with Octopus Energy Agile tariff integration. Automatically schedules battery charging during the cheapest half-hour slots each day.
+A self-hosted dashboard for managing solar battery charging and discharge with Octopus Energy Agile tariff integration. It plans battery actions across half-hour tariff slots and executes the resulting charge and discharge windows automatically.
 
 ## Documentation
 
@@ -18,8 +18,10 @@ A self-hosted dashboard for managing solar battery charging with Octopus Energy 
 - Dashboard current-rate card with live Agile slot, next-slot preview, and loaded rate benchmarks
 - Inverter configuration read-back, including compatibility fallbacks for renamed Solar Assistant settings and clear unavailable-state messaging when an inverter does not publish a read-back value
 - Octopus Energy Agile rate tracking and visualization
-- Automatic charge scheduling with selectable Night Fill and Opportunistic Top-up strategies
+- Automatic battery scheduling with selectable Night Fill and Opportunistic Top-up strategies, horizon-aware smart discharge, and slot-level hold planning
 - Manual charge window and work mode overrides
+- Daily charge-plan navigation that defaults to today and keeps recent schedule history available for review
+- Inverter watchdog reconciliation that re-applies the active schedule or override after restarts and inverter drift
 - Activity log and system status
 
 ## Architecture
@@ -35,7 +37,7 @@ A self-hosted dashboard for managing solar battery charging with Octopus Energy 
 |------|---------|
 | `src/lib/octopus/` | Octopus Energy API client (rates, account verification) |
 | `src/lib/mqtt/` | MQTT client for Solar Assistant inverter data |
-| `src/lib/scheduler/` | Cron jobs and charge window engine |
+| `src/lib/scheduler/` | Cron jobs, slot planner, and execution engine |
 | `src/lib/config.ts` | Settings schema and SQLite persistence |
 | `src/lib/db.ts` | Database initialization and access |
 
@@ -62,10 +64,11 @@ All settings are managed through the web UI under **Settings**:
 
 1. **MQTT** — Solar Assistant host, port, and credentials
 2. **Octopus Energy** — API key and account number (region and tariff are auto-detected)
-3. **Charging** — Strategy, max slots, price threshold, SOC target, night window, work mode
+3. **Charging** — Strategy, max slots, price thresholds, charge/discharge SOC targets, night window, work mode
 
 ### Dashboard Highlights
 
+- The dashboard overview is intentionally limited to five non-overlapping widgets: live gauges, energy flow, current rate, rate chart, and upcoming charges.
 - The dashboard includes a dedicated **Current Rate** card showing the active Agile half-hour slot, the next slot price, and low/average benchmarks from the currently loaded rates.
 - Click the current-rate card or the rate chart to jump to the full `/rates` view for detailed rate inspection and manual scheduling actions.
 
@@ -75,9 +78,17 @@ All settings are managed through the web UI under **Settings**:
 - `Opportunistic Top-up` ignores the overnight window and plans across the current and future slots in the currently published Agile tariff horizon.
 - `Price Threshold` is an optional eligibility ceiling for either strategy. If it is greater than `0`, SolarBuddy only plans slots at or below that price.
 - `Max Charge Slots` is now a cap rather than a fixed target. When live battery SOC and charge-power settings are available, SolarBuddy trims the plan to only the slots needed to reach the target SOC.
+- `Smart Discharge` now simulates the published tariff horizon slot by slot, so it can charge cheaply first, discharge later in expensive slots, and still preserve the configured reserve SOC floor.
+- `Discharge Price Threshold` is an optional minimum price for automatic discharge windows. If it is greater than `0`, SolarBuddy only discharges in slots at or above that price.
+- When a profitable discharge would otherwise cause SolarBuddy to miss a later SOC target, it can add extra cheap charge slots within the configured charge-slot budget to keep the plan feasible.
+- The scheduler now persists a canonical slot-by-slot battery plan in `plan_slots` with `charge`, `discharge`, or `hold` for every future tariff slot in the published horizon. Charge and discharge windows in `schedules` are derived from that plan for execution and history views.
+- `hold` means SolarBuddy drives the inverter into a battery-preserving state for that slot to prevent discharge. It may be preserving energy for a better later discharge opportunity, or simply deciding to wait.
+- Setting an override on the current half-hour slot now triggers an immediate inverter reconciliation pass instead of waiting for the next scheduled timer.
+- A background watchdog reconciles the desired inverter state on startup, every 30 seconds, and after relevant telemetry changes. That lets SolarBuddy recover an active window after a restart and retry drifted inverter state if the inverter is no longer in the requested mode.
 - Charge window times are evaluated in UK local time (`Europe/London`), including daylight saving changes.
 - Overnight schedules can only be generated once Octopus has published the relevant upcoming Agile rates, which is typically later the same day.
 - Running the scheduler with valid rates but no eligible slots clears any existing planned schedule for that day and reports that no charge windows matched the current configuration.
+- The Charge Plan page groups slot history by UK-local day, opens on today by default, and lets operators step through recent stored days without losing the slot-by-slot planner rationale.
 
 #### Octopus Energy Setup
 
@@ -98,7 +109,7 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 | GET | `/api/rates?from=&to=` | Retrieve stored Agile rates |
 | POST | `/api/rates` | Trigger rate fetch from Octopus API |
 | GET | `/api/status` | Current inverter status |
-| GET | `/api/schedule` | Current charge schedule |
+| GET | `/api/schedule` | Current battery windows plus slot-by-slot plan |
 | GET | `/api/readings` | Historical inverter readings |
 | GET | `/api/events` | SSE stream of real-time events |
 | GET | `/api/events-log` | Historical event log |
@@ -125,6 +136,7 @@ SQLite database at `data/solarbuddy.db`. Tables:
 - `readings` — inverter telemetry snapshots
 - `events` — system event history
 - `mqtt_logs` — recent MQTT connection, topic, and command activity
-- `schedules` — computed charge windows
+- `plan_slots` — canonical slot-level battery policy and planner reasoning
+- `schedules` — computed charge and discharge windows
 - `carbon_intensity` — cached grid carbon intensity data
 - `manual_overrides` — operator-defined charge slots for the current day

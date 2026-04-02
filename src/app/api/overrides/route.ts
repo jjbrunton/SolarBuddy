@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { type PlanAction, PLAN_ACTIONS } from '@/lib/plan-actions';
+import { reconcileInverterState } from '@/lib/scheduler/watchdog';
 
 export async function GET() {
   const db = getDb();
@@ -38,6 +39,8 @@ export async function POST(request: Request) {
 
   transaction();
 
+  await reconcileInverterState('manual overrides replaced');
+
   return NextResponse.json({ ok: true, count: slots.length });
 }
 
@@ -66,6 +69,8 @@ export async function PATCH(request: Request) {
 
   transaction();
 
+  await reconcileInverterState('manual override updated');
+
   return NextResponse.json({ ok: true });
 }
 
@@ -82,6 +87,8 @@ export async function DELETE(request: Request) {
   } else {
     db.prepare('DELETE FROM manual_overrides WHERE date = ?').run(today);
   }
+
+  await reconcileInverterState(slotStart ? 'manual override removed' : 'manual overrides cleared');
 
   return NextResponse.json({ ok: true });
 }

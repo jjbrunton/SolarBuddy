@@ -2,9 +2,10 @@ import * as cron from 'node-cron';
 import { getSettings } from '../config';
 import { resolveRates } from '../octopus/rates';
 import { getState } from '../state';
-import { buildChargePlan, getChargingStrategy, type ChargeWindow } from './engine';
+import { buildSchedulePlan, getChargingStrategy, type ChargeWindow, type PlannedSlot } from './engine';
 import { scheduleExecution } from './executor';
 import { getDb } from '../db';
+import { appendEvent } from '../events';
 
 let afternoonJob: cron.ScheduledTask | null = null;
 let eveningJob: cron.ScheduledTask | null = null;
@@ -18,11 +19,20 @@ export interface ScheduleCycleResult {
   windowsCount: number;
 }
 
+function logScheduleEvent(level: 'success' | 'warning' | 'error', message: string) {
+  appendEvent({
+    level,
+    category: 'scheduler',
+    message,
+  });
+}
+
 export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
   const settings = getSettings();
   const tariffType = settings.tariff_type || 'agile';
   if (tariffType === 'agile' && !settings.octopus_region) {
     console.log('[Cron] No Octopus region configured, skipping');
+    logScheduleEvent('warning', 'Configure your Octopus tariff details before running the scheduler.');
     return {
       ok: false,
       status: 'missing_config',
@@ -45,6 +55,7 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
 
     if (rates.length === 0) {
       console.log('[Cron] No rates available yet, will retry');
+      logScheduleEvent('warning', 'No Agile rates are available yet for the requested period. Try again after Octopus publishes the next set of prices.');
       return {
         ok: true,
         status: 'no_rates',
@@ -56,41 +67,55 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
     const strategy = getChargingStrategy(settings);
     const strategyLabel = strategy === 'night_fill' ? 'Night Fill' : 'Opportunistic Top-up';
     const state = getState();
-    const windows = buildChargePlan(rates, settings, {
+    const plan = buildSchedulePlan(rates, settings, {
       currentSoc: state.battery_soc,
       now,
     });
-    console.log(`[Cron] Found ${windows.length} charge windows`);
+    const windows = plan.windows;
+    const plannedSlots = plan.slots;
+    console.log(`[Cron] Found ${windows.length} planned battery windows`);
 
     const db = getDb();
     const today = now.toISOString().split('T')[0];
 
-    if (windows.length === 0) {
-      db.prepare("DELETE FROM schedules WHERE date = ? AND status = 'planned'").run(today);
-      console.log('[Cron] No charge windows to schedule');
-      return {
-        ok: true,
-        status: 'no_windows',
-        message: strategy === 'night_fill'
-          ? 'Night Fill did not find any eligible slots. Overnight schedules can only be generated after the relevant Agile rates are published.'
-          : 'Opportunistic Top-up did not find any eligible slots in the currently published Agile rates.',
-        windowsCount: 0,
-      };
-    }
-
-    // Save to database
-    const insert = db.prepare(`
-      INSERT INTO schedules (date, slot_start, slot_end, avg_price, status, created_at)
-      VALUES (?, ?, ?, ?, 'planned', ?)
+    const insertWindow = db.prepare(`
+      INSERT INTO schedules (date, slot_start, slot_end, avg_price, status, created_at, type)
+      VALUES (?, ?, ?, ?, 'planned', ?, ?)
     `);
-    const insertAll = db.transaction((ws: ChargeWindow[]) => {
-      // Clear any existing planned schedules for today
+    const insertSlot = db.prepare(`
+      INSERT INTO plan_slots (
+        date,
+        slot_start,
+        slot_end,
+        action,
+        reason,
+        expected_soc_after,
+        expected_value,
+        status,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'planned', ?)
+    `);
+    const insertAll = db.transaction((ws: ChargeWindow[], slots: PlannedSlot[]) => {
       db.prepare("DELETE FROM schedules WHERE date = ? AND status = 'planned'").run(today);
+      db.prepare("DELETE FROM plan_slots WHERE date = ? AND status = 'planned'").run(today);
       for (const w of ws) {
-        insert.run(today, w.slot_start, w.slot_end, w.avg_price, new Date().toISOString());
+        insertWindow.run(today, w.slot_start, w.slot_end, w.avg_price, new Date().toISOString(), w.type ?? 'charge');
+      }
+      for (const slot of slots) {
+        insertSlot.run(
+          today,
+          slot.slot_start,
+          slot.slot_end,
+          slot.action,
+          slot.reason,
+          slot.expected_soc_after,
+          slot.expected_value,
+          new Date().toISOString(),
+        );
       }
     });
-    insertAll(windows);
+    insertAll(windows, plannedSlots);
 
     // Schedule execution
     if (settings.auto_schedule === 'true') {
@@ -98,18 +123,26 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
     }
 
     console.log('[Cron] Schedule cycle complete');
+    const message = windows.length === 0
+      ? strategy === 'night_fill'
+        ? 'Night Fill did not find any eligible battery windows. The slot plan has been updated with hold actions only.'
+        : 'Opportunistic Top-up did not find any eligible battery windows. The slot plan has been updated with hold actions only.'
+      : `${strategyLabel}: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
+    logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
     return {
       ok: true,
-      status: 'scheduled',
-      message: `${strategyLabel}: scheduled ${windows.length} charge window${windows.length === 1 ? '' : 's'}.`,
+      status: windows.length === 0 ? 'no_windows' : 'scheduled',
+      message,
       windowsCount: windows.length,
     };
   } catch (err) {
     console.error('[Cron] Schedule cycle failed:', err);
+    const message = err instanceof Error ? err.message : 'Unknown scheduler error';
+    logScheduleEvent('error', message);
     return {
       ok: false,
       status: 'error',
-      message: err instanceof Error ? err.message : 'Unknown scheduler error',
+      message,
       windowsCount: 0,
     };
   }

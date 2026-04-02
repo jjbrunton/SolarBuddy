@@ -12,6 +12,7 @@ interface Schedule {
   slot_end: string;
   avg_price: number;
   status: string;
+  type?: 'charge' | 'discharge';
 }
 
 function formatTime(iso: string) {
@@ -53,7 +54,7 @@ export default function UpcomingChargesWidget() {
         setRawRates(ratesJson.rates || []);
 
         const rawScheds: Schedule[] = schedJson.schedules || [];
-        setSchedules(rawScheds.filter((s) => s.status === 'planned' || s.status === 'active'));
+        setSchedules(rawScheds.filter((s) => (s.status === 'planned' || s.status === 'active') && (s.type ?? 'charge') === 'charge'));
       } catch { /* silent */ }
     }
     load();

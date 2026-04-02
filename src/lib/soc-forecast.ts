@@ -16,8 +16,8 @@ export interface SOCForecastParams {
  * Compute a predicted SOC curve across all rate slots.
  * - charge: SOC increases based on charge power
  * - discharge: SOC decreases at charge power rate + consumption
- * - hold: SOC stays flat (inverter maintains level)
- * - do_nothing: SOC decreases based on estimated consumption
+ * - hold: SOC stays flat because the inverter is actively preventing discharge
+ * - do_nothing: legacy idle state, decreases based on estimated consumption
  * Returns an array of SOC values (0-100) aligned to each bar index.
  */
 export function computeSOCForecast(params: SOCForecastParams): number[] {
@@ -60,7 +60,7 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
         break;
       }
       case 'hold':
-        // Battery level maintained by inverter
+        // Inverter hold mode prevents planned battery discharge
         break;
       case 'do_nothing':
       default: {

@@ -9,6 +9,7 @@ interface Schedule {
   slot_end: string;
   avg_price: number;
   status: string;
+  type?: 'charge' | 'discharge';
   notes: string | null;
 }
 
@@ -63,6 +64,7 @@ export default function ScheduleTable() {
           <thead>
             <tr className="border-b border-zinc-800 text-left text-zinc-400">
               <th className="pb-2">Window</th>
+              <th className="pb-2">Action</th>
               <th className="pb-2">Avg Price</th>
               <th className="pb-2">Status</th>
               <th className="pb-2">Notes</th>
@@ -74,6 +76,7 @@ export default function ScheduleTable() {
                 <td className="py-2 text-zinc-100">
                   {formatTime(s.slot_start)} – {formatTime(s.slot_end)}
                 </td>
+                <td className="py-2 text-zinc-300 capitalize">{s.type ?? 'charge'}</td>
                 <td className="py-2 text-zinc-300">{s.avg_price?.toFixed(2)}p</td>
                 <td className="py-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(s.status)}`}>

@@ -1,5 +1,6 @@
 'use client';
 
+import { buildEnergyFlows, type EnergyFlowPathKey } from '@/lib/energy-flow';
 import type { InverterState } from '@/lib/types';
 import { Sun, Home, Battery, Zap } from 'lucide-react';
 
@@ -21,9 +22,10 @@ const NODE = {
 type NodeId = keyof typeof NODE;
 
 /* Curved paths (center-to-center, nodes rendered on top to cover ends) */
-const PATHS: Record<string, { d: string; labelPos: { x: number; y: number } }> = {
+const PATHS: Record<EnergyFlowPathKey, { d: string; labelPos: { x: number; y: number } }> = {
   solar_home:     { d: 'M 220 48 C 205 130, 235 180, 220 255',   labelPos: { x: 220, y: 152 } },
   solar_battery:  { d: 'M 220 48 Q 330 55, 382 155',             labelPos: { x: 310, y: 82 } },
+  grid_battery:   { d: 'M 58 155 C 110 88, 270 88, 382 155',     labelPos: { x: 146, y: 104 } },
   grid_home:      { d: 'M 58 155 Q 75 245, 220 255',             labelPos: { x: 112, y: 228 } },
   battery_home:   { d: 'M 382 155 Q 365 245, 220 255',           labelPos: { x: 328, y: 228 } },
   home_grid:      { d: 'M 220 255 Q 75 245, 58 155',             labelPos: { x: 112, y: 228 } },
@@ -55,7 +57,7 @@ function Defs() {
 }
 
 /* ─── animated flow path ─── */
-function FlowPath({ pathKey, power, color }: { pathKey: string; power: number; color: string }) {
+function FlowPath({ pathKey, power, color }: { pathKey: EnergyFlowPathKey; power: number; color: string }) {
   if (power <= 0) return null;
   const { d, labelPos } = PATHS[pathKey];
   const sw = Math.max(2, Math.min(5, power / 500 + 1.5));
@@ -200,21 +202,15 @@ export function EnergyFlowDiagram({ state }: EnergyFlowProps) {
   const grid = state.grid_power ?? 0;
   const batt = state.battery_power ?? 0;
   const load = state.load_power ?? 0;
-
-  const flows: { pathKey: string; power: number; color: string }[] = [];
-
-  if (pv > 0)
-    flows.push({ pathKey: 'solar_home', power: pv, color: NODE.solar.color });
-
-  if (batt > 0)
-    flows.push({ pathKey: 'solar_battery', power: batt, color: NODE.battery.color });
-  else if (batt < 0)
-    flows.push({ pathKey: 'battery_home', power: Math.abs(batt), color: NODE.battery.color });
-
-  if (grid > 0)
-    flows.push({ pathKey: 'grid_home', power: grid, color: NODE.grid.color });
-  else if (grid < 0)
-    flows.push({ pathKey: 'home_grid', power: Math.abs(grid), color: NODE.grid.color });
+  const flows = buildEnergyFlows(state).map((flow) => ({
+    ...flow,
+    color:
+      flow.pathKey === 'grid_home' || flow.pathKey === 'grid_battery' || flow.pathKey === 'home_grid'
+        ? NODE.grid.color
+        : flow.pathKey === 'battery_home'
+          ? NODE.battery.color
+          : NODE.solar.color,
+  }));
 
   return (
     <div className="rounded-lg border border-sb-border bg-sb-card p-4">

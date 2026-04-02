@@ -1,6 +1,6 @@
 # Software Architecture
 
-SolarBuddy is a self-hosted Next.js application that combines a server-rendered dashboard with long-lived background services. It monitors inverter telemetry from Solar Assistant over MQTT, fetches Octopus Agile tariff data over HTTP, computes low-cost charging windows, and persists operational data in SQLite.
+SolarBuddy is a self-hosted Next.js application that combines a server-rendered dashboard with long-lived background services. It monitors inverter telemetry from Solar Assistant over MQTT, fetches Octopus Agile tariff data over HTTP, computes slot-level battery actions plus derived execution windows, and persists operational data in SQLite.
 
 ## Runtime Overview
 
@@ -28,9 +28,10 @@ flowchart LR
 ## Deployment Model
 
 - The app runs as a Node.js Next.js server. Background services are only started when `NEXT_RUNTIME === 'nodejs'`.
-- [`src/instrumentation.ts`](../src/instrumentation.ts) is the server startup hook. It starts three long-lived services:
+- [`src/instrumentation.ts`](../src/instrumentation.ts) is the server startup hook. It starts four long-lived services:
   - MQTT connectivity via [`src/lib/mqtt/client.ts`](../src/lib/mqtt/client.ts)
   - Scheduler cron jobs via [`src/lib/scheduler/cron.ts`](../src/lib/scheduler/cron.ts)
+  - Inverter state reconciliation via [`src/lib/scheduler/watchdog.ts`](../src/lib/scheduler/watchdog.ts)
   - Telemetry snapshot ingestion via [`src/lib/readings/ingest.ts`](../src/lib/readings/ingest.ts)
 - SQLite is opened lazily through [`src/lib/db.ts`](../src/lib/db.ts). The module is also responsible for schema creation and lightweight additive migrations.
 
@@ -42,7 +43,7 @@ flowchart LR
   - the live inverter state store in [`src/lib/state.ts`](../src/lib/state.ts)
   - the MQTT client in [`src/lib/mqtt/client.ts`](../src/lib/mqtt/client.ts)
   - the MQTT live log query helpers in `src/lib/mqtt/logs.ts`
-- Durable state is stored in SQLite, which acts as the operational system of record for settings, tariff data, telemetry history, schedules, and overrides.
+- Durable state is stored in SQLite, which acts as the operational system of record for settings, tariff data, telemetry history, slot plans, schedules, and overrides.
 
 ## Main Subsystems
 
@@ -65,6 +66,7 @@ flowchart LR
 - MQTT connection lifecycle events, inbound topic payloads, and outbound command publishes are written into a bounded SQLite-backed log for the System Logs UI.
 - [`src/lib/state.ts`](../src/lib/state.ts) emits change events whenever new telemetry arrives.
 - [`src/lib/readings/ingest.ts`](../src/lib/readings/ingest.ts) snapshots the latest live state into SQLite once per minute, but only while MQTT is connected so stale values are not recorded.
+- Operator-facing activity entries are written through [`src/lib/events.ts`](../src/lib/events.ts). The activity and system-log event views read from this shared module so scheduler decisions and MQTT lifecycle changes appear consistently across both pages.
 
 ### 4. Tariff Fetching and Scheduling
 
@@ -74,16 +76,23 @@ flowchart LR
   - `night_fill`: filters rates into the configured overnight window, estimates how many half-hour slots are needed to reach the target SOC from the current SOC, and picks the cheapest eligible slots up to the configured max-slot cap.
   - `opportunistic_topup`: considers the current and future slots in the currently published Agile tariff horizon and picks the cheapest eligible slots needed to top the battery up without being restricted to the overnight window.
 - A positive price threshold acts as a hard eligibility ceiling for either strategy.
-- Adjacent selected slots are merged into charge windows before they are written to `schedules`.
+- When `smart_discharge` is enabled, the planner simulates SOC across the published tariff horizon and can pair later discharge windows with earlier cheap charge slots, bounded by the configured reserve SOC floor, charge-slot budget, and optional discharge price threshold.
+- The scheduler emits a canonical `plan_slots` timeline with one action per future half-hour slot: `charge`, `discharge`, or `hold`.
+- `hold` means the planner is intentionally preserving the battery in that slot. In some cases that is because it is saving energy for a better future discharge opportunity; in others it is simply preventing discharge while waiting.
+- Adjacent `charge` and `discharge` actions are merged into execution windows before they are written to `schedules`.
 
 ### 5. Charge Execution
 
 - [`src/lib/scheduler/executor.ts`](../src/lib/scheduler/executor.ts) translates planned windows into `setTimeout` timers.
 - At window start, SolarBuddy activates the planned window and evaluates live telemetry before forcing grid charge.
+- Discharge windows use the inverter's forced discharge mode for their full duration and are persisted in SQLite with `type = 'discharge'`.
 - `night_fill` starts grid charging immediately once the window begins, unless the battery is already at or above target SOC.
 - `opportunistic_topup` can defer or pause forced grid charging when live telemetry suggests solar surplus or export is already charging the battery naturally.
 - During a charge window, the executor watches live state and can stop early once the configured minimum state of charge target is reached.
-- At window end, the executor restores the configured default work mode and updates schedule execution status in SQLite.
+- At window end, the executor restores the configured default work mode and updates schedule execution status in SQLite. Matching `plan_slots` charge and discharge rows are updated alongside the derived schedule window.
+- [`src/lib/scheduler/watchdog.ts`](../src/lib/scheduler/watchdog.ts) reconciles the desired inverter state against live telemetry and inverter read-back on startup, every 30 seconds, and after relevant MQTT-driven state changes.
+- The watchdog derives current intent from the active manual override first and the active persisted `plan_slots` row second. Planned `hold` slots now reconcile to an explicit battery-preserving inverter state, while planned charge slots still apply the same minimum-SOC and opportunistic-top-up solar-surplus checks as the executor.
+- That reconciliation loop closes the gap left by one-shot timers: it lets current-slot overrides actuate immediately, restores active windows after a process restart, and retries toward the desired state if the inverter drifts or a command does not stick.
 
 ## Key Data Flows
 
@@ -96,20 +105,23 @@ flowchart LR
 5. `/api/events` streams the latest state to connected browser clients.
 6. The periodic ingestion service snapshots the live state into `readings`.
 7. Browser clients persist the most recent non-empty telemetry snapshot locally so transient reloads do not blank the UI before the next MQTT update arrives.
+8. The watchdog queues reconciliation after relevant telemetry changes so the inverter is nudged back toward the active schedule or override if it drifts.
 
 ### Daily Scheduling Flow
 
 1. The cron service triggers `runScheduleCycle()`.
 2. SolarBuddy fetches the next relevant Agile rate window from Octopus Energy.
-3. The scheduler engine derives eligible half-hour slots from operator settings.
-4. Planned windows are written to `schedules`.
-5. If auto-scheduling is enabled, execution timers are created for each window.
+3. The scheduler engine derives eligible half-hour slots from operator settings and emits a slot-by-slot battery plan.
+4. Canonical slot actions are written to `plan_slots`, and derived charge/discharge windows are written to `schedules`.
+5. If auto-scheduling is enabled, execution timers are created from the derived windows.
 
 ### Operator Interaction Flow
 
 1. The browser calls App Router API endpoints for settings, schedules, overrides, analytics, and system status.
 2. Route handlers validate request payloads at the boundary and delegate to focused services or direct SQLite queries.
-3. The UI renders a mix of persisted history and live SSE state.
+3. The schedule and rates views normalize persisted UTC slot timestamps before matching `plan_slots`, `schedules`, and overrides back onto half-hour rate rows, and the Charge Plan view groups those rows into UK-local day slices so operators can navigate today and recent history without reading one long mixed timeline.
+4. Updating `/api/overrides` persists the operator’s slot choice and immediately triggers a reconciliation pass, so current-slot overrides can actuate the inverter without waiting for a future scheduler timer.
+5. The UI renders a mix of persisted history and live SSE state.
 
 ## Persistence Model
 
@@ -117,12 +129,15 @@ The SQLite schema currently contains:
 
 - `settings`: application configuration values
 - `rates`: cached Octopus Agile tariff data
+- `plan_slots`: canonical slot-level planner output and execution metadata
 - `schedules`: planned and executed charge windows
 - `readings`: periodic inverter telemetry snapshots
 - `events`: operational event history
 - `mqtt_logs`: recent MQTT connection, topic, and command activity
 - `carbon_intensity`: cached grid carbon intensity records
 - `manual_overrides`: manually selected charge slots for the current day
+
+When the `events` table is empty on an existing install, SolarBuddy derives a temporary event feed from recent scheduler rows and MQTT system log entries so the Activity page still shows meaningful recent operations until dedicated event entries are recorded.
 
 The default database path is `data/solarbuddy.db`, unless `DB_PATH` is set.
 
@@ -132,7 +147,7 @@ The default database path is `data/solarbuddy.db`, unless `DB_PATH` is set.
 - The in-memory state store and timer-based executor are process-local. If SolarBuddy is ever run as multiple Node processes, live telemetry state and scheduled timers would not be coordinated across instances.
 - Recent MQTT log history is persisted in SQLite and trimmed to a bounded recent window for the live logs view.
 - Cron scheduling assumes Octopus Agile rates become available during the configured afternoon and evening retry window.
-- Manual overrides and schedule selection currently operate on the current day rather than a multi-day planning horizon.
+- The Charge Plan UI now presents the stored schedule horizon as separate UK-local days. Past days are treated as read-only history, while today and future days continue to accept overrides against the stored horizon.
 
 ## Directory Guide
 

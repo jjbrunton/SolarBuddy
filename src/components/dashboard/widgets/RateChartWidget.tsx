@@ -7,21 +7,27 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { computeSOCForecast } from '@/lib/soc-forecast';
-import type { PlanAction } from '@/lib/plan-actions';
+import { ACTION_COLORS, type PlanAction } from '@/lib/plan-actions';
+import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 
 interface RatePoint {
-  time: string;
+  validFrom: string;
   price: number;
   isCurrent: boolean;
-  isScheduled: boolean;
+  plannedAction: PlanAction;
   forecastSOC?: number;
+}
+
+interface PlannedSlotRow {
+  slot_start: string;
+  action: PlanAction;
 }
 
 function RateTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
-      <p className="text-xs text-sb-text-muted">{label}</p>
+      <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
       <p className="text-sm font-semibold text-sb-text">{payload[0].value}p/kWh</p>
     </div>
   );
@@ -33,7 +39,6 @@ export default function RateChartWidget() {
   const { state } = useSSE();
   const [rates, setRates] = useState<RatePoint[]>([]);
   const [currentSlotIndex, setCurrentSlotIndex] = useState(0);
-  const [scheduledIndices, setScheduledIndices] = useState<Set<number>>(new Set());
   const [settings, setSettings] = useState<{
     charge_rate: string;
     battery_capacity_kwh: string;
@@ -56,39 +61,38 @@ export default function RateChartWidget() {
 
         const rawRates = ratesJson.rates || [];
         const rawScheds = schedJson.schedules || [];
+        const rawPlanSlots: PlannedSlotRow[] = schedJson.plan_slots || [];
         const now = new Date();
 
-        const scheduledTimes = new Set<number>();
+        const plannedActionMap = new Map<string, PlanAction>();
+        for (const slot of rawPlanSlots) {
+          plannedActionMap.set(toSlotKey(slot.slot_start), slot.action);
+        }
         for (const s of rawScheds) {
           if (s.status === 'planned' || s.status === 'active') {
-            let cursor = new Date(s.slot_start).getTime();
-            const end = new Date(s.slot_end).getTime();
-            while (cursor < end) {
-              scheduledTimes.add(cursor);
-              cursor += 30 * 60 * 1000;
+            for (const slotKey of expandHalfHourSlotKeys(s.slot_start, s.slot_end)) {
+              if (!plannedActionMap.has(slotKey)) {
+                plannedActionMap.set(slotKey, s.type === 'discharge' ? 'discharge' : 'charge');
+              }
             }
           }
         }
 
-        const newScheduledIndices = new Set<number>();
         let curSlotIdx = 0;
 
         const chartData: RatePoint[] = rawRates.map((r: { valid_from: string; valid_to: string; price_inc_vat: number }, i: number) => {
           const dt = new Date(r.valid_from);
           const isCurrent = now >= dt && now < new Date(r.valid_to);
           if (isCurrent) curSlotIdx = i;
-          const isScheduled = scheduledTimes.has(dt.getTime());
-          if (isScheduled) newScheduledIndices.add(i);
           return {
-            time: `${dt.getHours().toString().padStart(2, '0')}:${dt.getMinutes().toString().padStart(2, '0')}`,
+            validFrom: r.valid_from,
             price: Math.round(r.price_inc_vat * 100) / 100,
             isCurrent,
-            isScheduled,
+            plannedAction: plannedActionMap.get(toSlotKey(r.valid_from)) ?? 'do_nothing',
           };
         });
 
         setCurrentSlotIndex(curSlotIdx);
-        setScheduledIndices(newScheduledIndices);
         setRates(chartData);
       } catch { /* silent */ }
     }
@@ -100,9 +104,11 @@ export default function RateChartWidget() {
   const ratesWithSOC = useMemo(() => {
     if (rates.length === 0 || state.battery_soc === null || !settings) return rates;
     const slotActions = new Map<number, PlanAction>();
-    for (const index of scheduledIndices) {
-      slotActions.set(index, 'charge');
-    }
+    rates.forEach((rate, index) => {
+      if (rate.plannedAction !== 'do_nothing') {
+        slotActions.set(index, rate.plannedAction);
+      }
+    });
     const forecast = computeSOCForecast({
       currentSOC: state.battery_soc,
       currentSlotIndex,
@@ -114,7 +120,7 @@ export default function RateChartWidget() {
       estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
     });
     return rates.map((r, i) => ({ ...r, forecastSOC: forecast[i] ?? undefined }));
-  }, [rates, state.battery_soc, currentSlotIndex, scheduledIndices, settings]);
+  }, [rates, state.battery_soc, currentSlotIndex, settings]);
 
   if (rates.length === 0) return null;
 
@@ -131,12 +137,23 @@ export default function RateChartWidget() {
           <span className="inline-block h-2.5 w-2.5 rounded bg-sb-accent" /> Rate
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded bg-sb-success" /> Scheduled
+          <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS.charge }} /> Charge
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS.hold }} /> Hold
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS.discharge }} /> Discharge
         </span>
       </div>
       <ResponsiveContainer width="100%" height={200}>
         <ComposedChart data={ratesWithSOC} margin={{ top: 5, right: 40, bottom: 5, left: 5 }}>
-          <XAxis dataKey="time" tick={{ fill: colors.muted, fontSize: 10 }} interval="preserveStartEnd" />
+          <XAxis
+            dataKey="validFrom"
+            tick={{ fill: colors.muted, fontSize: 10 }}
+            interval="preserveStartEnd"
+            tickFormatter={formatSlotTimeLabel}
+          />
           <YAxis yAxisId="price" tick={{ fill: colors.muted, fontSize: 10 }} width={35} />
           <YAxis yAxisId="soc" orientation="right" domain={[0, 100]} tick={{ fill: colors.muted, fontSize: 9 }} tickFormatter={(v: number) => `${v}%`} width={35} />
           <Tooltip content={<RateTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
@@ -145,7 +162,7 @@ export default function RateChartWidget() {
             {ratesWithSOC.map((entry, i) => (
               <Cell
                 key={i}
-                fill={entry.isScheduled ? colors.success : entry.price < 0 ? colors.warning : colors.accent}
+                fill={entry.plannedAction !== 'do_nothing' ? ACTION_COLORS[entry.plannedAction] : entry.price < 0 ? colors.warning : colors.accent}
                 stroke={entry.isCurrent ? '#facc15' : 'none'}
                 strokeWidth={entry.isCurrent ? 2 : 0}
               />

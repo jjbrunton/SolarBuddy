@@ -34,6 +34,9 @@ export interface Settings {
   estimated_consumption_w: string;
   negative_price_charging: string;
   negative_price_pre_discharge: string;
+  smart_discharge: string;
+  discharge_price_threshold: string;
+  discharge_soc_floor: string;
   peak_protection: string;
   peak_period_start: string;
   peak_period_end: string;

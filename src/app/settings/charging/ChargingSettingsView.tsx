@@ -178,6 +178,53 @@ export default function ChargingSettingsView() {
       </Card>
 
       <Card>
+        <h3 className="mb-4 font-medium text-sb-text">Automatic Discharge</h3>
+        <p className="mb-4 text-xs text-sb-text-muted">
+          Pick the highest-priced future slots and force a discharge window while keeping a reserve SOC. This uses the current tariff horizon and the inverter&apos;s forced discharge mode.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field
+            label="Smart Discharge"
+            description="Enable automatic discharge planning for the most expensive future slots."
+          >
+            <select
+              className={inputClass}
+              value={settings.smart_discharge}
+              onChange={(e) => update('smart_discharge', e.target.value)}
+            >
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </Field>
+          <Field
+            label="Discharge Price Threshold (p/kWh)"
+            description="Optional floor. If greater than 0, SolarBuddy only discharges in slots at or above this price."
+          >
+            <input
+              className={inputClass}
+              type="number"
+              step="0.5"
+              value={settings.discharge_price_threshold}
+              onChange={(e) => update('discharge_price_threshold', e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Reserve SOC Floor (%)"
+            description="Lowest battery level the discharge planner is allowed to use."
+          >
+            <input
+              className={inputClass}
+              type="number"
+              min="0"
+              max="100"
+              value={settings.discharge_soc_floor}
+              onChange={(e) => update('discharge_soc_floor', e.target.value)}
+            />
+          </Field>
+        </div>
+      </Card>
+
+      <Card>
         <h3 className="mb-4 font-medium text-sb-text">Peak Protection</h3>
         <p className="mb-4 text-xs text-sb-text-muted">
           Pre-charge the battery before expensive peak periods to avoid high-cost grid import.
