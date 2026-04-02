@@ -91,8 +91,9 @@ flowchart LR
 - `opportunistic_topup` can defer or pause forced grid charging when live telemetry suggests solar surplus or export is already charging the battery naturally.
 - During a charge window, the executor watches live state and can stop early once the configured minimum state of charge target is reached.
 - At window end, the executor restores the configured default work mode and updates schedule execution status in SQLite. Matching `plan_slots` charge and discharge rows are updated alongside the derived schedule window.
-- [`src/lib/scheduler/watchdog.ts`](../src/lib/scheduler/watchdog.ts) reconciles the desired inverter state against live telemetry and inverter read-back on startup, every 30 seconds, and after relevant MQTT-driven state changes.
+- [`src/lib/scheduler/watchdog.ts`](../src/lib/scheduler/watchdog.ts) reconciles the desired inverter state against live telemetry and inverter read-back on startup, every 30 seconds, and after relevant MQTT-driven state changes when the `watchdog_enabled` setting is on.
 - The watchdog derives current intent from the active manual override first and the active persisted `plan_slots` row second. Planned `hold` slots now reconcile to an explicit battery-preserving inverter state, while planned charge slots still apply the same minimum-SOC and opportunistic-top-up solar-surplus checks as the executor.
+- Disabling the watchdog only stops the background reconciliation loop. Explicit operator actions, such as writing an override for the current slot, can still trigger a one-off reconciliation pass.
 - That reconciliation loop closes the gap left by one-shot timers: it lets current-slot overrides actuate immediately, restores active windows after a process restart, and retries toward the desired state if the inverter drifts or a command does not stick.
 
 ## Key Data Flows

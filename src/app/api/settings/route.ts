@@ -30,5 +30,10 @@ export async function POST(request: Request) {
     connectMqtt();
   }
 
+  if (validated.watchdog_enabled !== undefined) {
+    const { syncInverterWatchdogSetting } = await import('@/lib/scheduler/watchdog');
+    syncInverterWatchdogSetting();
+  }
+
   return NextResponse.json({ ok: true, settings: getSettings() });
 }

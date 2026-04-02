@@ -100,6 +100,11 @@ function parseEnabledState(value: string | null): boolean | null {
   return null;
 }
 
+export function isWatchdogEnabled(): boolean {
+  const parsed = parseEnabledState(getSettings().watchdog_enabled ?? null);
+  return parsed ?? true;
+}
+
 function getCurrentOverride(nowIso: string): OverrideRow | null {
   const db = getDb();
   return (
@@ -410,6 +415,11 @@ export function queueInverterReconciliation(reason = 'state change') {
 }
 
 export function startInverterWatchdog() {
+  if (!isWatchdogEnabled()) {
+    stopInverterWatchdog();
+    return;
+  }
+
   const runtime = getWatchdogState();
 
   if (!runtime.interval) {
@@ -427,6 +437,15 @@ export function startInverterWatchdog() {
   }
 
   void reconcileInverterState('watchdog startup');
+}
+
+export function syncInverterWatchdogSetting() {
+  if (isWatchdogEnabled()) {
+    startInverterWatchdog();
+    return;
+  }
+
+  stopInverterWatchdog();
 }
 
 export function stopInverterWatchdog() {

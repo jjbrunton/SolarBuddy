@@ -9,23 +9,14 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { DescriptionList } from '@/components/ui/DescriptionList';
 import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 import { REGION_NAMES } from '@/lib/octopus/regions';
-
-interface AccountInfo {
-  accountNumber: string;
-  mpan: string;
-  meterSerial: string;
-  tariffCode: string;
-  productCode: string;
-  region: string;
-  regionName: string;
-}
+import { mergeVerifiedOctopusSettings, type VerifiedOctopusAccountInfo } from './verified-settings';
 
 export default function OctopusSettingsView() {
   const pathname = usePathname();
-  const { settings, update, save, saving, message } = useSettings();
+  const { settings, update, replaceSettings, save, persistSettings, saving, message } = useSettings();
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
-  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
+  const [accountInfo, setAccountInfo] = useState<VerifiedOctopusAccountInfo | null>(null);
 
   useEffect(() => {
     if (
@@ -65,12 +56,15 @@ export default function OctopusSettingsView() {
       });
       const json = await res.json();
       if (json.ok) {
-        const info = json.account as AccountInfo;
+        const info = json.account as VerifiedOctopusAccountInfo;
+        const nextSettings = mergeVerifiedOctopusSettings(settings, info);
         setAccountInfo(info);
-        update('octopus_region', info.region);
-        update('octopus_product_code', info.productCode);
-        update('octopus_mpan', info.mpan);
-        update('octopus_meter_serial', info.meterSerial);
+        replaceSettings(nextSettings);
+
+        const saveResult = await persistSettings(nextSettings, 'Octopus account verified and settings saved.');
+        if (!saveResult.ok) {
+          setVerifyError(saveResult.error ?? 'Verification succeeded, but saving the detected tariff details failed.');
+        }
       } else {
         setVerifyError(json.error ?? 'Verification failed');
         setAccountInfo(null);

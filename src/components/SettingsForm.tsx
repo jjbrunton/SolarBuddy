@@ -21,6 +21,7 @@ interface Settings {
   default_work_mode: string;
   charge_rate: string;
   auto_schedule: string;
+  watchdog_enabled: string;
 }
 
 const REGIONS = [
@@ -257,6 +258,16 @@ export default function SettingsForm() {
               className={inputClass}
               value={settings.auto_schedule}
               onChange={(e) => update('auto_schedule', e.target.value)}
+            >
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </Field>
+          <Field label="Watchdog">
+            <select
+              className={inputClass}
+              value={settings.watchdog_enabled}
+              onChange={(e) => update('watchdog_enabled', e.target.value)}
             >
               <option value="true">Enabled</option>
               <option value="false">Disabled</option>

@@ -76,6 +76,7 @@ All settings are managed through the web UI under **Settings**:
 1. **MQTT** — Solar Assistant host, port, and credentials
 2. **Octopus Energy** — API key and account number (region and tariff are auto-detected)
 3. **Charging** — Strategy, max slots, price thresholds, charge/discharge SOC targets, night window, work mode
+4. **General** — Background automation toggles such as Auto Schedule and the inverter watchdog
 
 ### Dashboard Highlights
 
@@ -96,6 +97,7 @@ All settings are managed through the web UI under **Settings**:
 - `hold` means SolarBuddy drives the inverter into a battery-preserving state for that slot to prevent discharge. It may be preserving energy for a better later discharge opportunity, or simply deciding to wait.
 - Setting an override on the current half-hour slot now triggers an immediate inverter reconciliation pass instead of waiting for the next scheduled timer.
 - A background watchdog reconciles the desired inverter state on startup, every 30 seconds, and after relevant telemetry changes. That lets SolarBuddy recover an active window after a restart and retry drifted inverter state if the inverter is no longer in the requested mode.
+- The watchdog can be disabled from Settings > General when you want SolarBuddy to stop sending background corrective inverter commands. Disabling it does not remove stored plans or block explicit operator actions such as saving an override.
 - Charge window times are evaluated in UK local time (`Europe/London`), including daylight saving changes.
 - Overnight schedules can only be generated once Octopus has published the relevant upcoming Agile rates, which is typically later the same day.
 - Running the scheduler with valid rates but no eligible slots clears any existing planned schedule for that day and reports that no charge windows matched the current configuration.
@@ -105,8 +107,8 @@ All settings are managed through the web UI under **Settings**:
 
 1. Get your API key from [Octopus Energy Developer Dashboard](https://octopus.energy/dashboard/new/accounts/personal-details/api-access)
 2. Enter your API key and account number (format: `A-1234ABCD`) in Settings > Octopus Energy
-3. Click **Verify Account** — your region, tariff, MPAN, and meter serial are auto-detected
-4. Click **Save Settings**
+3. Click **Verify Account** — your region, tariff, MPAN, and meter serial are auto-detected and saved immediately
+4. Use **Save Settings** if you manually adjust any Octopus values afterwards
 
 ## Key API Routes
 

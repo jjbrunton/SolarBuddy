@@ -16,7 +16,7 @@ export default function SettingsGeneralView() {
       <PageHeader
         eyebrow="Configuration"
         title="General settings"
-        description="Set the default operating mode SolarBuddy should restore after managed charging and decide whether daily automation is active."
+        description="Set the default operating mode SolarBuddy should restore after managed charging and decide which background automation loops are active."
       />
       <SettingsTabs pathname={pathname} />
 
@@ -41,6 +41,19 @@ export default function SettingsGeneralView() {
               className={inputClass}
               value={settings.auto_schedule}
               onChange={(e) => update('auto_schedule', e.target.value)}
+            >
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </Field>
+          <Field
+            label="Inverter Watchdog"
+            description="Periodically reconcile the inverter state against the active override or current plan slot. Disable this to stop background corrective commands."
+          >
+            <select
+              className={inputClass}
+              value={settings.watchdog_enabled}
+              onChange={(e) => update('watchdog_enabled', e.target.value)}
             >
               <option value="true">Enabled</option>
               <option value="false">Disabled</option>

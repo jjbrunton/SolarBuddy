@@ -29,6 +29,11 @@ export async function saveSettingsAction(
     connectMqtt();
   }
 
+  if (validated.watchdog_enabled !== undefined) {
+    const { syncInverterWatchdogSetting } = await import('@/lib/scheduler/watchdog');
+    syncInverterWatchdogSetting();
+  }
+
   revalidatePath('/settings');
   return { ok: true, settings: getSettings() };
 }

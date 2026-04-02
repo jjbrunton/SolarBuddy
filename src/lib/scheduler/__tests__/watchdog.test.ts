@@ -98,6 +98,7 @@ function buildSettings(partial: Partial<AppSettings> = {}): AppSettings {
     default_work_mode: 'Battery first',
     charge_rate: '100',
     auto_schedule: 'true',
+    watchdog_enabled: 'true',
     battery_capacity_kwh: '5.12',
     max_charge_power_kw: '3.6',
     estimated_consumption_w: '500',
@@ -164,6 +165,7 @@ vi.mock('../../events', () => ({
 import {
   reconcileInverterState,
   resolveRuntimeIntent,
+  startInverterWatchdog,
   stopInverterWatchdog,
 } from '../watchdog';
 
@@ -287,6 +289,22 @@ describe('reconcileInverterState', () => {
     await reconcileInverterState('watchdog startup');
 
     expect(stopGridCharging).toHaveBeenCalledWith('Battery first');
+    expect(startGridCharging).not.toHaveBeenCalled();
+  });
+
+  it('does not start the background watchdog loop when disabled in settings', async () => {
+    currentSettings = buildSettings({ watchdog_enabled: 'false' });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+
+    startInverterWatchdog();
+    await Promise.resolve();
+
+    expect(listeners.size).toBe(0);
     expect(startGridCharging).not.toHaveBeenCalled();
   });
 });

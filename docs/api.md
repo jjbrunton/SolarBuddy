@@ -10,7 +10,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `POST` | `/api/settings` | Update known settings keys, including charging strategy selection, and reconnect MQTT if connection settings change. |
 | `GET` | `/api/status` | Return the latest in-memory inverter and connection state. |
 | `GET` | `/api/health` | Return deployment health for container platforms. This endpoint only checks process and SQLite availability. |
-| `GET` | `/api/system` | Return health, stats, runtime metadata, and database information. |
+| `GET` | `/api/system` | Return health, stats, runtime metadata, and database information, including whether Auto Schedule and the inverter watchdog are enabled. |
 
 ## Tariffs, Scheduling, and Overrides
 

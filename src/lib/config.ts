@@ -20,6 +20,7 @@ export interface AppSettings {
   default_work_mode: string;
   charge_rate: string;
   auto_schedule: string;
+  watchdog_enabled: string;
   battery_capacity_kwh: string;
   max_charge_power_kw: string;
   estimated_consumption_w: string;
@@ -61,6 +62,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   default_work_mode: 'Battery first',
   charge_rate: '100',
   auto_schedule: 'true',
+  watchdog_enabled: 'true',
   battery_capacity_kwh: '5.12',
   max_charge_power_kw: '3.6',
   estimated_consumption_w: '500',

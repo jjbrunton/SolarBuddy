@@ -22,8 +22,9 @@ The app runs at `http://localhost:3000`.
 Most runtime configuration is managed through the web UI under **Settings**:
 
 1. Configure MQTT connectivity for Solar Assistant.
-2. Enter Octopus API credentials and verify the account.
+2. Enter Octopus API credentials and verify the account. Successful verification now persists the detected region, tariff metadata, MPAN, and meter serial immediately so the scheduler can start using Agile rates without a second manual save step.
 3. Configure charging behavior such as strategy, max charge slots, SOC targets, discharge reserve floor, overnight window for Night Fill, and auto-scheduling.
+4. Use Settings > General to control whether background automation is allowed to schedule windows automatically and whether the inverter watchdog may send periodic corrective commands.
    - `Night Fill` uses the overnight window and the max-slot cap.
    - `Opportunistic Top-up` plans across the currently published tariff horizon and uses live telemetry to avoid forcing grid charging while solar surplus is available.
    - `Smart Discharge` simulates the future charge/discharge horizon, so it can add cheap recharge slots when needed before scheduling later expensive discharge windows.

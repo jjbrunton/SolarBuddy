@@ -29,6 +29,7 @@ export interface Settings {
   default_work_mode: string;
   charge_rate: string;
   auto_schedule: string;
+  watchdog_enabled: string;
   battery_capacity_kwh: string;
   max_charge_power_kw: string;
   estimated_consumption_w: string;
@@ -110,25 +111,41 @@ export function useSettings() {
     setSettings((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
-  const save = async () => {
-    if (!settings) return;
+  const replaceSettings = (nextSettings: Settings) => {
+    setSettings(nextSettings);
+  };
+
+  const persistSettings = async (
+    nextSettings: Settings,
+    successMessage = 'Settings saved successfully.',
+  ): Promise<{ ok: boolean; error?: string }> => {
     setSaving(true);
     setMessage(null);
     try {
-      const result = await saveSettingsAction(settings as unknown as Record<string, string>);
+      const result = await saveSettingsAction(nextSettings as unknown as Record<string, string>);
       if (result.ok) {
-        setMessage('Settings saved successfully.');
+        setMessage(successMessage);
         if (result.settings) setSettings(result.settings as unknown as Settings);
+        setSaving(false);
+        return { ok: true };
       } else {
         setMessage(result.error || 'Failed to save settings');
+        setSaving(false);
+        return { ok: false, error: result.error || 'Failed to save settings' };
       }
     } catch {
       setMessage('Failed to save settings');
+      setSaving(false);
+      return { ok: false, error: 'Failed to save settings' };
     }
-    setSaving(false);
   };
 
-  return { settings, update, save, saving, message };
+  const save = async () => {
+    if (!settings) return;
+    await persistSettings(settings);
+  };
+
+  return { settings, update, replaceSettings, save, persistSettings, saving, message };
 }
 
 export function SaveButton({

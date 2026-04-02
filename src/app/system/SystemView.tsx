@@ -19,6 +19,7 @@ interface SystemInfo {
     last_schedule: string | null;
     scheduler_configured: boolean;
     auto_schedule_enabled: boolean;
+    watchdog_enabled: boolean;
   };
   stats: {
     readings_count: number;
@@ -153,6 +154,14 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
               value: (
                 <Badge kind={info.health.auto_schedule_enabled ? 'success' : 'default'}>
                   {info.health.auto_schedule_enabled ? 'Enabled' : 'Disabled'}
+                </Badge>
+              ),
+            },
+            {
+              label: 'Inverter Watchdog',
+              value: (
+                <Badge kind={info.health.watchdog_enabled ? 'success' : 'default'}>
+                  {info.health.watchdog_enabled ? 'Enabled' : 'Disabled'}
                 </Badge>
               ),
             },

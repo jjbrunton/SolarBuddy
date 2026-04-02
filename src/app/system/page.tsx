@@ -52,6 +52,7 @@ export default function SystemPage() {
       last_schedule: latestSchedule?.latest || null,
       scheduler_configured: Boolean(settings.octopus_region),
       auto_schedule_enabled: settings.auto_schedule === 'true',
+      watchdog_enabled: settings.watchdog_enabled !== 'false',
     },
     stats: {
       readings_count: readingsCount.count,
