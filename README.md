@@ -8,6 +8,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 - [Software Architecture](docs/architecture.md)
 - [API Reference](docs/api.md)
 - [Development and Verification](docs/development.md)
+- [Deployment](docs/deployment.md)
 - [Design System](docs/design-system.md)
 
 ## Features
@@ -57,6 +58,16 @@ npm run dev
 ```
 
 The app runs at `http://localhost:3000`.
+
+## Deployment
+
+SolarBuddy now ships with a generic multi-stage `Dockerfile` so the repo can be deployed on Dokploy, plain Docker, or other container platforms without committing platform-specific manifests.
+
+- Run it as a single instance only. Scheduler timers, watchdog reconciliation, and live telemetry state are process-local.
+- Mount persistent storage for SQLite and point `DB_PATH` at that volume. The default container path is `/app/data/solarbuddy.db`.
+- Use `GET /api/health` as the platform health check. It verifies that the process is up and the database can be queried, without depending on MQTT or Octopus connectivity.
+
+For the full deployment contract and Dokploy guidance, see [docs/deployment.md](docs/deployment.md).
 
 ### Configuration
 
@@ -109,6 +120,7 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 | GET | `/api/rates?from=&to=` | Retrieve stored Agile rates |
 | POST | `/api/rates` | Trigger rate fetch from Octopus API |
 | GET | `/api/status` | Current inverter status |
+| GET | `/api/health` | Deployment health check for container platforms |
 | GET | `/api/schedule` | Current battery windows plus slot-by-slot plan |
 | GET | `/api/readings` | Historical inverter readings |
 | GET | `/api/events` | SSE stream of real-time events |

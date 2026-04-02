@@ -38,6 +38,7 @@ The current settings model is defined in [`src/lib/config.ts`](../src/lib/config
 npm run dev
 npm test
 npm run build
+docker build -t solarbuddy .
 ```
 
 There is currently no separate lint script in `package.json`. `npm test` runs the Vitest suite defined by the repository, and `npm run build` performs the production compile plus TypeScript validation.
@@ -56,9 +57,11 @@ There is currently no separate lint script in `package.json`. `npm test` runs th
 - The default SQLite database path is `data/solarbuddy.db`.
 - Background services are started from [`src/instrumentation.ts`](../src/instrumentation.ts) when the app is running on the Node.js server runtime.
 - The app uses process-local in-memory state for live telemetry and timer-based schedule execution. This is important when reasoning about deployment topology.
+- The repository also includes a generic container image definition for self-hosting. Deployment-specific configuration is documented in [Deployment](deployment.md).
 
 ## Where to Document Future Changes
 
 - API behavior changes: update [API Reference](api.md)
 - Runtime or module boundary changes: update [Software Architecture](architecture.md)
 - Local setup or verification workflow changes: update this document
+- Deployment or hosting contract changes: update [Deployment](deployment.md)

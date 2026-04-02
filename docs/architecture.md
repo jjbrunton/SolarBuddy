@@ -28,6 +28,7 @@ flowchart LR
 ## Deployment Model
 
 - The app runs as a Node.js Next.js server. Background services are only started when `NEXT_RUNTIME === 'nodejs'`.
+- Production container builds use Next.js standalone output so the runtime image stays small and deployment remains platform-neutral.
 - [`src/instrumentation.ts`](../src/instrumentation.ts) is the server startup hook. It starts four long-lived services:
   - MQTT connectivity via [`src/lib/mqtt/client.ts`](../src/lib/mqtt/client.ts)
   - Scheduler cron jobs via [`src/lib/scheduler/cron.ts`](../src/lib/scheduler/cron.ts)
@@ -145,6 +146,7 @@ The default database path is `data/solarbuddy.db`, unless `DB_PATH` is set.
 
 - Scheduler time calculations are normalized to `Europe/London` in the charge window engine.
 - The in-memory state store and timer-based executor are process-local. If SolarBuddy is ever run as multiple Node processes, live telemetry state and scheduled timers would not be coordinated across instances.
+- The supported deployment topology is a single app replica with persistent SQLite storage mounted into the container or host runtime.
 - Recent MQTT log history is persisted in SQLite and trimmed to a bounded recent window for the live logs view.
 - Cron scheduling assumes Octopus Agile rates become available during the configured afternoon and evening retry window.
 - The Charge Plan UI now presents the stored schedule horizon as separate UK-local days. Past days are treated as read-only history, while today and future days continue to accept overrides against the stored horizon.

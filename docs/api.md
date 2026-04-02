@@ -9,6 +9,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `GET` | `/api/settings` | Return the current persisted settings merged with defaults. |
 | `POST` | `/api/settings` | Update known settings keys, including charging strategy selection, and reconnect MQTT if connection settings change. |
 | `GET` | `/api/status` | Return the latest in-memory inverter and connection state. |
+| `GET` | `/api/health` | Return deployment health for container platforms. This endpoint only checks process and SQLite availability. |
 | `GET` | `/api/system` | Return health, stats, runtime metadata, and database information. |
 
 ## Tariffs, Scheduling, and Overrides
@@ -50,6 +51,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 - Request validation is performed at the route boundary before data is persisted or services are invoked.
 - Most routes either query SQLite directly for simple reads or delegate to focused modules under `src/lib/`.
 - `/api/events` and `/api/system/mqtt-log` are streaming endpoints. The rest return JSON responses.
+- `/api/health` is the deployment-oriented liveness/readiness probe. It should stay cheap and should not depend on MQTT or Octopus API freshness.
 - `/api/overrides` now doubles as an actuator trigger for the live slot: after override writes complete, the scheduler watchdog recalculates the desired inverter state and sends MQTT commands when the inverter is not already compliant.
 
 ## `/api/schedule` Response Notes
