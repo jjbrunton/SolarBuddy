@@ -13,6 +13,7 @@ export interface SimulatedSlot {
   export_kwh: number;
   cost_pence: number;
   revenue_pence: number;
+  savings_pence: number;
   pv_generation_kwh: number;
   import_rate: number;
   export_rate: number;
@@ -28,6 +29,9 @@ export interface SimulationSummary {
   discharge_slot_count: number;
   hold_slot_count: number;
   total_pv_kwh: number;
+  total_savings: number;
+  savings_range_low: number;
+  savings_range_high: number;
 }
 
 export interface SimulationResult {
@@ -94,10 +98,14 @@ export function runFullSimulation(params: {
   let minSoc = soc;
   let totalImportCost = 0;
   let totalExportRevenue = 0;
+  let totalSavings = 0;
   let totalPvKwh = 0;
   let chargeCount = 0;
   let dischargeCount = 0;
   let holdCount = 0;
+
+  // Track discharge slots for savings range calculation
+  const dischargeSlotInputs: { importRate: number; pvWh: number }[] = [];
 
   const simSlots: SimulatedSlot[] = [];
 
@@ -113,6 +121,7 @@ export function runFullSimulation(params: {
     const socBefore = soc;
     let importKwh = 0;
     let exportKwh = 0;
+    let savingsKwh = 0;
 
     switch (action) {
       case 'charge': {
@@ -123,9 +132,16 @@ export function runFullSimulation(params: {
         break;
       }
       case 'discharge': {
-        const effectiveDischargeWh = Math.max(0, (chargePerSlotWh + drainPerSlotWh) - pvWh);
-        soc = Math.max(0, soc - (effectiveDischargeWh / batteryCapacityWh) * 100);
-        exportKwh = effectiveDischargeWh / 1000;
+        // Battery outputs at charge power rate. Split into:
+        // - self-consumed: serves house load, avoiding grid import
+        // - grid export: surplus beyond house consumption
+        const selfConsumedWh = Math.min(chargePerSlotWh, Math.max(0, drainPerSlotWh - pvWh));
+        const gridExportWh = Math.max(0, chargePerSlotWh + pvWh - drainPerSlotWh);
+        const totalDrainWh = selfConsumedWh + gridExportWh;
+        soc = Math.max(0, soc - (totalDrainWh / batteryCapacityWh) * 100);
+        exportKwh = gridExportWh / 1000;
+        savingsKwh = selfConsumedWh / 1000;
+        dischargeSlotInputs.push({ importRate: rate.price_inc_vat, pvWh });
         dischargeCount++;
         break;
       }
@@ -152,11 +168,13 @@ export function runFullSimulation(params: {
     minSoc = Math.min(minSoc, soc);
 
     const importRate = rate.price_inc_vat;
-    const expRate = exportRateMap.get(rate.valid_from) ?? rate.price_inc_vat;
+    const expRate = exportRateMap.get(rate.valid_from) ?? 0;
     const costPence = importKwh * importRate;
     const revenuePence = exportKwh * expRate;
+    const savingsPence = savingsKwh * importRate;
     totalImportCost += costPence;
     totalExportRevenue += revenuePence;
+    totalSavings += savingsPence;
 
     simSlots.push({
       slot_start: rate.valid_from,
@@ -169,10 +187,21 @@ export function runFullSimulation(params: {
       export_kwh: round3(exportKwh),
       cost_pence: round2(costPence),
       revenue_pence: round2(revenuePence),
+      savings_pence: round2(savingsPence),
       pv_generation_kwh: round3(pvKwh),
       import_rate: importRate,
       export_rate: expRate,
     });
+  }
+
+  // Compute savings range at 50% and 150% of estimated consumption
+  let savingsRangeLow = 0;
+  let savingsRangeHigh = 0;
+  for (const { importRate, pvWh } of dischargeSlotInputs) {
+    const drainLow = drainPerSlotWh * 0.5;
+    const drainHigh = drainPerSlotWh * 1.5;
+    savingsRangeLow += Math.min(chargePerSlotWh, Math.max(0, drainLow - pvWh)) / 1000 * importRate;
+    savingsRangeHigh += Math.min(chargePerSlotWh, Math.max(0, drainHigh - pvWh)) / 1000 * importRate;
   }
 
   return {
@@ -188,6 +217,9 @@ export function runFullSimulation(params: {
       discharge_slot_count: dischargeCount,
       hold_slot_count: holdCount,
       total_pv_kwh: round2(totalPvKwh),
+      total_savings: round2(totalSavings),
+      savings_range_low: round2(savingsRangeLow),
+      savings_range_high: round2(savingsRangeHigh),
     },
   };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ComposedChart,
   Bar,
@@ -16,10 +16,12 @@ import {
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/analytics/StatCard';
-import { Play, Loader2 } from 'lucide-react';
+import { type Settings, Field, inputClass } from '@/components/settings/shared';
+import { Play, Loader2, RotateCcw } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { formatCost } from '@/lib/forecast';
@@ -44,6 +46,7 @@ interface SimSlot {
   export_kwh: number;
   cost_pence: number;
   revenue_pence: number;
+  savings_pence: number;
   pv_generation_kwh: number;
   import_rate: number;
   export_rate: number;
@@ -59,6 +62,9 @@ interface SimSummary {
   discharge_slot_count: number;
   hold_slot_count: number;
   total_pv_kwh: number;
+  total_savings: number;
+  savings_range_low: number;
+  savings_range_high: number;
 }
 
 interface SimResult {
@@ -66,6 +72,30 @@ interface SimResult {
   startSoc: number;
   slots: SimSlot[];
   summary: SimSummary;
+}
+
+/* ---------- Override key groups ---------- */
+
+const STRATEGY_KEYS: (keyof Settings)[] = [
+  'charging_strategy', 'charge_hours', 'price_threshold',
+  'min_soc_target', 'charge_window_start', 'charge_window_end',
+];
+const BATTERY_KEYS: (keyof Settings)[] = [
+  'battery_capacity_kwh', 'max_charge_power_kw', 'charge_rate',
+  'estimated_consumption_w', 'export_rate',
+];
+const NEGATIVE_KEYS: (keyof Settings)[] = [
+  'negative_price_charging', 'negative_price_pre_discharge',
+];
+const DISCHARGE_KEYS: (keyof Settings)[] = [
+  'smart_discharge', 'discharge_price_threshold', 'discharge_soc_floor',
+];
+const PEAK_KEYS: (keyof Settings)[] = [
+  'peak_protection', 'peak_period_start', 'peak_period_end', 'peak_soc_target',
+];
+
+function countOverrides(keys: (keyof Settings)[], overrides: Partial<Settings>) {
+  return keys.filter((k) => k in overrides).length;
 }
 
 /* ---------- Helpers ---------- */
@@ -148,8 +178,34 @@ export default function SimulateView() {
   const [startSoc, setStartSoc] = useState<number>(
     inverterState.battery_soc ?? 50,
   );
-  const [smartDischarge, setSmartDischarge] = useState(true);
-  const [peakProtection, setPeakProtection] = useState(true);
+
+  // Settings overrides
+  const [savedSettings, setSavedSettings] = useState<Settings | null>(null);
+  const [overrides, setOverrides] = useState<Partial<Settings>>({});
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((s: Settings) => setSavedSettings(s));
+  }, []);
+
+  const effective = useCallback(
+    (key: keyof Settings): string => {
+      if (key in overrides) return overrides[key]!;
+      return savedSettings?.[key] ?? '';
+    },
+    [overrides, savedSettings],
+  );
+
+  const setOverride = useCallback(
+    (key: keyof Settings, value: string) => {
+      setOverrides((prev) => ({ ...prev, [key]: value }));
+    },
+    [],
+  );
+
+  const resetOverrides = useCallback(() => setOverrides({}), []);
+  const hasOverrides = Object.keys(overrides).length > 0;
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,10 +220,7 @@ export default function SimulateView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           start_soc: startSoc,
-          settings_overrides: {
-            smart_discharge: String(smartDischarge),
-            peak_protection: String(peakProtection),
-          },
+          settings_overrides: hasOverrides ? overrides : undefined,
         }),
       });
       const json = await res.json();
@@ -181,7 +234,7 @@ export default function SimulateView() {
     } finally {
       setLoading(false);
     }
-  }, [startSoc, smartDischarge, peakProtection]);
+  }, [startSoc, overrides, hasOverrides]);
 
   const hasPV = useMemo(
     () => result?.summary.total_pv_kwh != null && result.summary.total_pv_kwh > 0,
@@ -192,6 +245,10 @@ export default function SimulateView() {
     if (!result) return 'text-sb-text';
     return result.summary.net_cost <= 0 ? 'text-sb-success' : 'text-sb-danger';
   }, [result]);
+
+  const isNightFill = effective('charging_strategy') !== 'opportunistic_topup';
+  const smartDischargeOn = effective('smart_discharge') === 'true';
+  const peakProtectionOn = effective('peak_protection') === 'true';
 
   return (
     <div className="space-y-6">
@@ -213,9 +270,10 @@ export default function SimulateView() {
           title="Simulation parameters"
           subtitle="Adjust inputs to model different scenarios."
         />
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-          {/* SOC slider */}
-          <div>
+
+        {/* SOC slider + reset */}
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
             <label className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">
               Starting SOC
             </label>
@@ -234,57 +292,267 @@ export default function SimulateView() {
               </span>
             </div>
           </div>
-
-          {/* Smart discharge toggle */}
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">
-              Smart Discharge
-            </label>
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => setSmartDischarge(!smartDischarge)}
-                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                  smartDischarge ? 'bg-sb-success' : 'bg-sb-border'
-                }`}
-              >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                    smartDischarge ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-              <span className="ml-2 text-sm text-sb-text-muted">
-                {smartDischarge ? 'On' : 'Off'}
-              </span>
-            </div>
-          </div>
-
-          {/* Peak protection toggle */}
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">
-              Peak Protection
-            </label>
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => setPeakProtection(!peakProtection)}
-                className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                  peakProtection ? 'bg-sb-success' : 'bg-sb-border'
-                }`}
-              >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                    peakProtection ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-              <span className="ml-2 text-sm text-sb-text-muted">
-                {peakProtection ? 'On' : 'Off'}
-              </span>
-            </div>
-          </div>
+          {hasOverrides && (
+            <Button variant="secondary" size="sm" onClick={resetOverrides}>
+              <RotateCcw size={14} />
+              Reset to saved
+            </Button>
+          )}
         </div>
+
+        {/* Collapsible settings sections */}
+        {savedSettings && (
+          <div className="mt-4 divide-y divide-sb-border/50">
+            {/* Charging Strategy */}
+            <CollapsibleSection
+              title="Charging Strategy"
+              badge={countOverrides(STRATEGY_KEYS, overrides)}
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Strategy">
+                  <select
+                    className={inputClass}
+                    value={effective('charging_strategy')}
+                    onChange={(e) => setOverride('charging_strategy', e.target.value)}
+                  >
+                    <option value="night_fill">Night Fill</option>
+                    <option value="opportunistic_topup">Opportunistic Top-up</option>
+                  </select>
+                </Field>
+                <Field label="Max Charge Slots">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    min="1"
+                    max="48"
+                    value={effective('charge_hours')}
+                    onChange={(e) => setOverride('charge_hours', e.target.value)}
+                  />
+                </Field>
+                <Field label="Price Threshold (p/kWh)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="0.5"
+                    value={effective('price_threshold')}
+                    onChange={(e) => setOverride('price_threshold', e.target.value)}
+                  />
+                </Field>
+                <Field label="Target SOC (%)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    min="10"
+                    max="100"
+                    value={effective('min_soc_target')}
+                    onChange={(e) => setOverride('min_soc_target', e.target.value)}
+                  />
+                </Field>
+                <div className={!isNightFill ? 'opacity-50 pointer-events-none' : ''}>
+                  <Field label="Window Start">
+                    <input
+                      className={inputClass}
+                      type="time"
+                      value={effective('charge_window_start')}
+                      onChange={(e) => setOverride('charge_window_start', e.target.value)}
+                    />
+                  </Field>
+                </div>
+                <div className={!isNightFill ? 'opacity-50 pointer-events-none' : ''}>
+                  <Field label="Window End">
+                    <input
+                      className={inputClass}
+                      type="time"
+                      value={effective('charge_window_end')}
+                      onChange={(e) => setOverride('charge_window_end', e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* Battery & Consumption */}
+            <CollapsibleSection
+              title="Battery & Consumption"
+              badge={countOverrides(BATTERY_KEYS, overrides)}
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Battery Capacity (kWh)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="0.01"
+                    min="0.1"
+                    value={effective('battery_capacity_kwh')}
+                    onChange={(e) => setOverride('battery_capacity_kwh', e.target.value)}
+                  />
+                </Field>
+                <Field label="Max Charge Power (kW)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    value={effective('max_charge_power_kw')}
+                    onChange={(e) => setOverride('max_charge_power_kw', e.target.value)}
+                  />
+                </Field>
+                <Field label="Charge Rate (%)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={effective('charge_rate')}
+                    onChange={(e) => setOverride('charge_rate', e.target.value)}
+                  />
+                </Field>
+                <Field label="Est. Consumption (W)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="50"
+                    min="0"
+                    value={effective('estimated_consumption_w')}
+                    onChange={(e) => setOverride('estimated_consumption_w', e.target.value)}
+                  />
+                </Field>
+                <Field label="Export Rate (p/kWh)">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={effective('export_rate')}
+                    onChange={(e) => setOverride('export_rate', e.target.value)}
+                  />
+                </Field>
+              </div>
+            </CollapsibleSection>
+
+            {/* Negative Prices */}
+            <CollapsibleSection
+              title="Negative Prices"
+              badge={countOverrides(NEGATIVE_KEYS, overrides)}
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Charge During Negative Prices">
+                  <select
+                    className={inputClass}
+                    value={effective('negative_price_charging')}
+                    onChange={(e) => setOverride('negative_price_charging', e.target.value)}
+                  >
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </Field>
+                <Field label="Pre-Discharge Before Negative Window">
+                  <select
+                    className={inputClass}
+                    value={effective('negative_price_pre_discharge')}
+                    onChange={(e) => setOverride('negative_price_pre_discharge', e.target.value)}
+                  >
+                    <option value="false">Disabled</option>
+                    <option value="true">Enabled</option>
+                  </select>
+                </Field>
+              </div>
+            </CollapsibleSection>
+
+            {/* Smart Discharge */}
+            <CollapsibleSection
+              title="Smart Discharge"
+              badge={countOverrides(DISCHARGE_KEYS, overrides)}
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Field label="Smart Discharge">
+                  <select
+                    className={inputClass}
+                    value={effective('smart_discharge')}
+                    onChange={(e) => setOverride('smart_discharge', e.target.value)}
+                  >
+                    <option value="false">Disabled</option>
+                    <option value="true">Enabled</option>
+                  </select>
+                </Field>
+                <div className={!smartDischargeOn ? 'opacity-50 pointer-events-none' : ''}>
+                  <Field label="Discharge Threshold (p/kWh)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      step="0.5"
+                      value={effective('discharge_price_threshold')}
+                      onChange={(e) => setOverride('discharge_price_threshold', e.target.value)}
+                    />
+                  </Field>
+                </div>
+                <div className={!smartDischargeOn ? 'opacity-50 pointer-events-none' : ''}>
+                  <Field label="Reserve SOC Floor (%)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={effective('discharge_soc_floor')}
+                      onChange={(e) => setOverride('discharge_soc_floor', e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* Peak Protection */}
+            <CollapsibleSection
+              title="Peak Protection"
+              badge={countOverrides(PEAK_KEYS, overrides)}
+            >
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Peak Protection">
+                  <select
+                    className={inputClass}
+                    value={effective('peak_protection')}
+                    onChange={(e) => setOverride('peak_protection', e.target.value)}
+                  >
+                    <option value="false">Disabled</option>
+                    <option value="true">Enabled</option>
+                  </select>
+                </Field>
+                <div className={!peakProtectionOn ? 'opacity-50 pointer-events-none' : ''}>
+                  <Field label="Peak SOC Target (%)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="10"
+                      max="100"
+                      value={effective('peak_soc_target')}
+                      onChange={(e) => setOverride('peak_soc_target', e.target.value)}
+                    />
+                  </Field>
+                </div>
+                <div className={!peakProtectionOn ? 'opacity-50 pointer-events-none' : ''}>
+                  <Field label="Peak Start">
+                    <input
+                      className={inputClass}
+                      type="time"
+                      value={effective('peak_period_start')}
+                      onChange={(e) => setOverride('peak_period_start', e.target.value)}
+                    />
+                  </Field>
+                </div>
+                <div className={!peakProtectionOn ? 'opacity-50 pointer-events-none' : ''}>
+                  <Field label="Peak End">
+                    <input
+                      className={inputClass}
+                      type="time"
+                      value={effective('peak_period_end')}
+                      onChange={(e) => setOverride('peak_period_end', e.target.value)}
+                    />
+                  </Field>
+                </div>
+              </div>
+            </CollapsibleSection>
+          </div>
+        )}
       </Card>
 
       {/* Error */}
@@ -328,11 +596,26 @@ export default function SimulateView() {
               value={formatCost(result.summary.total_import_cost)}
               valueColor="text-sb-danger"
             />
-            <StatCard
-              label="Export Revenue"
-              value={formatCost(result.summary.total_export_revenue)}
-              valueColor="text-sb-success"
-            />
+            {result.summary.total_export_revenue > 0 ? (
+              <StatCard
+                label="Export Revenue"
+                value={formatCost(result.summary.total_export_revenue)}
+                valueColor="text-sb-success"
+              />
+            ) : result.summary.total_savings > 0 ? (
+              <StatCard
+                label="Est. Savings"
+                value={`${formatCost(result.summary.savings_range_low)} – ${formatCost(result.summary.savings_range_high)}`}
+                valueColor="text-sb-success"
+                subtext="Avoided import"
+              />
+            ) : (
+              <StatCard
+                label="Export Revenue"
+                value={formatCost(0)}
+                valueColor="text-sb-text-muted"
+              />
+            )}
             <StatCard
               label="SOC Range"
               value={`${result.summary.min_soc}–${result.summary.max_soc}%`}
@@ -477,6 +760,7 @@ export default function SimulateView() {
                     <th className="px-3 py-3 font-medium">Rate</th>
                     <th className="px-3 py-3 font-medium">SOC</th>
                     <th className="px-3 py-3 font-medium">Cost / Rev</th>
+                    <th className="px-3 py-3 font-medium">Savings</th>
                     {hasPV && <th className="px-3 py-3 font-medium">PV</th>}
                     <th className="px-3 py-3 font-medium">Reason</th>
                   </tr>
@@ -514,6 +798,15 @@ export default function SimulateView() {
                             <span className="font-medium text-sb-success">
                               {formatCost(Math.abs(netPence))}
                             </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3">
+                          {slot.savings_pence > 0 ? (
+                            <span className="font-medium text-sb-success">
+                              {formatCost(slot.savings_pence)}
+                            </span>
+                          ) : (
+                            <span className="text-sb-text-muted">&mdash;</span>
                           )}
                         </td>
                         {hasPV && (
