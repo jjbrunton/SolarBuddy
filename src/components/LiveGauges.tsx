@@ -6,7 +6,6 @@ import type { LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { PlaceholderValue } from '@/components/ui/PlaceholderValue';
 import { StatusIndicator } from '@/components/ui/StatusIndicator';
-import { AnimatedGauge } from '@/components/ui/AnimatedGauge';
 
 interface Props {
   state: InverterState;

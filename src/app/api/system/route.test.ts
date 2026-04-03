@@ -2,16 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   prepareMock,
+  pluckMock,
   getMock,
   getSettingsMock,
   getStateMock,
-  statSyncMock,
 } = vi.hoisted(() => ({
   prepareMock: vi.fn(),
+  pluckMock: vi.fn(),
   getMock: vi.fn(),
   getSettingsMock: vi.fn(),
   getStateMock: vi.fn(),
-  statSyncMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -28,17 +28,19 @@ vi.mock('@/lib/state', () => ({
   getState: getStateMock,
 }));
 
-vi.mock('fs', () => ({
-  default: { statSync: statSyncMock },
-  statSync: statSyncMock,
-}));
-
 import { GET } from './route';
 
 describe('/api/system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prepareMock.mockReturnValue({ get: getMock });
+    pluckMock.mockReturnValue({ get: getMock });
+    prepareMock.mockImplementation((query: string) => {
+      if (query.startsWith('PRAGMA')) {
+        return { pluck: pluckMock };
+      }
+
+      return { get: getMock };
+    });
     getSettingsMock.mockReturnValue({
       octopus_region: 'H',
       auto_schedule: 'true',
@@ -48,8 +50,9 @@ describe('/api/system', () => {
   });
 
   it('returns runtime, health, and database stats', async () => {
-    statSyncMock.mockReturnValue({ size: 12345 });
     getMock
+      .mockReturnValueOnce(3)
+      .mockReturnValueOnce(4096)
       .mockReturnValueOnce({ latest: '2026-04-03T09:30:00Z' })
       .mockReturnValueOnce({ latest: '2026-04-03T09:45:00Z' })
       .mockReturnValueOnce({ count: 111 })
@@ -70,15 +73,12 @@ describe('/api/system', () => {
     expect(payload.stats).toEqual({
       readings_count: 111,
       schedules_count: 22,
-      db_size_bytes: 12345,
+      db_size_bytes: 12288,
     });
     expect(payload.about.db_path).toContain('data/solarbuddy.db');
   });
 
   it('falls back cleanly when the database file is missing and rates are stale', async () => {
-    statSyncMock.mockImplementation(() => {
-      throw new Error('missing');
-    });
     getSettingsMock.mockReturnValue({
       octopus_region: '',
       auto_schedule: 'false',
@@ -86,6 +86,8 @@ describe('/api/system', () => {
     });
     getStateMock.mockReturnValue({ mqtt_connected: false });
     getMock
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(4096)
       .mockReturnValueOnce({ latest: null })
       .mockReturnValueOnce({ latest: null })
       .mockReturnValueOnce({ count: 0 })

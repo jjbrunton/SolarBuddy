@@ -1,6 +1,5 @@
 import { getDb } from '../db';
-import { getSettings, type AppSettings } from '../config';
-import { getTariffDefinition } from '../tariffs/definitions';
+import { getSettings } from '../config';
 import { generateSyntheticExportRates } from '../tariffs/rate-generator';
 import type { AgileRate } from './rates';
 

@@ -11,6 +11,8 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `GET` | `/api/status` | Return the latest in-memory inverter and connection state. |
 | `GET` | `/api/health` | Return deployment health for container platforms. This endpoint only checks process and SQLite availability. |
 | `GET` | `/api/system` | Return health, stats, runtime metadata, and database information, including whether Auto Schedule and the inverter watchdog are enabled. |
+| `POST` | `/api/system/time-sync` | Trigger an inverter clock synchronization and return the outcome. |
+| `POST` | `/api/system/tariff-check` | Trigger a tariff-change check against the configured Octopus account and return the result. |
 
 ## Tariffs, Scheduling, and Overrides
 
@@ -19,12 +21,19 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `POST` | `/api/octopus/verify` | Verify Octopus account details and infer tariff metadata. |
 | `GET` | `/api/rates` | Return stored Agile rates, optionally filtered by query range. |
 | `POST` | `/api/rates` | Fetch the latest Agile rates from Octopus and store them. |
+| `GET` | `/api/forecast` | Return stored PV forecast data, optionally filtered by query range, plus forecast age in minutes. |
+| `POST` | `/api/forecast` | Fetch fresh PV forecast data from Solcast when the cached forecast is stale enough to refresh. |
 | `GET` | `/api/schedule` | Return recent schedule history for the Charge Plan page, including persisted charge/discharge windows and the canonical slot-by-slot battery plan for roughly the last 30 days plus any future stored horizon. |
 | `POST` | `/api/schedule` | Trigger a scheduling cycle and return the refreshed recent schedule history payload. |
 | `GET` | `/api/overrides` | Return manual charge-slot overrides for the current day. |
 | `POST` | `/api/overrides` | Replace the current day’s manual overrides with the provided slots and immediately reconcile the inverter if the current slot changed. |
 | `PATCH` | `/api/overrides` | Upsert a single override slot and immediately reconcile the inverter when that slot is active now. |
 | `DELETE` | `/api/overrides` | Clear one or all current-day overrides and immediately reconcile the inverter state. |
+| `GET` | `/api/scheduled-actions` | Return the configured scheduled operator actions stored in SQLite. |
+| `POST` | `/api/scheduled-actions` | Create or replace a scheduled operator action. |
+| `PATCH` | `/api/scheduled-actions` | Update an existing scheduled operator action by id. |
+| `DELETE` | `/api/scheduled-actions` | Delete a scheduled operator action by id. |
+| `POST` | `/api/simulate` | Run the planner and simulator against stored tariff data and return projected slot-by-slot outcomes without sending inverter commands. |
 
 ## Telemetry and Event Streams
 
@@ -39,11 +48,8 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/analytics/energy` | Return energy-flow analytics for a selected period. |
+| `GET` | `/api/analytics/accounting` | Return accounting-oriented savings and cashflow totals for the selected period. |
 | `GET` | `/api/analytics/savings` | Return savings analytics and comparative cost views. |
-| `GET` | `/api/analytics/rates-compare` | Return tariff comparison analytics. |
-| `GET` | `/api/analytics/carbon` | Return carbon intensity analytics. |
-| `GET` | `/api/analytics/battery` | Return battery health and charge-cycle analytics. |
 
 ## API Design Notes
 

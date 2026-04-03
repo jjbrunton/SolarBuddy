@@ -4,7 +4,7 @@ This document covers local setup, common commands, and the minimum verification 
 
 ## Prerequisites
 
-- Node.js 18 or newer
+- Node.js 22 is recommended for local work. The repository includes [`.nvmrc`](../.nvmrc) so CI, the Docker image, and local shells can align on the same major version.
 - An accessible Solar Assistant MQTT broker if you want live inverter telemetry
 - An Octopus Energy account on an Agile tariff if you want live tariff verification and scheduling
 
@@ -12,6 +12,7 @@ This document covers local setup, common commands, and the minimum verification 
 
 ```bash
 npm install
+npm run test:e2e:install
 npm run dev
 ```
 
@@ -37,21 +38,38 @@ The current settings model is defined in [`src/lib/config.ts`](../src/lib/config
 
 ```bash
 npm run dev
+npm run docs:check
+npm run lint
 npm test
 npm run test:coverage
 npm run build
+npm run test:smoke
+npm run test:e2e
+npm run verify
+npm run release:dry-run
 docker build -t solarbuddy .
 ```
 
-There is currently no separate lint script in `package.json`. `npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report for backend and API code under `src/lib/` and `src/app/api/`, and `npm run build` performs the production compile plus TypeScript validation.
+`npm run lint` uses the official Next.js ESLint flat config for App Router projects.
+
+`npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report for backend and API code under `src/lib/` and `src/app/api/`, `npm run build` performs the production compile plus TypeScript validation, and `npm run test:smoke` boots the production server and verifies key routes against a temporary SQLite database.
+
+`npm run test:e2e` runs the Playwright browser suite against the built production server. On a new machine, run `npm run test:e2e:install` once to install the Chromium browser used by the suite.
+
+`npm run docs:check` verifies that [`api.md`](api.md) matches the actual route inventory under `src/app/api/**/route.ts`.
+
+`npm run verify` is the maintainer-facing default for non-trivial changes. It runs `docs:check`, lint, the Vitest suite, a production build, the smoke test, and the Playwright suite in sequence.
+
+`npm run release:dry-run` builds the release Docker image locally so maintainers can validate the shipping artifact before creating a public GitHub Release.
 
 ## GitHub Actions Validation
 
 The repository includes a GitHub Actions workflow at [`../.github/workflows/validation.yml`](../.github/workflows/validation.yml) that validates both pushes and pull requests.
 
-- The workflow runs `npm test` on Ubuntu with Node.js 20.
-- The workflow runs `npm run build` separately on Ubuntu with Node.js 20.
-- Both jobs install dependencies with `npm ci` so CI uses the committed lockfile state.
+- The validation workflow runs `npm run docs:check`, `npm run lint`, and `npm test`.
+- The validation workflow runs `npm run build`, `npm run test:smoke`, and `npm run test:e2e`.
+- The repository also includes `dependency-review.yml`, `codeql.yml`, and `release.yml` for dependency policy, static analysis, and release artifact publishing.
+- CI uses the Node version from [`.nvmrc`](../.nvmrc) so local work, container builds, and GitHub Actions stay aligned.
 
 ## Verification Expectations
 
@@ -59,6 +77,9 @@ The repository includes a GitHub Actions workflow at [`../.github/workflows/vali
 - Re-run the relevant checks after making changes.
 - When logic changes, add or update tests rather than relying on a successful build alone.
 - Use `npm run test:coverage` when you need to confirm which source areas still lack direct exercise.
+- Use `npm run docs:check` whenever API routes change.
+- Use `npm run lint` before opening a pull request.
+- Prefer `npm run verify` before opening or merging a pull request.
 - The default coverage scope is non-UI code. React pages, components, and hooks are validated separately and are not included in the default percentage.
 - Documentation-only changes should still record the verification commands that were run for the change set.
 - Scheduling logic changes should verify both the planning engine and any execution-path behavior that depends on live inverter telemetry.
@@ -76,4 +97,5 @@ The repository includes a GitHub Actions workflow at [`../.github/workflows/vali
 - API behavior changes: update [API Reference](api.md)
 - Runtime or module boundary changes: update [Software Architecture](architecture.md)
 - Local setup or verification workflow changes: update this document
+- Testing workflow changes: update [Testing Strategy](testing-strategy.md)
 - Deployment or hosting contract changes: update [Deployment](deployment.md)

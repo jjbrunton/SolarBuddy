@@ -1,0 +1,10 @@
+* @jjbrunton
+
+/.github/ @jjbrunton
+/AGENTS.md @jjbrunton
+/CLAUDE.md @jjbrunton
+/docs/ @jjbrunton
+/src/lib/db.ts @jjbrunton
+/src/lib/mqtt/ @jjbrunton
+/src/lib/scheduler/ @jjbrunton
+

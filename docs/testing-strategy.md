@@ -1,0 +1,66 @@
+# Testing Strategy
+
+This document defines the automated verification layers for SolarBuddy as an open source, self-hosted application.
+
+## Goals
+
+- Keep the repository green before merges and releases.
+- Catch regressions in scheduler logic, MQTT integration boundaries, and operator workflows before self-hosters deploy updates.
+- Make local and CI verification use the same commands.
+
+## Verification Commands
+
+```bash
+npm run docs:check
+npm run lint
+npm test
+npm run build
+npm run test:smoke
+npm run test:e2e
+npm run verify
+```
+
+`npm run verify` is the maintainer-facing default for non-trivial changes. It runs the API docs inventory check, lint, the Vitest suite, a production build, a smoke test against the built server, and Playwright E2E checks.
+
+## Test Layers
+
+### 1. Unit and service tests
+
+- Implemented with Vitest under `src/**/__tests__` and `src/**/*.test.ts`.
+- Focus on scheduling logic, API handlers, persistence helpers, and integration adapters.
+- These tests should remain the main regression net for planner behavior and runtime services.
+
+### 2. Production smoke test
+
+- `scripts/smoke-test.sh` starts the built app with a temporary SQLite database.
+- It verifies that the production server boots and serves key routes such as `/api/health`, `/`, `/simulate`, and `/api/status`.
+- This catches packaging or startup regressions that unit tests can miss.
+
+### 3. Documentation inventory check
+
+- `scripts/check-api-docs.mjs` compares `src/app/api/**/route.ts` against [`api.md`](api.md).
+- Pull requests should not merge if API behavior has drifted from the published route inventory.
+
+### 4. Browser E2E tests
+
+- Playwright tests live under `e2e/`.
+- The E2E suite runs against the production server started from the built app, not against `next dev`.
+- Run `npm run test:e2e:install` once on a new machine before the first local E2E run.
+
+## Required Regression Areas
+
+Changes in these areas should add or update tests in the same pull request:
+
+- Scheduler engine and execution behavior
+- Watchdog reconciliation and override precedence
+- MQTT topic parsing, command publishing, and log capture
+- SQLite-backed storage and additive migrations
+- API request validation and error handling
+- Simulator logic and operator planning views
+
+## Release Expectations
+
+- GitHub Actions runs the validation workflow on pushes and pull requests.
+- The validation workflow now runs docs sync, lint, unit tests, a production build, smoke checks, and Playwright E2E tests.
+- GitHub Actions also runs CodeQL and dependency review checks.
+- Releases should be cut only from a green `main`.
