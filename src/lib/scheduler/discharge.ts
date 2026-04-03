@@ -7,6 +7,7 @@ import {
   isEligibleRate,
   isInChargeWindow,
   mergeAdjacentSlots,
+  parseSlotBudget,
 } from './engine';
 
 const HALF_HOUR_HOURS = 0.5;
@@ -117,8 +118,13 @@ export function buildSmartDischargePlan(
   };
 
   const constraints = buildTargetConstraints(slots, settings, context, now, plan.chargeKeys);
-  const configuredChargeSlots = Math.max(1, parseInt(settings.charge_hours, 10) || 4);
-  let extraChargeBudget = Math.max(0, configuredChargeSlots - plan.chargeKeys.size);
+  const configuredChargeSlots = parseSlotBudget(settings.charge_hours);
+  // Give the discharge planner its own charge budget independent of the
+  // base selection.  The base planner picks the globally cheapest slots
+  // (which may all land in the distant future), while the discharge
+  // planner needs to add nearer-term charges to support profitable
+  // discharge cycles (e.g. charge overnight at 3p → discharge at 25p).
+  let extraChargeBudget = configuredChargeSlots;
 
   debug.constraintCount = constraints.length;
   debug.extraChargeBudget = extraChargeBudget;
@@ -219,20 +225,17 @@ export function findSmartDischargeSlots(
 export function calculateDischargeSlotsAvailable(
   currentSoc: number,
   reserveSoc: number,
-  settings: Pick<AppSettings, 'battery_capacity_kwh' | 'max_charge_power_kw'>,
+  settings: Pick<AppSettings, 'battery_capacity_kwh' | 'max_charge_power_kw' | 'estimated_consumption_w'>,
 ): number {
   const batteryCapacityKwh = parseFloat(settings.battery_capacity_kwh);
-  const maxDischargePowerKw = parseFloat(settings.max_charge_power_kw);
+  const estimatedConsumptionW = parseFloat(settings.estimated_consumption_w) || 0;
 
   if (!Number.isFinite(batteryCapacityKwh) || batteryCapacityKwh <= 0) {
     return 0;
   }
-  if (!Number.isFinite(maxDischargePowerKw) || maxDischargePowerKw <= 0) {
-    return 0;
-  }
 
   const availableEnergyKwh = batteryCapacityKwh * ((currentSoc - reserveSoc) / 100);
-  const energyPerSlotKwh = maxDischargePowerKw * HALF_HOUR_HOURS;
+  const energyPerSlotKwh = (estimatedConsumptionW / 1000) * HALF_HOUR_HOURS;
 
   if (availableEnergyKwh <= 0 || energyPerSlotKwh <= 0) {
     return 0;
@@ -406,11 +409,16 @@ function simulatePlan(
       const addWh = energy.chargePerSlotWh + Math.max(0, pvWh - energy.drainPerSlotWh);
       socWh = Math.min(energy.batteryCapacityWh, socWh + addWh);
     } else if (plan.dischargeKeys.has(slot.key)) {
-      // PV reduces effective discharge needed; clamp at floor for partial discharge
-      const effectiveDischarge = Math.max(0, energy.dischargePerSlotWh - pvWh);
-      const available = Math.max(0, socWh - dischargeFloorWh);
-      actualDischargeWh = Math.min(effectiveDischarge, available);
-      socWh -= actualDischargeWh;
+      // Load-following: PV offsets consumption, battery covers the rest
+      if (pvWh >= energy.drainPerSlotWh) {
+        // PV covers all consumption; surplus charges battery
+        socWh = Math.min(energy.batteryCapacityWh, socWh + (pvWh - energy.drainPerSlotWh));
+      } else {
+        const netDrain = energy.dischargePerSlotWh - pvWh;
+        const available = Math.max(0, socWh - dischargeFloorWh);
+        actualDischargeWh = Math.min(netDrain, available);
+        socWh -= actualDischargeWh;
+      }
     } else {
       // Hold: inverter prevents grid discharge so consumption comes
       // from the grid, not the battery.  PV surplus still charges.
@@ -509,7 +517,7 @@ function resolveEnergyModel(settings: Pick<AppSettings, 'battery_capacity_kwh' |
   return {
     batteryCapacityWh,
     chargePerSlotWh: effectiveChargePowerW * HALF_HOUR_HOURS,
-    dischargePerSlotWh: (effectiveChargePowerW + estimatedConsumptionW) * HALF_HOUR_HOURS,
+    dischargePerSlotWh: estimatedConsumptionW * HALF_HOUR_HOURS,
     drainPerSlotWh: estimatedConsumptionW * HALF_HOUR_HOURS,
   };
 }

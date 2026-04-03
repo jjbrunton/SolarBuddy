@@ -1,9 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getActualSOCBySlot } from '@/lib/readings/soc-by-slot';
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const period = url.searchParams.get('period') || 'today';
+
+  if (period === 'soc-slots') {
+    const date = url.searchParams.get('date');
+    if (!date) {
+      return NextResponse.json({ error: 'date parameter required' }, { status: 400 });
+    }
+    return NextResponse.json({ soc_slots: getActualSOCBySlot(date) });
+  }
+
   const db = getDb();
 
   let readings: unknown[] = [];

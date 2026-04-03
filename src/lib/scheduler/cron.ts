@@ -122,7 +122,7 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
       VALUES (?, ?, ?, ?, 'planned', ?, ?)
     `);
     const insertSlot = db.prepare(`
-      INSERT INTO plan_slots (
+      INSERT OR REPLACE INTO plan_slots (
         date,
         slot_start,
         slot_end,

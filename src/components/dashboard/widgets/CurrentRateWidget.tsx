@@ -8,6 +8,8 @@ import {
   type CurrentRateStatus,
 } from '@/lib/octopus/current-rate-summary';
 import type { AgileRate } from '@/lib/octopus/rates';
+import { Badge } from '@/components/ui/Badge';
+import { ACTION_LABELS, ACTION_BADGE_KIND, type PlanAction } from '@/lib/plan-actions';
 
 function formatPrice(price: number) {
   return price.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
@@ -87,13 +89,25 @@ function getStatusCopy(status: CurrentRateStatus, currentPrice: number, averageP
 export default function CurrentRateWidget() {
   const router = useRouter();
   const [rates, setRates] = useState<AgileRate[]>([]);
+  const [currentAction, setCurrentAction] = useState<PlanAction | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const response = await fetch('/api/rates');
-        const json = await response.json();
-        setRates(json.rates || []);
+        const [ratesRes, schedRes] = await Promise.all([
+          fetch('/api/rates'),
+          fetch('/api/schedule'),
+        ]);
+        const ratesJson = await ratesRes.json();
+        setRates(ratesJson.rates || []);
+
+        const schedJson = await schedRes.json();
+        const planSlots: { slot_start: string; slot_end: string; action: PlanAction }[] = schedJson.plan_slots || [];
+        const now = Date.now();
+        const match = planSlots.find(
+          (s) => now >= new Date(s.slot_start).getTime() && now < new Date(s.slot_end).getTime(),
+        );
+        setCurrentAction(match?.action ?? null);
       } catch {
         // Silent: the dashboard should remain usable without rate data.
       }
@@ -140,9 +154,14 @@ export default function CurrentRateWidget() {
             </p>
           </div>
 
-          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${styles.badge}`}>
-            {getStatusLabel(summary.status)}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge kind={currentAction ? ACTION_BADGE_KIND[currentAction] : 'default'}>
+              {currentAction ? ACTION_LABELS[currentAction] : 'No Plan'}
+            </Badge>
+            <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${styles.badge}`}>
+              {getStatusLabel(summary.status)}
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

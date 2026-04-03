@@ -123,7 +123,7 @@ describe('buildSchedulePlan', () => {
       charging_strategy: 'opportunistic_topup',
       smart_discharge: 'true',
       discharge_price_threshold: '40',
-      estimated_consumption_w: '0',
+      estimated_consumption_w: '500',
       min_soc_target: '0',
     }, {
       currentSoc: 60,
@@ -137,7 +137,8 @@ describe('buildSchedulePlan', () => {
   it('returns slot-level reasons and expected SOC values for the planned actions', () => {
     const rates = [
       rate('2026-04-01T22:00:00Z', '2026-04-01T22:30:00Z', 4),
-      rate('2026-04-01T22:30:00Z', '2026-04-01T23:00:00Z', 42),
+      rate('2026-04-01T22:30:00Z', '2026-04-01T23:00:00Z', 5),
+      rate('2026-04-01T23:00:00Z', '2026-04-01T23:30:00Z', 42),
     ];
 
     const plan = buildSchedulePlan(rates, {
@@ -147,7 +148,7 @@ describe('buildSchedulePlan', () => {
       discharge_price_threshold: '40',
       min_soc_target: '50',
       charge_hours: '2',
-      estimated_consumption_w: '0',
+      estimated_consumption_w: '500',
     }, {
       currentSoc: 40,
       now: new Date('2026-04-01T21:55:00Z'),
@@ -158,6 +159,10 @@ describe('buildSchedulePlan', () => {
       reason: 'Charge slot selected by the planner.',
     });
     expect(plan.slots[1]).toMatchObject({
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    });
+    expect(plan.slots[2]).toMatchObject({
       action: 'discharge',
       reason: 'Discharge slot selected by the arbitrage planner.',
     });

@@ -19,11 +19,11 @@ function rate(valid_from: string, valid_to: string, price: number): AgileRate {
 
 describe('calculateDischargeSlotsAvailable', () => {
   it('uses the available energy above the reserve SOC floor', () => {
-    expect(calculateDischargeSlotsAvailable(80, 20, baseSettings)).toBe(3);
+    expect(calculateDischargeSlotsAvailable(80, 20, baseSettings)).toBe(12);
   });
 
-  it('returns zero when a full discharge slot would breach the reserve floor', () => {
-    expect(calculateDischargeSlotsAvailable(30, 20, baseSettings)).toBe(0);
+  it('returns slots available down to the reserve floor', () => {
+    expect(calculateDischargeSlotsAvailable(30, 20, baseSettings)).toBe(2);
   });
 });
 
@@ -40,21 +40,18 @@ describe('findSmartDischargeSlots', () => {
   it('selects the highest-priced future slots up to the available discharge budget', () => {
     const windows = findSmartDischargeSlots(rates, {
       ...baseSettings,
-      estimated_consumption_w: '0',
+      estimated_consumption_w: '500',
     }, {
       currentSoc: 80,
       now: new Date('2026-04-01T10:15:00Z'),
     });
 
-    expect(windows).toHaveLength(2);
+    // With load-following discharge (0.25 kWh/slot), all profitable slots
+    // are selected and merge into a single continuous window
+    expect(windows).toHaveLength(1);
     expect(windows[0]).toMatchObject({
-      slot_start: '2026-04-01T10:30:00Z',
-      slot_end: '2026-04-01T11:00:00Z',
-      type: 'discharge',
-    });
-    expect(windows[1]).toMatchObject({
-      slot_start: '2026-04-01T11:30:00Z',
-      slot_end: '2026-04-01T12:30:00Z',
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T13:00:00Z',
       type: 'discharge',
     });
   });
@@ -62,7 +59,7 @@ describe('findSmartDischargeSlots', () => {
   it('respects the discharge price threshold', () => {
     const windows = findSmartDischargeSlots(rates, {
       ...baseSettings,
-      estimated_consumption_w: '0',
+      estimated_consumption_w: '500',
       discharge_price_threshold: '35',
     }, {
       currentSoc: 80,
@@ -108,7 +105,7 @@ describe('findSmartDischargeSlots', () => {
       charge_hours: '2',
       min_soc_target: '50',
       discharge_price_threshold: '35',
-      estimated_consumption_w: '0',
+      estimated_consumption_w: '500',
     }, initialCharge, [], {
       currentSoc: 30,
       now: new Date('2026-03-31T23:50:00Z'),
@@ -145,7 +142,7 @@ describe('findSmartDischargeSlots', () => {
       charge_window_start: '23:00',
       charge_window_end: '07:00',
       discharge_price_threshold: '35',
-      estimated_consumption_w: '0',
+      estimated_consumption_w: '500',
     }, initialCharge, [], {
       currentSoc: 60,
       now: new Date('2026-04-01T17:30:00Z'),

@@ -11,7 +11,7 @@ import { RefreshCw, Play, Trash2, Zap, BatteryLow, Pause, Circle, X, ChevronLeft
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { computeSOCForecast } from '@/lib/soc-forecast';
-import { formatSlotTimeLabel, formatSlotTooltipLabel } from '@/lib/slot-key';
+import { formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import {
   buildSchedulePlanSlots,
   formatScheduleDayLabel,
@@ -56,6 +56,7 @@ interface Override {
 
 type PlanSlot = ScheduleHistorySlot & {
   forecastSOC?: number;
+  actualSOC?: number;
 };
 
 const ACTION_ICON: Record<PlanAction, typeof Zap> = {
@@ -68,12 +69,14 @@ const ACTION_ICON: Record<PlanAction, typeof Zap> = {
 function SlotTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number; dataKey: string }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   const price = payload.find((p) => p.dataKey === 'price');
-  const soc = payload.find((p) => p.dataKey === 'forecastSOC');
+  const actual = payload.find((p) => p.dataKey === 'actualSOC');
+  const forecast = payload.find((p) => p.dataKey === 'forecastSOC');
   return (
     <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
       <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
       {price && <p className="text-sm font-semibold text-sb-text">{price.value}p/kWh</p>}
-      {soc && soc.value != null && <p className="text-xs text-sb-text-muted">SOC: {soc.value}%</p>}
+      {actual && actual.value != null && <p className="text-xs text-sb-accent">Actual: {actual.value}%</p>}
+      {forecast && forecast.value != null && <p className="text-xs text-sb-text-muted">Predicted: {forecast.value}%</p>}
     </div>
   );
 }
@@ -139,6 +142,8 @@ export default function ScheduleView() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  const [actualSOCMap, setActualSOCMap] = useState<Map<string, number>>(new Map());
+
   const availableDays = useMemo(() => {
     return [...new Set(slots.map((slot) => slot.dayKey))].sort((a, b) => a.localeCompare(b));
   }, [slots]);
@@ -147,9 +152,31 @@ export default function ScheduleView() {
     setSelectedDay((currentDay) => selectScheduleDay(availableDays, currentDay, todayDay));
   }, [availableDays, todayDay]);
 
+  useEffect(() => {
+    if (!selectedDay) return;
+    let cancelled = false;
+    fetch(`/api/readings?period=soc-slots&date=${selectedDay}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const map = new Map<string, number>();
+        for (const row of json.soc_slots || []) {
+          map.set(toSlotKey(row.slot_start), row.battery_soc);
+        }
+        setActualSOCMap(map);
+      })
+      .catch(() => {
+        if (!cancelled) setActualSOCMap(new Map());
+      });
+    return () => { cancelled = true; };
+  }, [selectedDay]);
+
   const slotsWithSOC = useMemo(() => {
     if (slots.length === 0 || state.battery_soc === null || !settings) {
-      return slots;
+      return slots.map((slot) => ({
+        ...slot,
+        actualSOC: actualSOCMap.get(toSlotKey(slot.validFrom)) ?? undefined,
+      }));
     }
 
     const currentIndex = slots.findIndex((slot) => slot.isCurrent);
@@ -160,6 +187,14 @@ export default function ScheduleView() {
       }
     });
 
+    // Use earliest actual SOC to model from the start of the day
+    let startSOC: number | undefined;
+    let startIndex: number | undefined;
+    for (let i = 0; i < slots.length; i++) {
+      const actual = actualSOCMap.get(toSlotKey(slots[i].validFrom));
+      if (actual != null) { startSOC = actual; startIndex = i; break; }
+    }
+
     const forecast = computeSOCForecast({
       currentSOC: state.battery_soc,
       currentSlotIndex: currentIndex >= 0 ? currentIndex : 0,
@@ -169,10 +204,16 @@ export default function ScheduleView() {
       batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
       maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
       estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
+      startSOC,
+      startIndex,
     });
 
-    return slots.map((slot, index) => ({ ...slot, forecastSOC: forecast[index] ?? undefined }));
-  }, [slots, state.battery_soc, settings]);
+    return slots.map((slot, index) => ({
+      ...slot,
+      forecastSOC: forecast[index] ?? undefined,
+      actualSOC: actualSOCMap.get(toSlotKey(slot.validFrom)) ?? undefined,
+    }));
+  }, [slots, state.battery_soc, settings, actualSOCMap]);
 
   const visibleSlots = useMemo(() => {
     if (!selectedDay) {
@@ -392,6 +433,11 @@ export default function ScheduleView() {
               <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-sb-text-muted" /> Predicted SOC
             </span>
           ) : null}
+          {visibleSlots.some((s) => s.actualSOC != null) ? (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-0.5 w-4 border-t-2 border-sb-accent" /> Actual SOC
+            </span>
+          ) : null}
         </div>
 
         {loading && slots.length === 0 ? (
@@ -450,6 +496,15 @@ export default function ScheduleView() {
                   connectNulls
                 />
               ) : null}
+              <Line
+                yAxisId="soc"
+                type="monotone"
+                dataKey="actualSOC"
+                stroke={colors.accent}
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+              />
             </ComposedChart>
           </ResponsiveContainer>
         )}
