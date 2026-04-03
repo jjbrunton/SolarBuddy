@@ -18,13 +18,6 @@ jobs:
 
     steps:
       - name: Check dependency changes
-        continue-on-error: true
         uses: actions/dependency-review-action@da24556b548a50705dd671f47852072ea4c105d9 # v4.7.1
         with:
           fail-on-severity: high
-
-      - name: Note unsupported repository modes
-        if: ${{ failure() }}
-        run: |
-          echo "Dependency Review is unsupported for this repository configuration on GitHub."
-          echo "The workflow is left in best-effort mode so unsupported repo settings do not block PRs."
