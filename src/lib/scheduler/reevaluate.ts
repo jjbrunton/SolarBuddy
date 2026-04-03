@@ -54,23 +54,25 @@ function getReplanState(): ReplanState {
   return g.__solarbuddy_replan;
 }
 
-async function executeReplan(reason: string) {
+async function executeReplan(reason: string, skipIntervalCheck = false) {
   const runtime = getReplanState();
   if (runtime.running) {
     runtime.pendingReason = reason;
     return;
   }
 
-  const elapsed = Date.now() - runtime.lastCompletedAt;
-  if (elapsed < MIN_INTERVAL_MS) {
-    // Defer until interval elapses
-    if (!runtime.deferredTimer) {
-      runtime.deferredTimer = setTimeout(() => {
-        runtime.deferredTimer = null;
-        void executeReplan(reason);
-      }, MIN_INTERVAL_MS - elapsed);
+  if (!skipIntervalCheck) {
+    const elapsed = Date.now() - runtime.lastCompletedAt;
+    if (elapsed < MIN_INTERVAL_MS) {
+      // Defer until interval elapses
+      if (!runtime.deferredTimer) {
+        runtime.deferredTimer = setTimeout(() => {
+          runtime.deferredTimer = null;
+          void executeReplan(reason);
+        }, MIN_INTERVAL_MS - elapsed);
+      }
+      return;
     }
-    return;
   }
 
   runtime.running = true;
@@ -87,7 +89,9 @@ async function executeReplan(reason: string) {
     if (runtime.pendingReason) {
       const queued = runtime.pendingReason;
       runtime.pendingReason = null;
-      void executeReplan(queued);
+      // Queued follow-ups bypass interval check — they represent
+      // state changes that occurred during the previous run.
+      void executeReplan(queued, true);
     }
   }
 }
