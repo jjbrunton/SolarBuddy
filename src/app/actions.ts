@@ -34,6 +34,12 @@ export async function saveSettingsAction(
     syncInverterWatchdogSetting();
   }
 
+  // Trigger schedule replan if any schedule-relevant setting changed
+  const { SCHEDULE_RELEVANT_KEYS, requestReplan } = await import('@/lib/scheduler/reevaluate');
+  if (Object.keys(validated).some((key) => SCHEDULE_RELEVANT_KEYS.has(key))) {
+    requestReplan('settings changed');
+  }
+
   revalidatePath('/settings');
   return { ok: true, settings: getSettings() };
 }
@@ -48,6 +54,12 @@ export async function fetchRatesAction(): Promise<{ ok: boolean; error?: string;
 
     const rates = await fetchAndStoreRates(now.toISOString(), tomorrow.toISOString());
     revalidatePath('/rates');
+
+    if (rates.length > 0) {
+      const { requestReplan } = await import('@/lib/scheduler/reevaluate');
+      requestReplan('manual rate fetch');
+    }
+
     return { ok: true, count: rates.length };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' };

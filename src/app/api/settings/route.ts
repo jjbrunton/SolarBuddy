@@ -35,5 +35,11 @@ export async function POST(request: Request) {
     syncInverterWatchdogSetting();
   }
 
+  // Trigger schedule replan if any schedule-relevant setting changed
+  const { SCHEDULE_RELEVANT_KEYS, requestReplan } = await import('@/lib/scheduler/reevaluate');
+  if (Object.keys(validated).some((key) => SCHEDULE_RELEVANT_KEYS.has(key))) {
+    requestReplan('settings changed');
+  }
+
   return NextResponse.json({ ok: true, settings: getSettings() });
 }

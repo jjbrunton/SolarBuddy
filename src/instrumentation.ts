@@ -5,11 +5,13 @@ export async function register() {
     const { startCronJobs } = await import('./lib/scheduler/cron');
     const { syncInverterWatchdogSetting } = await import('./lib/scheduler/watchdog');
     const { startReadingsIngestion } = await import('./lib/readings/ingest');
+    const { scheduleStartupReplan } = await import('./lib/scheduler/reevaluate');
 
     console.log('[Init] Starting background services...');
     connectMqtt();
     startCronJobs();
     syncInverterWatchdogSetting();
     startReadingsIngestion();
+    scheduleStartupReplan();
   }
 }
