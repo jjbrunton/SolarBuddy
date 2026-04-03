@@ -3,6 +3,7 @@ import EnergyFlowWidget from '@/components/dashboard/widgets/EnergyFlowWidget';
 import CurrentRateWidget from '@/components/dashboard/widgets/CurrentRateWidget';
 import RateChartWidget from '@/components/dashboard/widgets/RateChartWidget';
 import UpcomingChargesWidget from '@/components/dashboard/widgets/UpcomingChargesWidget';
+import SolarForecastWidget from '@/components/dashboard/widgets/SolarForecastWidget';
 
 export interface WidgetDefinition {
   id: string;
@@ -16,4 +17,5 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   { id: 'current-rate', label: 'Current Rate', component: CurrentRateWidget },
   { id: 'rate-chart', label: 'Rate Chart', component: RateChartWidget },
   { id: 'upcoming-charges', label: 'Upcoming Charges', component: UpcomingChargesWidget },
+  { id: 'solar-forecast', label: 'Solar Forecast', component: SolarForecastWidget },
 ];

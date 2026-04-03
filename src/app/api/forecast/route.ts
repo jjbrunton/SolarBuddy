@@ -13,7 +13,9 @@ export async function GET(request: Request) {
   return NextResponse.json({ forecasts, ageMinutes: Math.round(ageMinutes) });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const force = searchParams.get('force') === 'true';
   const settings = getSettings();
 
   if (!settings.pv_latitude || !settings.pv_longitude || !settings.pv_kwp) {
@@ -23,9 +25,9 @@ export async function POST() {
     );
   }
 
-  // Rate-limit: only fetch if data is stale (>2 hours)
+  // Rate-limit: only fetch if data is stale (>2 hours), unless forced
   const ageMinutes = getLatestForecastAge();
-  if (ageMinutes < 120) {
+  if (!force && ageMinutes < 120) {
     return NextResponse.json({
       ok: true,
       message: `Forecast data is ${Math.round(ageMinutes)} minutes old — still fresh, skipping API call`,
