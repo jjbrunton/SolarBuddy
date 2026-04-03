@@ -75,11 +75,17 @@ export async function stopGridDischarge(defaultMode: 'Battery first' | 'Load fir
   await setWorkMode(defaultMode);
 }
 
-export async function startBatteryHold() {
-  console.log('[CMD] Holding battery (prevent discharge)');
+export async function startBatteryHold(currentSoc: number) {
+  console.log(`[CMD] Holding battery (prevent discharge, stop-discharge=${currentSoc}%)`);
   await setBatterySlot1(false);
   await setOutputSourcePriority('USB');
   await setWorkMode('Load first');
+  await setLoadFirstStopDischarge(currentSoc);
+}
+
+export async function setLoadFirstStopDischarge(soc: number) {
+  console.log(`[CMD] Load first stop discharge: ${soc}%`);
+  await publish(COMMAND_TOPICS.loadFirstStopDischarge, String(soc));
 }
 
 export async function setOutputSourcePriority(priority: string) {
@@ -100,4 +106,9 @@ export async function setMaxGridChargeCurrent(amps: number) {
 export async function setShutdownBatteryVoltage(voltage: number) {
   console.log(`[CMD] Shutdown battery voltage: ${voltage}V`);
   await publish(COMMAND_TOPICS.shutdownBatteryVoltage, String(voltage));
+}
+
+export async function syncDateTime(formatted: string) {
+  console.log(`[CMD] Syncing inverter date/time: ${formatted}`);
+  await publish(COMMAND_TOPICS.dateTime, formatted);
 }

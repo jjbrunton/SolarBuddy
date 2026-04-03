@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSettings } from '../../config';
+import { DEFAULT_SETTINGS, type AppSettings } from '../../config';
 import type { InverterState } from '../../types';
 import type { PlanAction } from '../../plan-actions';
 
@@ -10,6 +10,7 @@ const {
   stopGridCharging,
   stopGridDischarge,
   setWorkMode,
+  setLoadFirstStopDischarge,
   appendEvent,
 } = vi.hoisted(() => ({
   startGridCharging: vi.fn().mockResolvedValue(undefined),
@@ -18,6 +19,7 @@ const {
   stopGridCharging: vi.fn().mockResolvedValue(undefined),
   stopGridDischarge: vi.fn().mockResolvedValue(undefined),
   setWorkMode: vi.fn().mockResolvedValue(undefined),
+  setLoadFirstStopDischarge: vi.fn().mockResolvedValue(undefined),
   appendEvent: vi.fn(),
 }));
 
@@ -79,42 +81,11 @@ function buildState(partial: Partial<InverterState> = {}): InverterState {
 
 function buildSettings(partial: Partial<AppSettings> = {}): AppSettings {
   return {
+    ...DEFAULT_SETTINGS,
     mqtt_host: 'broker',
-    mqtt_port: '1883',
-    mqtt_username: '',
-    mqtt_password: '',
     octopus_region: 'H',
-    octopus_product_code: 'AGILE-24-10-01',
-    octopus_api_key: '',
-    octopus_account: '',
-    octopus_mpan: '',
-    octopus_meter_serial: '',
     charging_strategy: 'opportunistic_topup',
-    charge_hours: '4',
-    price_threshold: '0',
-    min_soc_target: '80',
-    charge_window_start: '23:00',
-    charge_window_end: '07:00',
-    default_work_mode: 'Battery first',
-    charge_rate: '100',
-    auto_schedule: 'true',
     watchdog_enabled: 'true',
-    battery_capacity_kwh: '5.12',
-    max_charge_power_kw: '3.6',
-    estimated_consumption_w: '500',
-    tariff_type: 'agile',
-    tariff_offpeak_rate: '7.5',
-    tariff_peak_rate: '35',
-    tariff_standard_rate: '24.5',
-    negative_price_charging: 'true',
-    negative_price_pre_discharge: 'false',
-    smart_discharge: 'false',
-    discharge_price_threshold: '0',
-    discharge_soc_floor: '20',
-    peak_protection: 'false',
-    peak_period_start: '16:00',
-    peak_period_end: '19:00',
-    peak_soc_target: '90',
     ...partial,
   };
 }
@@ -135,9 +106,17 @@ vi.mock('../../db', () => ({
   }),
 }));
 
-vi.mock('../../config', () => ({
-  getSettings: () => currentSettings,
+vi.mock('../../scheduled-actions', () => ({
+  evaluateScheduledActions: () => null,
 }));
+
+vi.mock('../../config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../config')>();
+  return {
+    ...actual,
+    getSettings: () => currentSettings,
+  };
+});
 
 vi.mock('../../state', () => ({
   getState: () => currentState,
@@ -156,6 +135,7 @@ vi.mock('../../mqtt/commands', () => ({
   stopGridCharging,
   stopGridDischarge,
   setWorkMode,
+  setLoadFirstStopDischarge,
 }));
 
 vi.mock('../../events', () => ({
@@ -211,6 +191,7 @@ describe('reconcileInverterState', () => {
     stopGridCharging.mockClear();
     stopGridDischarge.mockClear();
     setWorkMode.mockClear();
+    setLoadFirstStopDischarge.mockClear();
     appendEvent.mockClear();
   });
 
@@ -306,5 +287,165 @@ describe('reconcileInverterState', () => {
 
     expect(listeners.size).toBe(0);
     expect(startGridCharging).not.toHaveBeenCalled();
+  });
+
+  it('does not consider hold satisfied when load_first_stop_discharge is far below SOC', async () => {
+    currentState = buildState({
+      battery_soc: 56,
+      work_mode: 'Load first',
+      output_source_priority: 'USB',
+      battery_first_grid_charge: 'Disabled',
+      load_first_stop_discharge: 20,
+    });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'hold',
+      reason: 'Hold battery.',
+    };
+
+    await reconcileInverterState('watchdog startup');
+
+    expect(startBatteryHold).toHaveBeenCalledWith(56);
+  });
+
+  it('considers hold satisfied when load_first_stop_discharge matches SOC', async () => {
+    currentState = buildState({
+      battery_soc: 56,
+      work_mode: 'Load first',
+      output_source_priority: 'USB',
+      battery_first_grid_charge: 'Disabled',
+      load_first_stop_discharge: 56,
+    });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'hold',
+      reason: 'Hold battery.',
+    };
+
+    await reconcileInverterState('watchdog startup');
+
+    expect(startBatteryHold).not.toHaveBeenCalled();
+  });
+
+  it('restores load_first_stop_discharge when transitioning from hold to charge', async () => {
+    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: 20 });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'hold',
+      reason: 'Hold battery.',
+    };
+    await reconcileInverterState('enter hold');
+    expect(startBatteryHold).toHaveBeenCalledWith(40);
+
+    startBatteryHold.mockClear();
+    setLoadFirstStopDischarge.mockClear();
+
+    // Simulate inverter now in hold state
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Load first',
+      output_source_priority: 'USB',
+      battery_first_grid_charge: 'Disabled',
+      load_first_stop_discharge: 40,
+    });
+
+    // Transition to charge
+    planSlotRow = {
+      slot_start: '2026-04-01T10:30:00Z',
+      slot_end: '2026-04-01T11:00:00Z',
+      action: 'charge',
+      reason: 'Charge slot.',
+    };
+    await reconcileInverterState('transition to charge');
+
+    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(20);
+    expect(startGridCharging).toHaveBeenCalledWith(100);
+  });
+
+  it('restores load_first_stop_discharge when transitioning from hold to idle', async () => {
+    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: 25 });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'hold',
+      reason: 'Hold battery.',
+    };
+    await reconcileInverterState('enter hold');
+
+    setLoadFirstStopDischarge.mockClear();
+
+    // Simulate hold state, then transition to idle (no plan slot)
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Load first',
+      output_source_priority: 'USB',
+      battery_first_grid_charge: 'Disabled',
+      load_first_stop_discharge: 40,
+    });
+    planSlotRow = null;
+    await reconcileInverterState('transition to idle');
+
+    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(25);
+  });
+
+  it('restores load_first_stop_discharge when transitioning from hold to discharge', async () => {
+    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: 15 });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'hold',
+      reason: 'Hold battery.',
+    };
+    await reconcileInverterState('enter hold');
+
+    setLoadFirstStopDischarge.mockClear();
+
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Load first',
+      output_source_priority: 'USB',
+      battery_first_grid_charge: 'Disabled',
+      load_first_stop_discharge: 40,
+    });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:30:00Z',
+      slot_end: '2026-04-01T11:00:00Z',
+      action: 'discharge',
+      reason: 'Discharge slot.',
+    };
+    await reconcileInverterState('transition to discharge');
+
+    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(15);
+    expect(startGridDischarge).toHaveBeenCalled();
+  });
+
+  it('falls back to discharge_soc_floor when pre-hold stop discharge is unknown', async () => {
+    currentSettings = buildSettings({ discharge_soc_floor: '25' });
+    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: null });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'hold',
+      reason: 'Hold battery.',
+    };
+    await reconcileInverterState('enter hold');
+
+    setLoadFirstStopDischarge.mockClear();
+
+    // Transition to idle
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Load first',
+      output_source_priority: 'USB',
+      battery_first_grid_charge: 'Disabled',
+      load_first_stop_discharge: 40,
+    });
+    planSlotRow = null;
+    await reconcileInverterState('transition to idle');
+
+    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(25);
   });
 });

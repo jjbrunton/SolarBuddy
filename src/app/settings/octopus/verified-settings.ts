@@ -1,3 +1,10 @@
+export interface VerifiedOctopusExportInfo {
+  mpan: string;
+  meterSerial: string;
+  tariffCode: string;
+  productCode: string;
+}
+
 export interface VerifiedOctopusAccountInfo {
   accountNumber: string;
   mpan: string;
@@ -6,6 +13,7 @@ export interface VerifiedOctopusAccountInfo {
   productCode: string;
   region: string;
   regionName: string;
+  export?: VerifiedOctopusExportInfo;
 }
 
 export interface OctopusSettingsShape {
@@ -15,13 +23,16 @@ export interface OctopusSettingsShape {
   octopus_product_code: string;
   octopus_mpan: string;
   octopus_meter_serial: string;
+  octopus_export_mpan: string;
+  octopus_export_meter_serial: string;
+  octopus_export_product_code: string;
 }
 
 export function mergeVerifiedOctopusSettings<T extends OctopusSettingsShape>(
   settings: T,
   account: VerifiedOctopusAccountInfo,
 ): T {
-  return {
+  const merged = {
     ...settings,
     octopus_account: account.accountNumber,
     octopus_region: account.region,
@@ -29,4 +40,12 @@ export function mergeVerifiedOctopusSettings<T extends OctopusSettingsShape>(
     octopus_mpan: account.mpan,
     octopus_meter_serial: account.meterSerial ?? '',
   };
+
+  if (account.export) {
+    merged.octopus_export_mpan = account.export.mpan;
+    merged.octopus_export_meter_serial = account.export.meterSerial ?? '';
+    merged.octopus_export_product_code = account.export.productCode;
+  }
+
+  return merged;
 }

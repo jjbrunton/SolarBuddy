@@ -42,6 +42,23 @@ export interface Settings {
   peak_period_start: string;
   peak_period_end: string;
   peak_soc_target: string;
+  // Export
+  octopus_export_mpan: string;
+  octopus_export_meter_serial: string;
+  octopus_export_product_code: string;
+  export_rate: string;
+  // PV Forecast (forecast.solar)
+  pv_forecast_enabled: string;
+  pv_forecast_confidence: string;
+  pv_latitude: string;
+  pv_longitude: string;
+  pv_declination: string;
+  pv_azimuth: string;
+  pv_kwp: string;
+  // Time sync
+  time_sync_enabled: string;
+  // Tariff monitor
+  tariff_monitor_enabled: string;
 }
 
 const tabs = [
@@ -49,6 +66,7 @@ const tabs = [
   { label: 'MQTT', href: '/settings/mqtt' },
   { label: 'Octopus Energy', href: '/settings/octopus' },
   { label: 'Charging', href: '/settings/charging' },
+  { label: 'Solar', href: '/settings/solar' },
 ];
 
 export const inputClass =

@@ -1,6 +1,11 @@
 import * as cron from 'node-cron';
 import { getSettings } from '../config';
 import { resolveRates } from '../octopus/rates';
+import { resolveExportRates } from '../octopus/export-rates';
+import { fetchPVForecast } from '../solcast/client';
+import { storePVForecast, getStoredPVForecast, getLatestForecastAge } from '../solcast/store';
+import { syncInverterTime } from '../inverter/time-sync';
+import { checkForTariffChange } from '../octopus/tariff-monitor';
 import { getState } from '../state';
 import { buildSchedulePlan, getChargingStrategy, type ChargeWindow, type PlannedSlot } from './engine';
 import { scheduleExecution } from './executor';
@@ -9,6 +14,8 @@ import { appendEvent } from '../events';
 
 let afternoonJob: cron.ScheduledTask | null = null;
 let eveningJob: cron.ScheduledTask | null = null;
+let timeSyncJob: cron.ScheduledTask | null = null;
+let tariffCheckJob: cron.ScheduledTask | null = null;
 
 export type ScheduleCycleStatus = 'scheduled' | 'no_rates' | 'no_windows' | 'missing_config' | 'error';
 
@@ -64,12 +71,44 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
       };
     }
 
+    // Fetch export rates (returns empty array if not configured)
+    const exportRates = await resolveExportRates(now.toISOString(), tomorrow.toISOString());
+    console.log(`[Cron] Resolved ${exportRates.length} export rates`);
+
+    // Fetch PV forecast from forecast.solar if enabled and stale
+    let pvForecast: Awaited<ReturnType<typeof getStoredPVForecast>> = [];
+    if (settings.pv_forecast_enabled === 'true' && settings.pv_latitude && settings.pv_longitude && settings.pv_kwp) {
+      const ageMinutes = getLatestForecastAge();
+      if (ageMinutes > 120) {
+        try {
+          const fresh = await fetchPVForecast(
+            settings.pv_latitude,
+            settings.pv_longitude,
+            settings.pv_declination || '35',
+            settings.pv_azimuth || '0',
+            settings.pv_kwp,
+          );
+          if (fresh.length > 0) {
+            storePVForecast(fresh);
+          }
+          console.log(`[Cron] Fetched ${fresh.length} PV forecast slots from forecast.solar`);
+        } catch (err) {
+          console.error('[Cron] PV forecast fetch failed:', err);
+          logScheduleEvent('warning', `PV forecast fetch failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      pvForecast = getStoredPVForecast(now.toISOString(), tomorrow.toISOString());
+      console.log(`[Cron] Using ${pvForecast.length} PV forecast slots`);
+    }
+
     const strategy = getChargingStrategy(settings);
     const strategyLabel = strategy === 'night_fill' ? 'Night Fill' : 'Opportunistic Top-up';
     const state = getState();
     const plan = buildSchedulePlan(rates, settings, {
       currentSoc: state.battery_soc,
       now,
+      exportRates,
+      pvForecast,
     });
     const windows = plan.windows;
     const plannedSlots = plan.slots;
@@ -163,7 +202,28 @@ export function startCronJobs() {
     runScheduleCycle();
   });
 
+  // Daily inverter time sync at 03:00
+  timeSyncJob = cron.schedule('0 3 * * *', async () => {
+    const settings = getSettings();
+    if (settings.time_sync_enabled === 'true') {
+      await syncInverterTime();
+    }
+  });
+
+  // Daily tariff change check at 06:00
+  tariffCheckJob = cron.schedule('0 6 * * *', async () => {
+    const settings = getSettings();
+    if (settings.tariff_monitor_enabled === 'true' && settings.octopus_api_key) {
+      const result = await checkForTariffChange();
+      if (result.changed) {
+        logScheduleEvent('warning', `Tariff changed to ${result.newProductCode}. Triggering re-schedule.`);
+        runScheduleCycle();
+      }
+    }
+  });
+
   console.log('[Cron] Scheduled rate fetch: afternoon (4:05pm-8pm) + evening (11:05pm-00:05am)');
+  console.log('[Cron] Scheduled time sync: daily at 03:00, tariff check: daily at 06:00');
 }
 
 export function stopCronJobs() {
@@ -174,5 +234,13 @@ export function stopCronJobs() {
   if (eveningJob) {
     eveningJob.stop();
     eveningJob = null;
+  }
+  if (timeSyncJob) {
+    timeSyncJob.stop();
+    timeSyncJob = null;
+  }
+  if (tariffCheckJob) {
+    tariffCheckJob.stop();
+    tariffCheckJob = null;
   }
 }

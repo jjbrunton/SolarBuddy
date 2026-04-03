@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { DescriptionList } from '@/components/ui/DescriptionList';
 import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 import { REGION_NAMES } from '@/lib/octopus/regions';
-import { mergeVerifiedOctopusSettings, type VerifiedOctopusAccountInfo } from './verified-settings';
+import { mergeVerifiedOctopusSettings, type VerifiedOctopusAccountInfo, type VerifiedOctopusExportInfo } from './verified-settings';
 
 export default function OctopusSettingsView() {
   const pathname = usePathname();
@@ -26,6 +26,17 @@ export default function OctopusSettingsView() {
       settings.octopus_mpan &&
       !accountInfo
     ) {
+      let exportInfo: VerifiedOctopusExportInfo | undefined;
+      if (settings.octopus_export_mpan) {
+        exportInfo = {
+          mpan: settings.octopus_export_mpan,
+          meterSerial: settings.octopus_export_meter_serial,
+          tariffCode: settings.octopus_export_product_code
+            ? `E-1R-${settings.octopus_export_product_code}-${settings.octopus_region}`
+            : '',
+          productCode: settings.octopus_export_product_code,
+        };
+      }
       setAccountInfo({
         accountNumber: settings.octopus_account,
         mpan: settings.octopus_mpan,
@@ -34,6 +45,7 @@ export default function OctopusSettingsView() {
         productCode: settings.octopus_product_code,
         region: settings.octopus_region,
         regionName: REGION_NAMES[settings.octopus_region] ?? 'Unknown',
+        export: exportInfo,
       });
     }
   }, [settings, accountInfo]);
@@ -198,12 +210,65 @@ export default function OctopusSettingsView() {
                   ...(accountInfo.meterSerial
                     ? [{ label: 'Meter Serial', value: accountInfo.meterSerial }]
                     : []),
+                  ...(accountInfo.export
+                    ? [
+                        { label: 'Export MPAN', value: accountInfo.export.mpan },
+                        ...(accountInfo.export.meterSerial
+                          ? [{ label: 'Export Meter Serial', value: accountInfo.export.meterSerial }]
+                          : []),
+                        { label: 'Export Product Code', value: accountInfo.export.productCode },
+                      ]
+                    : []),
                 ]}
               />
             </Card>
           ) : null}
         </>
       ) : null}
+
+      <Card>
+        <SettingsSection
+          title="Export Meter (Optional)"
+          description="Configure if you have an export meter with a Smart Export Guarantee or Agile Outgoing tariff. Leave blank if you don't get paid for export."
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Export MPAN">
+              <input
+                className={inputClass}
+                value={settings.octopus_export_mpan}
+                onChange={(e) => update('octopus_export_mpan', e.target.value)}
+              />
+            </Field>
+            <Field label="Export Meter Serial">
+              <input
+                className={inputClass}
+                value={settings.octopus_export_meter_serial}
+                onChange={(e) => update('octopus_export_meter_serial', e.target.value)}
+              />
+            </Field>
+            <Field label="Export Product Code">
+              <input
+                className={inputClass}
+                value={settings.octopus_export_product_code}
+                onChange={(e) => update('octopus_export_product_code', e.target.value)}
+              />
+            </Field>
+            <Field
+              label="Fixed Export Rate (p/kWh)"
+              description="Used when no dynamic export tariff is configured. Set to 0 if you don't get paid for export."
+            >
+              <input
+                className={inputClass}
+                type="number"
+                step="0.1"
+                min="0"
+                value={settings.export_rate}
+                onChange={(e) => update('export_rate', e.target.value)}
+              />
+            </Field>
+          </div>
+        </SettingsSection>
+      </Card>
 
       <SaveButton saving={saving} message={message} onSave={save} />
     </div>

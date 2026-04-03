@@ -1,44 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildSchedulePlan, findCheapestSlots } from '../engine';
 import type { AgileRate } from '../../octopus/rates';
-import type { AppSettings } from '../../config';
+import { DEFAULT_SETTINGS, type AppSettings } from '../../config';
 
 const baseSettings: AppSettings = {
-  mqtt_host: '',
-  mqtt_port: '1883',
-  mqtt_username: '',
-  mqtt_password: '',
+  ...DEFAULT_SETTINGS,
   octopus_region: 'H',
-  octopus_product_code: 'AGILE-24-10-01',
-  octopus_api_key: '',
-  octopus_account: '',
-  octopus_mpan: '',
-  octopus_meter_serial: '',
-  charging_strategy: 'night_fill',
-  charge_hours: '4',
-  price_threshold: '0',
-  min_soc_target: '80',
-  charge_window_start: '23:00',
-  charge_window_end: '07:00',
-  default_work_mode: 'Battery first',
-  charge_rate: '100',
-  auto_schedule: 'true',
-  battery_capacity_kwh: '5.12',
-  max_charge_power_kw: '3.6',
-  estimated_consumption_w: '500',
-  tariff_type: 'agile',
-  tariff_offpeak_rate: '7.5',
-  tariff_peak_rate: '35',
-  tariff_standard_rate: '24.5',
-  negative_price_charging: 'true',
-  negative_price_pre_discharge: 'false',
-  smart_discharge: 'false',
-  discharge_price_threshold: '0',
-  discharge_soc_floor: '20',
-  peak_protection: 'false',
-  peak_period_start: '16:00',
-  peak_period_end: '19:00',
-  peak_soc_target: '90',
 };
 
 function rate(valid_from: string, valid_to: string, price_inc_vat: number): AgileRate {
@@ -191,8 +158,8 @@ describe('buildSchedulePlan', () => {
       reason: 'Charge slot selected by the planner.',
     });
     expect(plan.slots[1]).toMatchObject({
-      action: 'hold',
-      reason: 'Hold battery and prevent discharge in this slot.',
+      action: 'discharge',
+      reason: 'Discharge slot selected by the arbitrage planner.',
     });
     expect(plan.slots.every((slot) => slot.expected_soc_after !== null)).toBe(true);
   });

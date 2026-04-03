@@ -40,6 +40,23 @@ export interface AppSettings {
   peak_period_start: string;
   peak_period_end: string;
   peak_soc_target: string;
+  // Export
+  octopus_export_mpan: string;
+  octopus_export_meter_serial: string;
+  octopus_export_product_code: string;
+  export_rate: string;
+  // PV Forecast (forecast.solar)
+  pv_forecast_enabled: string;
+  pv_forecast_confidence: string;
+  pv_latitude: string;
+  pv_longitude: string;
+  pv_declination: string;
+  pv_azimuth: string;
+  pv_kwp: string;
+  // Time sync
+  time_sync_enabled: string;
+  // Tariff monitor
+  tariff_monitor_enabled: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -79,6 +96,23 @@ export const DEFAULT_SETTINGS: AppSettings = {
   peak_period_start: '16:00',
   peak_period_end: '19:00',
   peak_soc_target: '90',
+  // Export
+  octopus_export_mpan: '',
+  octopus_export_meter_serial: '',
+  octopus_export_product_code: '',
+  export_rate: '0',
+  // PV Forecast (forecast.solar)
+  pv_forecast_enabled: 'false',
+  pv_forecast_confidence: 'estimate',
+  pv_latitude: '',
+  pv_longitude: '',
+  pv_declination: '35',
+  pv_azimuth: '0',
+  pv_kwp: '',
+  // Time sync
+  time_sync_enabled: 'false',
+  // Tariff monitor
+  tariff_monitor_enabled: 'true',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];

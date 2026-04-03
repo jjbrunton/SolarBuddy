@@ -109,6 +109,39 @@ function initSchema(db: Database.Database) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS export_rates (
+      valid_from TEXT NOT NULL,
+      valid_to TEXT NOT NULL,
+      price_inc_vat REAL NOT NULL,
+      price_exc_vat REAL,
+      fetched_at TEXT NOT NULL,
+      source TEXT DEFAULT 'api',
+      PRIMARY KEY (valid_from)
+    );
+
+    CREATE TABLE IF NOT EXISTS pv_forecasts (
+      valid_from TEXT NOT NULL,
+      valid_to TEXT NOT NULL,
+      pv_estimate_w REAL NOT NULL,
+      pv_estimate10_w REAL,
+      pv_estimate90_w REAL,
+      fetched_at TEXT NOT NULL,
+      PRIMARY KEY (valid_from)
+    );
+
+    CREATE TABLE IF NOT EXISTS scheduled_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      time TEXT NOT NULL,
+      days TEXT NOT NULL DEFAULT 'daily',
+      soc_condition TEXT NOT NULL DEFAULT 'any',
+      soc_threshold REAL DEFAULT 0,
+      duration_minutes INTEGER NOT NULL DEFAULT 30,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings(timestamp);
     CREATE INDEX IF NOT EXISTS idx_readings_date ON readings(date(timestamp));
     CREATE INDEX IF NOT EXISTS idx_rates_valid_from ON rates(valid_from);
@@ -121,6 +154,9 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_mqtt_logs_ts ON mqtt_logs(timestamp);
     CREATE INDEX IF NOT EXISTS idx_carbon_period ON carbon_intensity(period_from);
     CREATE INDEX IF NOT EXISTS idx_overrides_date ON manual_overrides(date);
+    CREATE INDEX IF NOT EXISTS idx_export_rates_valid_from ON export_rates(valid_from);
+    CREATE INDEX IF NOT EXISTS idx_pv_forecasts_valid_from ON pv_forecasts(valid_from);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_actions_enabled ON scheduled_actions(enabled);
   `);
 
   // Migrate: add new columns for expanded Solar Assistant data

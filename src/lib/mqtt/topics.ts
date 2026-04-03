@@ -50,7 +50,9 @@ export const COMMAND_TOPICS = {
   outputSourcePriority: 'solar_assistant/inverter_1/output_source_priority/set',
   chargerSourcePriority: 'solar_assistant/inverter_1/charger_source_priority/set',
   maxGridChargeCurrent: 'solar_assistant/inverter_1/max_grid_charge_current/set',
+  loadFirstStopDischarge: 'solar_assistant/inverter_1/load_first_stop_discharge/set',
   shutdownBatteryVoltage: 'solar_assistant/inverter_1/shutdown_battery_voltage/set',
+  dateTime: 'solar_assistant/inverter_1/date_time/set',
 } as const;
 
 export type TopicKey =

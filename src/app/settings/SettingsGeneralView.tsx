@@ -59,6 +59,32 @@ export default function SettingsGeneralView() {
               <option value="false">Disabled</option>
             </select>
           </Field>
+          <Field
+            label="Inverter Time Sync"
+            description="Sync inverter clock daily at 03:00"
+          >
+            <select
+              className={inputClass}
+              value={settings.time_sync_enabled}
+              onChange={(e) => update('time_sync_enabled', e.target.value)}
+            >
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </Field>
+          <Field
+            label="Tariff Change Monitor"
+            description="Check daily at 06:00 for tariff changes and auto-update settings"
+          >
+            <select
+              className={inputClass}
+              value={settings.tariff_monitor_enabled}
+              onChange={(e) => update('tariff_monitor_enabled', e.target.value)}
+            >
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+          </Field>
           </div>
         </SettingsSection>
       </Card>

@@ -14,6 +14,8 @@ const HALF_HOUR_HOURS = 0.5;
 interface SlotModel {
   key: string;
   rate: AgileRate;
+  exportPrice: number;
+  pvEstimateWh: number;
   startMs: number;
   endMs: number;
   baseChargeCandidate: boolean;
@@ -37,6 +39,7 @@ interface SimulationPoint {
   key: string;
   endMs: number;
   socAfterWh: number;
+  actualDischargeWh: number;
 }
 
 interface EnergyModel {
@@ -49,6 +52,22 @@ interface EnergyModel {
 export interface SmartDischargePlan {
   extraChargeWindows: ChargeWindow[];
   dischargeWindows: ChargeWindow[];
+  _debug?: SmartDischargeDebug;
+}
+
+export interface SmartDischargeDebug {
+  exitReason?: string;
+  candidateCount?: number;
+  extraChargeBudget?: number;
+  extraChargeBudgetAfterBackfill?: number;
+  constraintCount?: number;
+  constraintDeadlines?: Array<{ deadlineMs: number; deadlineISO: string; targetSoc: number }>;
+  plannedChargeKeys?: string[];
+  candidateResults?: Array<{
+    key: string;
+    price: number;
+    rejected: 'backfill' | 'floor' | 'value' | null;
+  }>;
 }
 
 export function buildSmartDischargePlan(
@@ -57,30 +76,38 @@ export function buildSmartDischargePlan(
   plannedChargeWindows: ChargeWindow[],
   fixedDischargeWindows: ChargeWindow[],
   context: PlanningContext = {},
+  exportRates?: AgileRate[],
+  pvForecast?: Array<{ valid_from: string; pv_estimate_w: number }>,
 ): SmartDischargePlan {
+  const debug: SmartDischargeDebug = {};
+  const empty = (reason: string): SmartDischargePlan => {
+    debug.exitReason = reason;
+    return { extraChargeWindows: [], dischargeWindows: [], _debug: debug };
+  };
+
   if (settings.smart_discharge !== 'true') {
-    return { extraChargeWindows: [], dischargeWindows: [] };
+    return empty(`smart_discharge=${settings.smart_discharge}`);
   }
 
   const currentSoc = context.currentSoc ?? null;
   if (currentSoc === null) {
-    return { extraChargeWindows: [], dischargeWindows: [] };
+    return empty('no currentSoc');
   }
 
   const reserveSoc = clampPercentage(parseFloat(settings.discharge_soc_floor));
-  if (reserveSoc === null || currentSoc <= reserveSoc) {
-    return { extraChargeWindows: [], dischargeWindows: [] };
+  if (reserveSoc === null) {
+    return empty('no reserveSoc');
   }
 
   const energy = resolveEnergyModel(settings);
   if (energy === null) {
-    return { extraChargeWindows: [], dischargeWindows: [] };
+    return empty('invalid energy model');
   }
 
   const now = context.now ?? new Date();
-  const slots = buildSlotModels(rates, settings, now);
+  const slots = buildSlotModels(rates, settings, now, exportRates, pvForecast);
   if (slots.length === 0) {
-    return { extraChargeWindows: [], dischargeWindows: [] };
+    return empty('no slots');
   }
 
   const plan: ActionPlan = {
@@ -89,19 +116,31 @@ export function buildSmartDischargePlan(
     extraChargeKeys: new Set<string>(),
   };
 
-  const constraints = buildTargetConstraints(slots, settings, context, now);
+  const constraints = buildTargetConstraints(slots, settings, context, now, plan.chargeKeys);
   const configuredChargeSlots = Math.max(1, parseInt(settings.charge_hours, 10) || 4);
   let extraChargeBudget = Math.max(0, configuredChargeSlots - plan.chargeKeys.size);
 
-  const initialBackfill = backfillChargesForTargets(slots, plan, constraints, extraChargeBudget, currentSoc, energy);
-  if (!initialBackfill.feasible) {
-    return { extraChargeWindows: [], dischargeWindows: [] };
-  }
-  extraChargeBudget = initialBackfill.remainingBudget;
+  debug.constraintCount = constraints.length;
+  debug.extraChargeBudget = extraChargeBudget;
+  debug.constraintDeadlines = constraints.map((c) => ({
+    deadlineMs: c.deadlineMs,
+    deadlineISO: new Date(c.deadlineMs).toISOString(),
+    targetSoc: c.targetSoc,
+  }));
+  debug.plannedChargeKeys = [...plan.chargeKeys].sort();
 
-  let currentValue = calculatePlanValue(plan, slots, energy);
-  const smartDischargeKeys = new Set<string>();
+  const initialBackfill = backfillChargesForTargets(slots, plan, constraints, extraChargeBudget, currentSoc, energy);
+  // If initial backfill fails (e.g. night-window SOC target can't be met
+  // due to drain modelling, even though afternoon charges handle it), don't
+  // block the entire planner — proceed with zero extra budget and let the
+  // per-candidate floor + value checks gate individual discharge slots.
+  extraChargeBudget = initialBackfill.feasible ? initialBackfill.remainingBudget : 0;
+  debug.extraChargeBudgetAfterBackfill = extraChargeBudget;
+
   const dischargeFloorWh = percentageToWh(reserveSoc, energy.batteryCapacityWh);
+  let currentSim = simulatePlan(slots, plan, currentSoc, energy, dischargeFloorWh);
+  let currentValue = calculatePlanValue(plan, slots, energy, currentSim);
+  const smartDischargeKeys = new Set<string>();
 
   const candidates = slots
     .filter((slot) =>
@@ -116,6 +155,9 @@ export function buildSmartDischargePlan(
       return a.startMs - b.startMs;
     });
 
+  debug.candidateCount = candidates.length;
+  debug.candidateResults = [];
+
   for (const candidate of candidates) {
     const tentative = clonePlan(plan);
     tentative.dischargeKeys.add(candidate.key);
@@ -127,32 +169,42 @@ export function buildSmartDischargePlan(
       extraChargeBudget,
       currentSoc,
       energy,
+      candidate.startMs,
     );
     if (!refill.feasible) {
+      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'backfill' });
       continue;
     }
 
-    const simulation = simulatePlan(slots, tentative, currentSoc, energy);
-    if (!respectsDischargeFloor(simulation, tentative.dischargeKeys, dischargeFloorWh)) {
+    const simulation = simulatePlan(slots, tentative, currentSoc, energy, dischargeFloorWh);
+
+    // Reject if the slot would discharge nothing (SOC already at floor)
+    const candidateSim = simulation.find((p) => p.key === candidate.key);
+    if (!candidateSim || candidateSim.actualDischargeWh <= 0) {
+      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'floor' });
       continue;
     }
 
-    const tentativeValue = calculatePlanValue(tentative, slots, energy);
+    const tentativeValue = calculatePlanValue(tentative, slots, energy, simulation);
     if (tentativeValue <= currentValue) {
+      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'value' });
       continue;
     }
 
+    debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: null });
     plan.chargeKeys = tentative.chargeKeys;
     plan.dischargeKeys = tentative.dischargeKeys;
     plan.extraChargeKeys = tentative.extraChargeKeys;
     extraChargeBudget = refill.remainingBudget;
     currentValue = tentativeValue;
+    currentSim = simulation;
     smartDischargeKeys.add(candidate.key);
   }
 
   return {
     extraChargeWindows: slotsToWindows(slots, plan.extraChargeKeys),
     dischargeWindows: slotsToWindows(slots, smartDischargeKeys, 'discharge'),
+    _debug: debug,
   };
 }
 
@@ -193,12 +245,30 @@ function buildSlotModels(
   rates: AgileRate[],
   settings: AppSettings,
   now: Date,
+  exportRates?: AgileRate[],
+  pvForecast?: Array<{ valid_from: string; pv_estimate_w: number }>,
 ): SlotModel[] {
   const strategy = getChargingStrategy(settings);
   const priceThreshold = parseFloat(settings.price_threshold) || 0;
   const dischargePriceThreshold = parseFloat(settings.discharge_price_threshold) || 0;
   const peakStart = settings.peak_period_start || '16:00';
   const peakEnd = settings.peak_period_end || '19:00';
+
+  // Build export rate lookup — falls back to import rate when absent
+  const exportRateMap = new Map<string, number>();
+  if (exportRates) {
+    for (const er of exportRates) {
+      exportRateMap.set(er.valid_from, er.price_inc_vat);
+    }
+  }
+
+  // Build PV forecast lookup (watts → Wh for a 30-min slot)
+  const pvMap = new Map<string, number>();
+  if (pvForecast) {
+    for (const pv of pvForecast) {
+      pvMap.set(pv.valid_from, pv.pv_estimate_w * 0.5);
+    }
+  }
 
   return [...rates]
     .sort((a, b) => a.valid_from.localeCompare(b.valid_from))
@@ -211,6 +281,8 @@ function buildSlotModels(
       return {
         key: rate.valid_from,
         rate,
+        exportPrice: exportRateMap.get(rate.valid_from) ?? rate.price_inc_vat,
+        pvEstimateWh: pvMap.get(rate.valid_from) ?? 0,
         startMs,
         endMs,
         baseChargeCandidate: isEligibleRate(rate, settings, strategy, now) && passesChargeThreshold,
@@ -228,27 +300,19 @@ function buildTargetConstraints(
   settings: AppSettings,
   context: PlanningContext,
   now: Date,
+  _plannedChargeKeys?: Set<string>,
 ): TargetConstraint[] {
   const constraints: TargetConstraint[] = [];
   const currentSoc = context.currentSoc ?? null;
   if (currentSoc === null) return constraints;
 
-  const targetSoc = clampPercentage(parseFloat(settings.min_soc_target));
-  if (targetSoc !== null && targetSoc > currentSoc) {
-    const strategy = getChargingStrategy(settings);
-    const eligible = strategy === 'opportunistic_topup'
-      ? slots
-      : slots.filter((slot) => slot.baseChargeCandidate);
-    const deadlineMs = eligible[eligible.length - 1]?.endMs;
-
-    if (deadlineMs) {
-      constraints.push({
-        deadlineMs,
-        targetSoc,
-        canUseCharge: (slot) => slot.baseChargeCandidate && slot.endMs <= deadlineMs,
-      });
-    }
-  }
+  // NOTE: min_soc_target is intentionally NOT a discharge constraint.
+  // It is a *charging* target — findCheapestSlots and peak-prep already
+  // ensure the battery charges to that level.  The discharge_soc_floor
+  // (enforced by respectsDischargeFloor) is the correct lower bound for
+  // discharge decisions.  Including min_soc_target here would force the
+  // planner to maintain that SOC through the entire horizon, making
+  // discharge impossible in most scenarios.
 
   if (settings.peak_protection === 'true') {
     const peakTarget = clampPercentage(parseFloat(settings.peak_soc_target));
@@ -281,8 +345,17 @@ function backfillChargesForTargets(
   remainingBudget: number,
   currentSoc: number,
   energy: EnergyModel,
+  /** When set, skip constraints whose deadline is before this time —
+   *  a discharge after the deadline cannot affect the SOC at it. */
+  onlyAfterMs?: number,
 ): { feasible: boolean; remainingBudget: number } {
   for (const constraint of constraints) {
+    // A discharge that starts after a constraint's deadline cannot lower
+    // the SOC at that deadline, so the constraint is unaffected.
+    if (onlyAfterMs !== undefined && constraint.deadlineMs <= onlyAfterMs) {
+      continue;
+    }
+
     while (socAtDeadline(simulatePlan(slots, plan, currentSoc, energy), constraint.deadlineMs, currentSoc, energy.batteryCapacityWh) < constraint.targetSoc) {
       if (remainingBudget <= 0) {
         return { feasible: false, remainingBudget };
@@ -319,37 +392,42 @@ function simulatePlan(
   plan: ActionPlan,
   currentSoc: number,
   energy: EnergyModel,
+  dischargeFloorWh: number = 0,
 ): SimulationPoint[] {
   let socWh = percentageToWh(currentSoc, energy.batteryCapacityWh);
   const points: SimulationPoint[] = [];
 
   for (const slot of slots) {
+    const pvWh = slot.pvEstimateWh;
+    let actualDischargeWh = 0;
+
     if (plan.chargeKeys.has(slot.key)) {
-      socWh = Math.min(energy.batteryCapacityWh, socWh + energy.chargePerSlotWh);
+      // Grid charging + PV surplus after covering consumption
+      const addWh = energy.chargePerSlotWh + Math.max(0, pvWh - energy.drainPerSlotWh);
+      socWh = Math.min(energy.batteryCapacityWh, socWh + addWh);
     } else if (plan.dischargeKeys.has(slot.key)) {
-      socWh = Math.max(0, socWh - energy.dischargePerSlotWh);
+      // PV reduces effective discharge needed; clamp at floor for partial discharge
+      const effectiveDischarge = Math.max(0, energy.dischargePerSlotWh - pvWh);
+      const available = Math.max(0, socWh - dischargeFloorWh);
+      actualDischargeWh = Math.min(effectiveDischarge, available);
+      socWh -= actualDischargeWh;
     } else {
-      socWh = Math.max(0, socWh - energy.drainPerSlotWh);
+      // Hold: inverter prevents grid discharge so consumption comes
+      // from the grid, not the battery.  PV surplus still charges.
+      if (pvWh > energy.drainPerSlotWh) {
+        socWh = Math.min(energy.batteryCapacityWh, socWh + (pvWh - energy.drainPerSlotWh));
+      }
     }
 
     points.push({
       key: slot.key,
       endMs: slot.endMs,
       socAfterWh: socWh,
+      actualDischargeWh,
     });
   }
 
   return points;
-}
-
-function respectsDischargeFloor(
-  simulation: SimulationPoint[],
-  dischargeKeys: Set<string>,
-  dischargeFloorWh: number,
-): boolean {
-  return simulation.every((point) =>
-    !dischargeKeys.has(point.key) || point.socAfterWh >= dischargeFloorWh,
-  );
 }
 
 function socAtDeadline(
@@ -367,14 +445,19 @@ function calculatePlanValue(
   plan: ActionPlan,
   slots: SlotModel[],
   energy: EnergyModel,
+  simulation?: SimulationPoint[],
 ): number {
   let total = 0;
+  const simByKey = simulation ? new Map(simulation.map((p) => [p.key, p])) : null;
 
   for (const slot of slots) {
     if (plan.chargeKeys.has(slot.key)) {
       total -= (energy.chargePerSlotWh / 1000) * slot.rate.price_inc_vat;
     } else if (plan.dischargeKeys.has(slot.key)) {
-      total += (energy.dischargePerSlotWh / 1000) * slot.rate.price_inc_vat;
+      // Use actual discharge from simulation (supports partial discharge
+      // when SOC is near the floor), falling back to full rate
+      const dischargeWh = simByKey?.get(slot.key)?.actualDischargeWh ?? energy.dischargePerSlotWh;
+      total += (dischargeWh / 1000) * slot.exportPrice;
     }
   }
 
