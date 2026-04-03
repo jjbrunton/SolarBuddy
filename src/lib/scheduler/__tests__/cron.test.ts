@@ -109,7 +109,7 @@ vi.mock('../../db', () => ({
         return { run: insertWindowRun };
       }
 
-      if (sql.includes('INSERT INTO plan_slots')) {
+      if (sql.includes('INTO plan_slots')) {
         return { run: insertSlotRun };
       }
 

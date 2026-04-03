@@ -12,6 +12,9 @@ export interface SOCForecastParams {
   estimatedConsumptionW: number;
   /** Optional PV forecast: map from slot index to expected PV generation in watts. */
   perSlotPVGenerationW?: Map<number, number>;
+  /** Optional starting SOC and index for modelling from an earlier slot than currentSlotIndex. */
+  startSOC?: number;
+  startIndex?: number;
 }
 
 /**
@@ -33,6 +36,8 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
     maxChargePowerW,
     estimatedConsumptionW,
     perSlotPVGenerationW,
+    startSOC,
+    startIndex: paramStartIndex,
   } = params;
 
   if (totalSlots === 0 || batteryCapacityWh <= 0) return [];
@@ -42,13 +47,17 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
   const drainPerSlotWh = estimatedConsumptionW * 0.5;
 
   const forecast: number[] = new Array(totalSlots);
+  const hasStart = startSOC != null && paramStartIndex != null;
+  const modelStart = hasStart ? paramStartIndex : currentSlotIndex;
 
-  for (let i = 0; i < currentSlotIndex && i < totalSlots; i++) {
-    forecast[i] = currentSOC;
+  // Fill slots before the model start with the starting SOC
+  const fillSOC = hasStart ? startSOC : currentSOC;
+  for (let i = 0; i < modelStart && i < totalSlots; i++) {
+    forecast[i] = fillSOC;
   }
 
-  let soc = currentSOC;
-  for (let i = currentSlotIndex; i < totalSlots; i++) {
+  let soc = fillSOC;
+  for (let i = modelStart; i < totalSlots; i++) {
     const action = slotActions.get(i) ?? 'do_nothing';
     const pvWh = (perSlotPVGenerationW?.get(i) ?? 0) * 0.5;
 
@@ -61,10 +70,17 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
         break;
       }
       case 'discharge': {
-        // PV reduces the effective discharge needed to cover load
-        const effectiveDischargeWh = Math.max(0, (chargePerSlotWh + drainPerSlotWh) - pvWh);
-        const dischargePercent = (effectiveDischargeWh / batteryCapacityWh) * 100;
-        soc = Math.max(0, soc - dischargePercent);
+        // Load-following: battery only covers consumption minus PV
+        if (pvWh >= drainPerSlotWh) {
+          // PV covers all consumption; surplus charges battery
+          const surplusWh = pvWh - drainPerSlotWh;
+          const addPercent = (surplusWh / batteryCapacityWh) * 100;
+          soc = Math.min(100, soc + addPercent);
+        } else {
+          const netDrainWh = drainPerSlotWh - pvWh;
+          const drainPercent = (netDrainWh / batteryCapacityWh) * 100;
+          soc = Math.max(0, soc - drainPercent);
+        }
         break;
       }
       case 'hold': {

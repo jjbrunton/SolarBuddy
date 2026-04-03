@@ -76,9 +76,17 @@ export function findCheapestSlots(
   if (eligible.length === 0) return [];
 
   const sortedByPrice = [...eligible].sort((a, b) => a.price_inc_vat - b.price_inc_vat);
+
+  let effectiveThreshold = priceThreshold;
+  if (effectiveThreshold <= 0 && !Number.isFinite(slotBudget)) {
+    // Unlimited slots with no explicit threshold: only charge below the
+    // average rate so we don't charge at peak prices.
+    effectiveThreshold = eligible.reduce((sum, r) => sum + r.price_inc_vat, 0) / eligible.length;
+  }
+
   const selected =
-    priceThreshold > 0
-      ? sortedByPrice.filter((rate) => rate.price_inc_vat <= priceThreshold).slice(0, slotBudget)
+    effectiveThreshold > 0
+      ? sortedByPrice.filter((rate) => rate.price_inc_vat <= effectiveThreshold).slice(0, slotBudget)
       : sortedByPrice.slice(0, slotBudget);
 
   if (selected.length === 0) return [];
@@ -112,14 +120,29 @@ export function calculateSlotsNeeded(
   return Math.max(1, Math.ceil(requiredEnergyKwh / energyPerSlotKwh));
 }
 
+export function parseSlotBudget(chargeHours: string): number {
+  const parsed = parseInt(chargeHours, 10);
+  if (parsed === 0) return Infinity;
+  return Math.max(1, parsed || 4);
+}
+
 function resolveSlotBudget(settings: AppSettings, currentSoc: number | null): number {
-  const configuredSlots = Math.max(1, parseInt(settings.charge_hours, 10) || 4);
+  const configuredSlots = parseSlotBudget(settings.charge_hours);
 
   if (currentSoc === null) {
     return configuredSlots;
   }
 
   const targetSoc = clampPercentage(parseFloat(settings.min_soc_target));
+
+  // When smart discharge is active the battery cycles through
+  // charge-discharge patterns.  Always use the full configured budget
+  // so the planner can pick enough cheap slots for the next cycle,
+  // regardless of the current SOC.
+  if (settings.smart_discharge === 'true' && targetSoc !== null && targetSoc > 0) {
+    return configuredSlots;
+  }
+
   if (targetSoc === null || currentSoc >= targetSoc) {
     return 0;
   }
@@ -366,7 +389,7 @@ function buildPlannedSlots(
   );
 
   for (let index = 0; index < actions.length; index += 1) {
-    if (actions[index] === 'do_nothing') {
+    if (actions[index] === 'do_nothing' && holdIndices.has(index)) {
       actions[index] = 'hold';
     }
   }
