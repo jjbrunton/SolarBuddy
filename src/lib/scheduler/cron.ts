@@ -1,7 +1,8 @@
 import * as cron from 'node-cron';
 import { getSettings } from '../config';
-import { resolveRates } from '../octopus/rates';
+import { resolveRates, getStoredRates } from '../octopus/rates';
 import { resolveExportRates } from '../octopus/export-rates';
+import { getStoredExportRates } from '../octopus/export-rates';
 import { fetchPVForecast } from '../solcast/client';
 import { storePVForecast, getStoredPVForecast, getLatestForecastAge } from '../solcast/store';
 import { syncInverterTime } from '../inverter/time-sync';
@@ -16,6 +17,7 @@ let afternoonJob: cron.ScheduledTask | null = null;
 let eveningJob: cron.ScheduledTask | null = null;
 let timeSyncJob: cron.ScheduledTask | null = null;
 let tariffCheckJob: cron.ScheduledTask | null = null;
+let replanJob: cron.ScheduledTask | null = null;
 
 export type ScheduleCycleStatus = 'scheduled' | 'no_rates' | 'no_windows' | 'missing_config' | 'error';
 
@@ -187,6 +189,85 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
   }
 }
 
+export async function replanFromStoredRates(): Promise<ScheduleCycleResult> {
+  const settings = getSettings();
+  console.log('[Replan] Rebuilding schedule from stored rates...');
+
+  try {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(23, 59, 0, 0);
+
+    const rates = getStoredRates(now.toISOString(), tomorrow.toISOString());
+    if (rates.length === 0) {
+      console.log('[Replan] No stored rates available, skipping');
+      return { ok: true, status: 'no_rates', message: 'No stored rates available for replanning.', windowsCount: 0 };
+    }
+
+    const exportRates = getStoredExportRates(now.toISOString(), tomorrow.toISOString());
+
+    let pvForecast: Awaited<ReturnType<typeof getStoredPVForecast>> = [];
+    if (settings.pv_forecast_enabled === 'true') {
+      pvForecast = getStoredPVForecast(now.toISOString(), tomorrow.toISOString());
+    }
+
+    const strategy = getChargingStrategy(settings);
+    const strategyLabel = strategy === 'night_fill' ? 'Night Fill' : 'Opportunistic Top-up';
+    const state = getState();
+    const plan = buildSchedulePlan(rates, settings, {
+      currentSoc: state.battery_soc,
+      now,
+      exportRates,
+      pvForecast,
+    });
+    const windows = plan.windows;
+    const plannedSlots = plan.slots;
+
+    const db = getDb();
+    const today = now.toISOString().split('T')[0];
+
+    const insertWindow = db.prepare(`
+      INSERT INTO schedules (date, slot_start, slot_end, avg_price, status, created_at, type)
+      VALUES (?, ?, ?, ?, 'planned', ?, ?)
+    `);
+    const insertSlot = db.prepare(`
+      INSERT OR REPLACE INTO plan_slots (
+        date, slot_start, slot_end, action, reason,
+        expected_soc_after, expected_value, status, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'planned', ?)
+    `);
+    const insertAll = db.transaction((ws: ChargeWindow[], slots: PlannedSlot[]) => {
+      db.prepare("DELETE FROM schedules WHERE date = ? AND status = 'planned'").run(today);
+      db.prepare("DELETE FROM plan_slots WHERE date = ? AND status = 'planned'").run(today);
+      for (const w of ws) {
+        insertWindow.run(today, w.slot_start, w.slot_end, w.avg_price, new Date().toISOString(), w.type ?? 'charge');
+      }
+      for (const slot of slots) {
+        insertSlot.run(today, slot.slot_start, slot.slot_end, slot.action, slot.reason, slot.expected_soc_after, slot.expected_value, new Date().toISOString());
+      }
+    });
+    insertAll(windows, plannedSlots);
+
+    if (settings.auto_schedule === 'true') {
+      scheduleExecution(windows);
+    }
+
+    const message = windows.length === 0
+      ? `${strategyLabel} replan: no eligible battery windows.`
+      : `${strategyLabel} replan: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
+    logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
+    console.log(`[Replan] Complete — ${windows.length} windows`);
+    return { ok: true, status: windows.length === 0 ? 'no_windows' : 'scheduled', message, windowsCount: windows.length };
+  } catch (err) {
+    console.error('[Replan] Failed:', err);
+    const message = err instanceof Error ? err.message : 'Unknown replan error';
+    logScheduleEvent('error', message);
+    return { ok: false, status: 'error', message, windowsCount: 0 };
+  }
+}
+
 export function startCronJobs() {
   stopCronJobs();
 
@@ -222,7 +303,13 @@ export function startCronJobs() {
     }
   });
 
+  // Periodic replan every 30 minutes using stored rates + current SOC
+  replanJob = cron.schedule('2,32 * * * *', () => {
+    replanFromStoredRates();
+  });
+
   console.log('[Cron] Scheduled rate fetch: afternoon (4:05pm-8pm) + evening (11:05pm-00:05am)');
+  console.log('[Cron] Scheduled replan: every 30 minutes at :02 and :32');
   console.log('[Cron] Scheduled time sync: daily at 03:00, tariff check: daily at 06:00');
 }
 
@@ -242,5 +329,9 @@ export function stopCronJobs() {
   if (tariffCheckJob) {
     tariffCheckJob.stop();
     tariffCheckJob = null;
+  }
+  if (replanJob) {
+    replanJob.stop();
+    replanJob = null;
   }
 }

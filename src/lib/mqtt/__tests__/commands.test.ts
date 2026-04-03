@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  setBatterySlot1,
   setChargerSourcePriority,
   setGridChargeRate,
   setLoadFirstStopDischarge,
@@ -54,15 +53,15 @@ describe('mqtt commands', () => {
     });
     getMqttClientMock.mockReturnValue({ connected: true, publish });
 
-    await expect(setBatterySlot1(true)).rejects.toThrow(
-      `failed:${COMMAND_TOPICS.batterySlot1Enabled}:1:1`,
+    await expect(setGridChargeRate(75)).rejects.toThrow(
+      `failed:${COMMAND_TOPICS.gridChargeRate}:75:1`,
     );
 
     expect(appendMqttLogMock).toHaveBeenCalledWith({
       level: 'error',
       direction: 'outbound',
-      topic: COMMAND_TOPICS.batterySlot1Enabled,
-      payload: '1',
+      topic: COMMAND_TOPICS.gridChargeRate,
+      payload: '75',
     });
   });
 
@@ -136,7 +135,6 @@ describe('mqtt commands', () => {
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
       [COMMAND_TOPICS.workMode, 'Grid first'],
-      [COMMAND_TOPICS.batterySlot1Enabled, '1'],
       [COMMAND_TOPICS.gridChargeRate, '88'],
     ]);
   });
@@ -150,7 +148,6 @@ describe('mqtt commands', () => {
     await stopGridCharging('Load first');
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
-      [COMMAND_TOPICS.batterySlot1Enabled, '0'],
       [COMMAND_TOPICS.workMode, 'Load first'],
     ]);
   });
@@ -165,7 +162,6 @@ describe('mqtt commands', () => {
     await stopGridDischarge('Load first');
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
-      [COMMAND_TOPICS.batterySlot1Enabled, '0'],
       [COMMAND_TOPICS.workMode, 'Load first'],
       [COMMAND_TOPICS.outputSourcePriority, 'SBU'],
       [COMMAND_TOPICS.outputSourcePriority, 'USB'],
@@ -182,7 +178,6 @@ describe('mqtt commands', () => {
     await startBatteryHold(57);
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
-      [COMMAND_TOPICS.batterySlot1Enabled, '0'],
       [COMMAND_TOPICS.outputSourcePriority, 'USB'],
       [COMMAND_TOPICS.workMode, 'Load first'],
       [COMMAND_TOPICS.loadFirstStopDischarge, '57'],
