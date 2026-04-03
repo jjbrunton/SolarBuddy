@@ -38,17 +38,28 @@ The current settings model is defined in [`src/lib/config.ts`](../src/lib/config
 ```bash
 npm run dev
 npm test
+npm run test:coverage
 npm run build
 docker build -t solarbuddy .
 ```
 
-There is currently no separate lint script in `package.json`. `npm test` runs the Vitest suite defined by the repository, and `npm run build` performs the production compile plus TypeScript validation.
+There is currently no separate lint script in `package.json`. `npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report for backend and API code under `src/lib/` and `src/app/api/`, and `npm run build` performs the production compile plus TypeScript validation.
+
+## GitHub Actions Validation
+
+The repository includes a GitHub Actions workflow at [`../.github/workflows/validation.yml`](../.github/workflows/validation.yml) that validates both pushes and pull requests.
+
+- The workflow runs `npm test` on Ubuntu with Node.js 20.
+- The workflow runs `npm run build` separately on Ubuntu with Node.js 20.
+- Both jobs install dependencies with `npm ci` so CI uses the committed lockfile state.
 
 ## Verification Expectations
 
 - Run the relevant baseline checks before making changes.
 - Re-run the relevant checks after making changes.
 - When logic changes, add or update tests rather than relying on a successful build alone.
+- Use `npm run test:coverage` when you need to confirm which source areas still lack direct exercise.
+- The default coverage scope is non-UI code. React pages, components, and hooks are validated separately and are not included in the default percentage.
 - Documentation-only changes should still record the verification commands that were run for the change set.
 - Scheduling logic changes should verify both the planning engine and any execution-path behavior that depends on live inverter telemetry.
 - Scheduler changes should verify both the canonical `plan_slots.action` output and the derived `schedules.type` values used for execution history.

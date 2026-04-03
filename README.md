@@ -134,10 +134,14 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 
 ```bash
 npm test          # Run all tests once
+npm run test:coverage  # Generate a backend/API coverage report
 npm run test:watch  # Run in watch mode
 ```
 
 Tests use [Vitest](https://vitest.dev/) and live in `__tests__/` directories alongside source files.
+Coverage currently focuses on non-UI code under `src/lib/` and `src/app/api/`.
+
+GitHub Actions also validates commits and pull requests with the same core checks in [`.github/workflows/validation.yml`](.github/workflows/validation.yml): `npm test` and `npm run build` on Node.js 20.
 
 For local setup and verification workflow details, see [docs/development.md](docs/development.md).
 
