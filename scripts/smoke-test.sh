@@ -4,7 +4,7 @@ set -euo pipefail
 PORT="${PORT:-3101}"
 HOSTNAME="${HOSTNAME:-127.0.0.1}"
 if [[ -z "${DB_PATH:-}" ]]; then
-  DB_PATH="$(mktemp "${TMPDIR:-/tmp}/solarbuddy-smoke.XXXXXX.db")"
+  DB_PATH="$(mktemp "${TMPDIR:-/tmp}/solarbuddy-smoke-db.XXXXXX")"
 fi
 
 cleanup() {
