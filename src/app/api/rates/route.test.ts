@@ -48,12 +48,16 @@ describe('/api/rates', () => {
 
   it('fetches and stores the latest rates window', async () => {
     fetchAndStoreRatesMock.mockResolvedValue([{ valid_from: 'slot' }]);
+    const now = new Date('2026-04-03T10:15:00Z');
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(23, 59, 0, 0);
 
     const response = await POST();
 
     expect(fetchAndStoreRatesMock).toHaveBeenCalledWith(
-      '2026-04-03T10:15:00.000Z',
-      '2026-04-04T22:59:00.000Z',
+      now.toISOString(),
+      tomorrow.toISOString(),
     );
     expect(await response.json()).toEqual({
       ok: true,

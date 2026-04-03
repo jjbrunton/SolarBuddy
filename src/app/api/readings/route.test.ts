@@ -27,6 +27,8 @@ describe('/api/readings', () => {
 
   it('returns today readings plus seven-day summaries', async () => {
     allMock.mockReturnValueOnce([{ timestamp: 'a' }]).mockReturnValueOnce([{ date: '2026-04-03' }]);
+    const todayStart = new Date('2026-04-03T10:15:00Z');
+    todayStart.setHours(0, 0, 0, 0);
 
     const response = await GET(new Request('http://localhost/api/readings?period=today'));
 
@@ -34,7 +36,7 @@ describe('/api/readings', () => {
       readings: [{ timestamp: 'a' }],
       daily: [{ date: '2026-04-03' }],
     });
-    expect(allMock).toHaveBeenNthCalledWith(1, '2026-04-02T23:00:00.000Z');
+    expect(allMock).toHaveBeenNthCalledWith(1, todayStart.toISOString());
   });
 
   it('returns empty arrays for unsupported periods', async () => {

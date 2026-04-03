@@ -173,7 +173,7 @@ describe('scheduled actions', () => {
       },
     ]);
 
-    expect(scheduledActionsModule.evaluateScheduledActions(new Date('2026-04-03T09:15:00Z'), 75)).toEqual({
+    expect(scheduledActionsModule.evaluateScheduledActions(new Date(2026, 0, 2, 10, 15, 0), 75)).toEqual({
       action: 'discharge',
       reason: 'Scheduled action "Discharge peak": discharge (SOC above 60%)',
     });
@@ -195,7 +195,7 @@ describe('scheduled actions', () => {
       },
     ]);
 
-    expect(scheduledActionsModule.evaluateScheduledActions(new Date('2026-04-05T08:30:00Z'), null)).toEqual({
+    expect(scheduledActionsModule.evaluateScheduledActions(new Date(2026, 0, 4, 8, 30, 0), null)).toEqual({
       action: 'hold',
       reason: 'Scheduled action "Hold Sunday": hold (SOC below 30%)',
     });
@@ -217,6 +217,6 @@ describe('scheduled actions', () => {
       },
     ]);
 
-    expect(scheduledActionsModule.evaluateScheduledActions(new Date('2026-04-06T07:10:00Z'), 45)).toBeNull();
+    expect(scheduledActionsModule.evaluateScheduledActions(new Date(2026, 0, 5, 7, 10, 0), 45)).toBeNull();
   });
 });
