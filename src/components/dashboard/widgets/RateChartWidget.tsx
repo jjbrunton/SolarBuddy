@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
+import { ComposedChart, Bar, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { computeSOCForecast } from '@/lib/soc-forecast';
 import { ACTION_COLORS, type PlanAction } from '@/lib/plan-actions';
 import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
+import { alignPVForecastToSlots, type PVConfidence } from '@/lib/pv-forecast-utils';
+import type { PVForecastSlot } from '@/lib/solcast/client';
 
 interface RatePoint {
   validFrom: string;
@@ -16,6 +18,7 @@ interface RatePoint {
   isCurrent: boolean;
   plannedAction: PlanAction;
   forecastSOC?: number;
+  pvGenerationKw?: number;
 }
 
 interface PlannedSlotRow {
@@ -45,6 +48,9 @@ export default function RateChartWidget() {
     max_charge_power_kw: string;
     estimated_consumption_w: string;
   } | null>(null);
+  const [pvForecasts, setPvForecasts] = useState<PVForecastSlot[]>([]);
+  const [pvEnabled, setPvEnabled] = useState(false);
+  const [pvConfidence, setPvConfidence] = useState<PVConfidence>('estimate');
 
   useEffect(() => {
     async function load() {
@@ -58,6 +64,10 @@ export default function RateChartWidget() {
         const schedJson = await schedRes.json();
         const settingsJson = await settingsRes.json();
         setSettings(settingsJson);
+
+        const isPvEnabled = settingsJson.pv_forecast_enabled === 'true';
+        setPvEnabled(isPvEnabled);
+        setPvConfidence(settingsJson.pv_forecast_confidence || 'estimate');
 
         const rawRates = ratesJson.rates || [];
         const rawScheds = schedJson.schedules || [];
@@ -94,12 +104,33 @@ export default function RateChartWidget() {
 
         setCurrentSlotIndex(curSlotIdx);
         setRates(chartData);
+
+        if (isPvEnabled && rawRates.length > 0) {
+          try {
+            const from = rawRates[0].valid_from;
+            const to = rawRates[rawRates.length - 1].valid_to;
+            const forecastRes = await fetch(`/api/forecast?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+            const forecastJson = await forecastRes.json();
+            setPvForecasts(forecastJson.forecasts || []);
+          } catch {
+            setPvForecasts([]);
+          }
+        } else {
+          setPvForecasts([]);
+        }
       } catch { /* silent */ }
     }
     load();
     const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  const pvAligned = useMemo(() => {
+    if (!pvEnabled || pvForecasts.length === 0 || rates.length === 0) {
+      return { perSlotPVGenerationW: undefined, pvChartValues: [] as (number | undefined)[] };
+    }
+    return alignPVForecastToSlots(pvForecasts, rates.map((r) => r.validFrom), pvConfidence);
+  }, [pvEnabled, pvForecasts, rates, pvConfidence]);
 
   const ratesWithSOC = useMemo(() => {
     if (rates.length === 0 || state.battery_soc === null || !settings) return rates;
@@ -118,9 +149,14 @@ export default function RateChartWidget() {
       batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
       maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
       estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
+      perSlotPVGenerationW: pvAligned.perSlotPVGenerationW,
     });
-    return rates.map((r, i) => ({ ...r, forecastSOC: forecast[i] ?? undefined }));
-  }, [rates, state.battery_soc, currentSlotIndex, settings]);
+    return rates.map((r, i) => ({
+      ...r,
+      forecastSOC: forecast[i] ?? undefined,
+      pvGenerationKw: pvAligned.pvChartValues[i] != null ? pvAligned.pvChartValues[i]! / 1000 : undefined,
+    }));
+  }, [rates, state.battery_soc, currentSlotIndex, settings, pvAligned]);
 
   if (rates.length === 0) return null;
 
@@ -158,6 +194,19 @@ export default function RateChartWidget() {
           <YAxis yAxisId="soc" orientation="right" domain={[0, 100]} tick={{ fill: colors.muted, fontSize: 9 }} tickFormatter={(v: number) => `${v}%`} width={35} />
           <Tooltip content={<RateTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
           <ReferenceLine yAxisId="price" y={0} stroke={colors.border} />
+          {pvEnabled && pvForecasts.length > 0 && (
+            <Area
+              yAxisId="price"
+              type="monotone"
+              dataKey="pvGenerationKw"
+              fill={colors.solar}
+              fillOpacity={0.15}
+              stroke={colors.solar}
+              strokeWidth={1}
+              strokeOpacity={0.4}
+              dot={false}
+            />
+          )}
           <Bar yAxisId="price" dataKey="price" radius={[2, 2, 0, 0]}>
             {ratesWithSOC.map((entry, i) => (
               <Cell

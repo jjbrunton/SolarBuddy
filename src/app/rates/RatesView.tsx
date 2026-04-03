@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { ComposedChart, Bar, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -13,6 +13,8 @@ import { computeSOCForecast } from '@/lib/soc-forecast';
 import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import { useSlotSelection } from '@/hooks/useSlotSelection';
 import { ACTION_COLORS, ACTION_LABELS, type PlanAction } from '@/lib/plan-actions';
+import { alignPVForecastToSlots, type PVConfidence } from '@/lib/pv-forecast-utils';
+import type { PVForecastSlot } from '@/lib/solcast/client';
 
 interface Rate {
   valid_from: string;
@@ -52,6 +54,7 @@ interface ChartData {
   forecastSOC?: number;
   validFrom: string;
   validTo: string;
+  pvGenerationKw?: number;
 }
 
 const TEAL = '#26a69a';
@@ -62,11 +65,15 @@ function RateTooltip({ active, payload, label }: { active?: boolean; payload?: {
   if (!active || !payload?.length) return null;
   const price = payload.find((p) => p.dataKey === 'price');
   const soc = payload.find((p) => p.dataKey === 'forecastSOC');
+  const pv = payload.find((p) => p.dataKey === 'pvGenerationKw');
   return (
     <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
       <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
       {price && <p className="text-sm font-semibold text-sb-text">{price.value}p/kWh</p>}
       {soc && soc.value != null && <p className="text-xs text-sb-text-muted">SOC: {soc.value}%</p>}
+      {pv && pv.value != null && pv.value > 0 && (
+        <p className="text-xs text-sb-text-muted">PV: {pv.value.toFixed(2)} kW</p>
+      )}
     </div>
   );
 }
@@ -89,6 +96,9 @@ export default function RatesView() {
     max_charge_power_kw: string;
     estimated_consumption_w: string;
   } | null>(null);
+  const [pvForecasts, setPvForecasts] = useState<PVForecastSlot[]>([]);
+  const [pvEnabled, setPvEnabled] = useState(false);
+  const [pvConfidence, setPvConfidence] = useState<PVConfidence>('estimate');
 
   const {
     selectedIndices,
@@ -118,6 +128,10 @@ export default function RatesView() {
       const settingsJson = await settingsRes.json();
       const overridesJson = await overridesRes.json();
       setSettings(settingsJson);
+
+      const isPvEnabled = settingsJson.pv_forecast_enabled === 'true';
+      setPvEnabled(isPvEnabled);
+      setPvConfidence(settingsJson.pv_forecast_confidence || 'estimate');
 
       const rates: Rate[] = ratesJson.rates || [];
       const schedules: Schedule[] = scheduleJson.schedules || [];
@@ -185,6 +199,20 @@ export default function RatesView() {
 
       setData(chartData);
       setError(null);
+
+      if (isPvEnabled && rates.length > 0) {
+        try {
+          const from = rates[0].valid_from;
+          const to = rates[rates.length - 1].valid_to;
+          const forecastRes = await fetch(`/api/forecast?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+          const forecastJson = await forecastRes.json();
+          setPvForecasts(forecastJson.forecasts || []);
+        } catch {
+          setPvForecasts([]);
+        }
+      } else {
+        setPvForecasts([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rates');
     } finally {
@@ -210,6 +238,14 @@ export default function RatesView() {
     return actions;
   }, [data, selectedIndices]);
 
+  // Align PV forecast to rate slots
+  const pvAligned = useMemo(() => {
+    if (!pvEnabled || pvForecasts.length === 0 || data.length === 0) {
+      return { perSlotPVGenerationW: undefined, pvChartValues: [] as (number | undefined)[] };
+    }
+    return alignPVForecastToSlots(pvForecasts, data.map((d) => d.validFrom), pvConfidence);
+  }, [pvEnabled, pvForecasts, data, pvConfidence]);
+
   // Compute SOC forecast
   const chartDataWithSOC = useMemo(() => {
     if (data.length === 0 || state.battery_soc === null || !settings) return data;
@@ -223,13 +259,15 @@ export default function RatesView() {
       batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
       maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
       estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
+      perSlotPVGenerationW: pvAligned.perSlotPVGenerationW,
     });
 
     return data.map((d, i) => ({
       ...d,
       forecastSOC: forecast[i] ?? undefined,
+      pvGenerationKw: pvAligned.pvChartValues[i] != null ? pvAligned.pvChartValues[i]! / 1000 : undefined,
     }));
-  }, [data, state.battery_soc, currentSlotIndex, allSlotActions, settings]);
+  }, [data, state.battery_soc, currentSlotIndex, allSlotActions, settings, pvAligned]);
 
   const handleFetchRates = async () => {
     setLoading(true);
@@ -381,6 +419,15 @@ export default function RatesView() {
               <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-sb-text-muted" /> Predicted SOC
             </span>
           )}
+          {pvEnabled && pvForecasts.length > 0 && (
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded"
+                style={{ backgroundColor: colors.solar, opacity: 0.3 }}
+              />
+              PV Forecast
+            </span>
+          )}
         </div>
         {loading && data.length === 0 ? (
           <p className="py-12 text-center text-sb-text-muted">Loading rates...</p>
@@ -416,6 +463,19 @@ export default function RatesView() {
                 />
                 {!editMode && <Tooltip content={<RateTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />}
                 <ReferenceLine yAxisId="price" y={0} stroke={colors.border} />
+                {pvEnabled && pvForecasts.length > 0 && (
+                  <Area
+                    yAxisId="price"
+                    type="monotone"
+                    dataKey="pvGenerationKw"
+                    fill={colors.solar}
+                    fillOpacity={0.15}
+                    stroke={colors.solar}
+                    strokeWidth={1}
+                    strokeOpacity={0.4}
+                    dot={false}
+                  />
+                )}
                 <Bar yAxisId="price" dataKey="price" radius={[2, 2, 0, 0]}>
                   {chartDataWithSOC.map((entry, i) => (
                     <Cell

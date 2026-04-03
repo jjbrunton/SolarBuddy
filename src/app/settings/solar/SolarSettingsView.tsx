@@ -1,10 +1,62 @@
 'use client';
 
+import { useState } from 'react';
+import { MapPin, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { useSettings, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
+
+type GeoStatus = 'idle' | 'locating' | 'error';
 
 export default function SolarSettingsView() {
   const { settings, update, save, saving, message } = useSettings();
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle');
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [fetchStatus, setFetchStatus] = useState<'idle' | 'fetching'>('idle');
+  const [fetchMessage, setFetchMessage] = useState<string | null>(null);
+
+  const handleGeolocate = () => {
+    if (!navigator.geolocation) {
+      setGeoStatus('error');
+      setGeoError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setGeoStatus('locating');
+    setGeoError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        update('pv_latitude', pos.coords.latitude.toFixed(4));
+        update('pv_longitude', pos.coords.longitude.toFixed(4));
+        setGeoStatus('idle');
+      },
+      (err) => {
+        setGeoStatus('error');
+        setGeoError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission denied.'
+            : 'Unable to determine your location.',
+        );
+      },
+      { timeout: 10000 },
+    );
+  };
+
+  const handleFetchForecast = async () => {
+    setFetchStatus('fetching');
+    setFetchMessage(null);
+    try {
+      const res = await fetch('/api/forecast?force=true', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setFetchMessage(json.error || 'Failed to fetch forecast');
+      } else {
+        setFetchMessage(`Fetched ${json.count} forecast slots`);
+      }
+    } catch {
+      setFetchMessage('Failed to fetch forecast');
+    }
+    setFetchStatus('idle');
+  };
 
   if (!settings) return <Card><p className="text-sb-text-muted">Loading settings...</p></Card>;
 
@@ -30,6 +82,33 @@ export default function SolarSettingsView() {
             </Field>
 
             {forecastEnabled ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleGeolocate}
+                    disabled={geoStatus === 'locating'}
+                  >
+                    <MapPin size={16} />
+                    {geoStatus === 'locating' ? 'Locating…' : 'Use my location'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleFetchForecast}
+                    disabled={fetchStatus === 'fetching'}
+                  >
+                    <RefreshCw size={16} className={fetchStatus === 'fetching' ? 'animate-spin' : ''} />
+                    {fetchStatus === 'fetching' ? 'Fetching…' : 'Refresh forecast'}
+                  </Button>
+                  {geoStatus === 'error' && geoError ? (
+                    <span className="text-xs text-sb-danger">{geoError}</span>
+                  ) : null}
+                  {fetchMessage ? (
+                    <span className="text-xs text-sb-text-muted">{fetchMessage}</span>
+                  ) : null}
+                </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Field label="Latitude" description="Decimal degrees, e.g. 51.5074">
                   <input
@@ -92,6 +171,7 @@ export default function SolarSettingsView() {
                     <option value="estimate90">Optimistic (120%)</option>
                   </select>
                 </Field>
+              </div>
               </div>
             ) : null}
           </div>

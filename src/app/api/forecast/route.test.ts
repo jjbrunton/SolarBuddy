@@ -64,7 +64,7 @@ describe('/api/forecast', () => {
       pv_kwp: '',
     });
 
-    const response = await POST();
+    const response = await POST(new Request('http://localhost/api/forecast', { method: 'POST' }));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
@@ -76,7 +76,7 @@ describe('/api/forecast', () => {
   it('skips the API call when forecast data is still fresh', async () => {
     getLatestForecastAgeMock.mockReturnValue(90.2);
 
-    const response = await POST();
+    const response = await POST(new Request('http://localhost/api/forecast', { method: 'POST' }));
 
     expect(await response.json()).toEqual({
       ok: true,
@@ -90,7 +90,7 @@ describe('/api/forecast', () => {
     getLatestForecastAgeMock.mockReturnValue(121);
     fetchPVForecastMock.mockResolvedValue([{ period_end: 'a' }]);
 
-    const response = await POST();
+    const response = await POST(new Request('http://localhost/api/forecast', { method: 'POST' }));
 
     expect(fetchPVForecastMock).toHaveBeenCalledWith('51.5', '-0.1', '35', '0', '4.2');
     expect(storePVForecastMock).toHaveBeenCalledWith([{ period_end: 'a' }]);
@@ -101,7 +101,7 @@ describe('/api/forecast', () => {
     getLatestForecastAgeMock.mockReturnValue(121);
     fetchPVForecastMock.mockRejectedValue(new Error('solcast offline'));
 
-    const response = await POST();
+    const response = await POST(new Request('http://localhost/api/forecast', { method: 'POST' }));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({
