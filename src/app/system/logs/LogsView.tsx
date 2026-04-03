@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { SegmentedTabs } from '@/components/ui/Tabs';
 
 interface Event {
@@ -121,12 +120,6 @@ export default function LogsView({
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Diagnostics"
-        title="System logs"
-        description="Inspect historical events and live MQTT broker traffic from the same diagnostics surface."
-      />
-
       <SegmentedTabs
         items={tabs.map((tab) => ({ label: tab.label, value: tab.id }))}
         activeValue={activeTab}

@@ -5,7 +5,6 @@ import { Plus, Pencil, Trash2, X } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { Field, inputClass } from '@/components/settings/shared';
 
 /* ------------------------------------------------------------------ */
@@ -170,17 +169,16 @@ export default function ScheduledActionsView() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Automation"
-        title="Scheduled Actions"
-        description="Define time-based rules with SOC conditions to automate charge, discharge, and hold operations."
-        actions={
-          <Button size="sm" onClick={openNew}>
-            <Plus size={14} />
-            New Action
-          </Button>
-        }
-      />
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.02em] text-sb-text">Scheduled Actions</h2>
+          <p className="text-sm leading-6 text-sb-text-muted">Define time-based rules with SOC conditions to automate charge, discharge, and hold operations.</p>
+        </div>
+        <Button size="sm" onClick={openNew}>
+          <Plus size={14} />
+          New Action
+        </Button>
+      </div>
 
       {error ? <p className="text-sm text-sb-danger">{error}</p> : null}
 

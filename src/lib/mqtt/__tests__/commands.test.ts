@@ -161,11 +161,12 @@ describe('mqtt commands', () => {
     });
     getMqttClientMock.mockReturnValue({ connected: true, publish });
 
-    await startGridDischarge();
+    await startGridDischarge('Load first');
     await stopGridDischarge('Load first');
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
-      [COMMAND_TOPICS.workMode, 'Battery first'],
+      [COMMAND_TOPICS.batterySlot1Enabled, '0'],
+      [COMMAND_TOPICS.workMode, 'Load first'],
       [COMMAND_TOPICS.outputSourcePriority, 'SBU'],
       [COMMAND_TOPICS.outputSourcePriority, 'USB'],
       [COMMAND_TOPICS.workMode, 'Load first'],

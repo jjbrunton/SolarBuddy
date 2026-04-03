@@ -2,11 +2,13 @@ import type { Metadata } from 'next';
 import { getDb } from '@/lib/db';
 import { getSettings } from '@/lib/config';
 import { getState } from '@/lib/state';
+import { getEventsLog } from '@/lib/events';
+import { getRecentMqttLogs } from '@/lib/mqtt/logs';
 import fs from 'fs';
 import path from 'path';
-import SystemView from './SystemView';
+import SystemPageView from './SystemPageView';
 
-export const metadata: Metadata = { title: 'System Status' };
+export const metadata: Metadata = { title: 'System' };
 
 const startTime = Date.now();
 
@@ -69,5 +71,14 @@ export default function SystemPage() {
     },
   };
 
-  return <SystemView initialInfo={info} />;
+  const events = getEventsLog();
+  const mqttEntries = getRecentMqttLogs();
+
+  return (
+    <SystemPageView
+      initialInfo={info}
+      initialEvents={events}
+      initialMqttEntries={mqttEntries}
+    />
+  );
 }

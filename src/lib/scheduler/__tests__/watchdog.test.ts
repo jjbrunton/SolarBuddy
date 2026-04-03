@@ -251,6 +251,29 @@ describe('reconcileInverterState', () => {
     expect(stopGridCharging).toHaveBeenCalledWith('Battery first');
   });
 
+  it('stops lingering grid charging before starting a discharge slot when charge read-back is unavailable', async () => {
+    currentSettings = buildSettings({ default_work_mode: 'Load first' });
+    currentState = buildState({
+      work_mode: 'Load first',
+      battery_first_grid_charge: null,
+      pv_power: 150,
+      load_power: 1170,
+      grid_power: 4018,
+      battery_power: 2990,
+    });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'discharge',
+      reason: 'Discharge slot selected by the arbitrage planner.',
+    };
+
+    await reconcileInverterState('watchdog startup');
+
+    expect(stopGridCharging).toHaveBeenCalledWith('Load first');
+    expect(startGridDischarge).toHaveBeenCalled();
+  });
+
   it('holds a scheduled opportunistic charge window when solar surplus is already covering demand', async () => {
     planSlotRow = {
       slot_start: '2026-04-01T10:00:00Z',
@@ -329,8 +352,9 @@ describe('reconcileInverterState', () => {
     expect(startBatteryHold).not.toHaveBeenCalled();
   });
 
-  it('restores load_first_stop_discharge when transitioning from hold to charge', async () => {
-    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: 20 });
+  it('sets load_first_stop_discharge to floor when transitioning from hold to charge', async () => {
+    currentSettings = buildSettings({ discharge_soc_floor: '15' });
+    currentState = buildState({ battery_soc: 40 });
     planSlotRow = {
       slot_start: '2026-04-01T10:00:00Z',
       slot_end: '2026-04-01T10:30:00Z',
@@ -361,12 +385,13 @@ describe('reconcileInverterState', () => {
     };
     await reconcileInverterState('transition to charge');
 
-    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(20);
+    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(15);
     expect(startGridCharging).toHaveBeenCalledWith(100);
   });
 
-  it('restores load_first_stop_discharge when transitioning from hold to idle', async () => {
-    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: 25 });
+  it('sets load_first_stop_discharge to floor when transitioning from hold to idle', async () => {
+    currentSettings = buildSettings({ discharge_soc_floor: '25' });
+    currentState = buildState({ battery_soc: 40 });
     planSlotRow = {
       slot_start: '2026-04-01T10:00:00Z',
       slot_end: '2026-04-01T10:30:00Z',
@@ -391,8 +416,9 @@ describe('reconcileInverterState', () => {
     expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(25);
   });
 
-  it('restores load_first_stop_discharge when transitioning from hold to discharge', async () => {
-    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: 15 });
+  it('sets load_first_stop_discharge to floor when transitioning from hold to discharge', async () => {
+    currentSettings = buildSettings({ discharge_soc_floor: '15' });
+    currentState = buildState({ battery_soc: 40 });
     planSlotRow = {
       slot_start: '2026-04-01T10:00:00Z',
       slot_end: '2026-04-01T10:30:00Z',
@@ -422,29 +448,17 @@ describe('reconcileInverterState', () => {
     expect(startGridDischarge).toHaveBeenCalled();
   });
 
-  it('falls back to discharge_soc_floor when pre-hold stop discharge is unknown', async () => {
+  it('uses discharge_soc_floor even without a prior hold phase', async () => {
     currentSettings = buildSettings({ discharge_soc_floor: '25' });
-    currentState = buildState({ battery_soc: 40, load_first_stop_discharge: null });
-    planSlotRow = {
-      slot_start: '2026-04-01T10:00:00Z',
-      slot_end: '2026-04-01T10:30:00Z',
-      action: 'hold',
-      reason: 'Hold battery.',
-    };
-    await reconcileInverterState('enter hold');
-
-    setLoadFirstStopDischarge.mockClear();
-
-    // Transition to idle
     currentState = buildState({
       battery_soc: 40,
       work_mode: 'Load first',
-      output_source_priority: 'USB',
-      battery_first_grid_charge: 'Disabled',
-      load_first_stop_discharge: 40,
+      load_first_stop_discharge: 84,
     });
+
+    // No hold phase — go straight to idle with a stale stop-discharge value
     planSlotRow = null;
-    await reconcileInverterState('transition to idle');
+    await reconcileInverterState('watchdog startup');
 
     expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(25);
   });

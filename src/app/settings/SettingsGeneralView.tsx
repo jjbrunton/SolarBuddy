@@ -1,25 +1,15 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
-import { PageHeader } from '@/components/ui/PageHeader';
-import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
+import { useSettings, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 
 export default function SettingsGeneralView() {
-  const pathname = usePathname();
   const { settings, update, save, saving, message } = useSettings();
 
   if (!settings) return <Card><p className="text-sb-text-muted">Loading settings...</p></Card>;
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Configuration"
-        title="General settings"
-        description="Set the default operating mode SolarBuddy should restore after managed charging and decide which background automation loops are active."
-      />
-      <SettingsTabs pathname={pathname} />
-
       <Card>
         <SettingsSection
           title="Automation defaults"

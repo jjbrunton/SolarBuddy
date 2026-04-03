@@ -1,12 +1,9 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
-import { PageHeader } from '@/components/ui/PageHeader';
-import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
+import { useSettings, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 
 export default function SolarSettingsView() {
-  const pathname = usePathname();
   const { settings, update, save, saving, message } = useSettings();
 
   if (!settings) return <Card><p className="text-sb-text-muted">Loading settings...</p></Card>;
@@ -15,13 +12,6 @@ export default function SolarSettingsView() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Configuration"
-        title="Solar forecast"
-        description="Connect to forecast.solar to feed PV generation forecasts into the charge planner. The scheduler uses predicted solar output to reduce unnecessary grid charging. No API key required."
-      />
-      <SettingsTabs pathname={pathname} />
-
       <Card>
         <SettingsSection
           title="PV Forecast"

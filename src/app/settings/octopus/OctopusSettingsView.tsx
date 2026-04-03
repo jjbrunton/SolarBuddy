@@ -1,18 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePathname } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { DescriptionList } from '@/components/ui/DescriptionList';
-import { useSettings, SettingsTabs, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
+import { useSettings, Field, inputClass, SaveButton, SettingsSection } from '@/components/settings/shared';
 import { REGION_NAMES } from '@/lib/octopus/regions';
 import { mergeVerifiedOctopusSettings, type VerifiedOctopusAccountInfo, type VerifiedOctopusExportInfo } from './verified-settings';
 
 export default function OctopusSettingsView() {
-  const pathname = usePathname();
   const { settings, update, replaceSettings, save, persistSettings, saving, message } = useSettings();
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
@@ -94,13 +91,6 @@ export default function OctopusSettingsView() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Configuration"
-        title="Octopus tariff setup"
-        description="Select the tariff model SolarBuddy should optimize against, and verify Agile account details when dynamic pricing is in use."
-      />
-      <SettingsTabs pathname={pathname} />
-
       <Card>
         <SettingsSection
           title="Tariff shape"
