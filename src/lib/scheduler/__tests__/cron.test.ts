@@ -78,6 +78,10 @@ vi.mock('../../octopus/rates', () => ({
   ]),
 }));
 
+vi.mock('../../octopus/export-rates', () => ({
+  resolveExportRates: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('../../state', () => ({
   getState: () => ({ battery_soc: 70 }),
 }));

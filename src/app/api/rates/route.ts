@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStoredRates, fetchAndStoreRates } from '@/lib/octopus/rates';
+import { getStoredExportRates } from '@/lib/octopus/export-rates';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -7,7 +8,8 @@ export async function GET(request: Request) {
   const to = searchParams.get('to') ?? undefined;
 
   const rates = getStoredRates(from, to);
-  return NextResponse.json({ rates });
+  const exportRates = getStoredExportRates(from, to);
+  return NextResponse.json({ rates, exportRates });
 }
 
 export async function POST() {

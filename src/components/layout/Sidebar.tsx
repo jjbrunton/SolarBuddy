@@ -11,11 +11,14 @@ import {
   Sun,
   Activity,
   BarChart3,
+  FlaskConical,
   Settings,
   Server,
   ChevronDown,
   ChevronRight,
   X,
+  Wallet,
+  ArrowLeftRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -45,11 +48,14 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Cost Savings', href: '/analytics' },
       { label: 'Energy Flow', href: '/analytics/energy' },
+      { label: 'Cost & Profit', href: '/analytics/accounting' },
+      { label: 'Tariff Comparison', href: '/analytics/tariff-comparison' },
       { label: 'Battery Health', href: '/analytics/battery' },
       { label: 'Carbon', href: '/analytics/carbon' },
       { label: 'Rate Trends', href: '/analytics/rates' },
     ],
   },
+  { icon: FlaskConical, label: 'Simulation', href: '/simulate' },
   {
     icon: Settings,
     label: 'Settings',
@@ -59,6 +65,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: 'MQTT', href: '/settings/mqtt' },
       { label: 'Octopus Energy', href: '/settings/octopus' },
       { label: 'Charging', href: '/settings/charging' },
+      { label: 'Scheduled Actions', href: '/settings/scheduled-actions' },
     ],
   },
   {

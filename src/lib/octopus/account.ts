@@ -1,5 +1,12 @@
 import { REGION_NAMES } from './regions';
 
+export interface OctopusExportInfo {
+  mpan: string;
+  meterSerial: string;
+  tariffCode: string;
+  productCode: string;
+}
+
 export interface OctopusAccountInfo {
   accountNumber: string;
   mpan: string;
@@ -8,6 +15,7 @@ export interface OctopusAccountInfo {
   productCode: string;
   region: string;
   regionName: string;
+  export?: OctopusExportInfo;
 }
 
 export type OctopusVerifyResult =
@@ -100,8 +108,13 @@ export async function verifyAccount(apiKey: string, accountNumber: string): Prom
     return { ok: false, error: 'No electricity meter points found on this account' };
   }
 
-  const meterPoint = meterPoints[0];
-  const agreement = findActiveAgreement(meterPoint.agreements);
+  // Import meter: first meter point whose active tariff does NOT contain OUTGOING
+  const importMeter = meterPoints.find((mp) => {
+    const ag = findActiveAgreement(mp.agreements);
+    return ag && !ag.tariff_code.includes('OUTGOING');
+  }) ?? meterPoints[0];
+
+  const agreement = findActiveAgreement(importMeter.agreements);
   if (!agreement) {
     return { ok: false, error: 'No active tariff agreement found' };
   }
@@ -111,16 +124,38 @@ export async function verifyAccount(apiKey: string, accountNumber: string): Prom
     return { ok: false, error: `Could not parse tariff code: ${agreement.tariff_code}` };
   }
 
+  // Export meter: meter point whose active tariff contains OUTGOING
+  let exportInfo: OctopusExportInfo | undefined;
+  const exportMeter = meterPoints.find((mp) => {
+    const ag = findActiveAgreement(mp.agreements);
+    return ag && ag.tariff_code.includes('OUTGOING');
+  });
+  if (exportMeter) {
+    const exportAgreement = findActiveAgreement(exportMeter.agreements);
+    if (exportAgreement) {
+      const exportParsed = parseTariffCode(exportAgreement.tariff_code);
+      if (exportParsed) {
+        exportInfo = {
+          mpan: exportMeter.mpan,
+          meterSerial: exportMeter.meters[0]?.serial_number ?? '',
+          tariffCode: exportAgreement.tariff_code,
+          productCode: exportParsed.productCode,
+        };
+      }
+    }
+  }
+
   return {
     ok: true,
     account: {
       accountNumber: data.number,
-      mpan: meterPoint.mpan,
-      meterSerial: meterPoint.meters[0]?.serial_number ?? '',
+      mpan: importMeter.mpan,
+      meterSerial: importMeter.meters[0]?.serial_number ?? '',
       tariffCode: agreement.tariff_code,
       productCode: parsed.productCode,
       region: parsed.region,
       regionName: REGION_NAMES[parsed.region] ?? 'Unknown',
+      export: exportInfo,
     },
   };
 }

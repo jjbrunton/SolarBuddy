@@ -25,9 +25,19 @@ export interface ChargeWindow {
   type?: 'charge' | 'discharge';
 }
 
+export interface PVForecastSlot {
+  valid_from: string;
+  valid_to: string;
+  pv_estimate_w: number;
+  pv_estimate10_w: number;
+  pv_estimate90_w: number;
+}
+
 export interface PlanningContext {
   currentSoc?: number | null;
   now?: Date;
+  exportRates?: AgileRate[];
+  pvForecast?: PVForecastSlot[];
 }
 
 export interface PlannedSlot {
@@ -42,6 +52,7 @@ export interface PlannedSlot {
 export interface SchedulePlan {
   windows: ChargeWindow[];
   slots: PlannedSlot[];
+  _dischargeDebug?: import('./discharge').SmartDischargeDebug;
 }
 
 export function getChargingStrategy(settings: Pick<AppSettings, 'charging_strategy'>): ChargingStrategy {
@@ -230,6 +241,8 @@ export function buildSchedulePlan(
     [...baseWindows, ...negativeWindows, ...peakPrepWindows],
     preDischargeWindows,
     context,
+    context.exportRates,
+    context.pvForecast,
   );
 
   const windows = deduplicateAndMerge([
@@ -255,7 +268,10 @@ export function buildSchedulePlan(
         preDischarge: flattenWindowSlotKeys(preDischargeWindows),
         smartDischarge: flattenWindowSlotKeys(smartDischargePlan.dischargeWindows),
       },
+      exportRates: context.exportRates,
+      pvForecast: context.pvForecast,
     }),
+    _dischargeDebug: smartDischargePlan._debug,
   };
 }
 
@@ -303,6 +319,9 @@ function buildPlannedSlots(
     currentSoc,
     settings,
     sourceKeys,
+    exportRates,
+    pvForecast,
+    pvConfidence,
   }: {
     now: Date;
     currentSoc: number | null;
@@ -314,6 +333,9 @@ function buildPlannedSlots(
       preDischarge: Set<string>;
       smartDischarge: Set<string>;
     };
+    exportRates?: AgileRate[];
+    pvForecast?: PVForecastSlot[];
+    pvConfidence?: string;
   },
 ): PlannedSlot[] {
   const futureRates = [...rates]
@@ -356,6 +378,26 @@ function buildPlannedSlots(
     }
   });
 
+  // Build PV generation map aligned to rate slot indices
+  let perSlotPVGenerationW: Map<number, number> | undefined;
+  if (pvForecast && pvForecast.length > 0) {
+    const pvMap = new Map<string, number>();
+    const confidence = pvConfidence || 'estimate';
+    for (const pv of pvForecast) {
+      const value = confidence === 'estimate10' ? pv.pv_estimate10_w
+        : confidence === 'estimate90' ? pv.pv_estimate90_w
+        : pv.pv_estimate_w;
+      pvMap.set(pv.valid_from, value);
+    }
+    perSlotPVGenerationW = new Map<number, number>();
+    futureRates.forEach((rate, index) => {
+      const pvW = pvMap.get(rate.valid_from);
+      if (pvW !== undefined && pvW > 0) {
+        perSlotPVGenerationW!.set(index, pvW);
+      }
+    });
+  }
+
   const expectedSocAfter =
     currentSoc === null
       ? futureRates.map(() => null)
@@ -368,9 +410,18 @@ function buildPlannedSlots(
           batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
           maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
           estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
+          perSlotPVGenerationW,
         }).map((value) => Math.round(value * 10) / 10);
 
   const perSlotEnergyKwh = ((parseFloat(settings.max_charge_power_kw) || 3.6) * ((parseFloat(settings.charge_rate) || 100) / 100)) * HALF_HOUR_HOURS;
+
+  // Build export rate lookup for discharge value calculation
+  const exportRateMap = new Map<string, number>();
+  if (exportRates) {
+    for (const er of exportRates) {
+      exportRateMap.set(er.valid_from, er.price_inc_vat);
+    }
+  }
 
   return futureRates.map((rate, index) => {
     const action = actions[index];
@@ -379,7 +430,10 @@ function buildPlannedSlots(
     if (action === 'charge') {
       expectedValue = Math.round(-perSlotEnergyKwh * rate.price_inc_vat * 100) / 100;
     } else if (action === 'discharge') {
-      expectedValue = Math.round(perSlotEnergyKwh * rate.price_inc_vat * 100) / 100;
+      // Use export rate if available, otherwise fall back to import rate
+      // (which models avoided import cost for users without export payment)
+      const dischargePrice = exportRateMap.get(rate.valid_from) ?? rate.price_inc_vat;
+      expectedValue = Math.round(perSlotEnergyKwh * dischargePrice * 100) / 100;
     }
 
     return {

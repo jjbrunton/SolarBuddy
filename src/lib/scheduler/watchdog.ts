@@ -3,9 +3,11 @@ import { appendEvent } from '../events';
 import { getSettings } from '../config';
 import { resolveOutputSourcePriority } from '../inverter/settings';
 import { type PlanAction } from '../plan-actions';
+import { evaluateScheduledActions } from '../scheduled-actions';
 import { getState, onStateChange } from '../state';
 import { type InverterState } from '../types';
 import {
+  setLoadFirstStopDischarge,
   setWorkMode,
   startGridCharging,
   startGridDischarge,
@@ -23,6 +25,7 @@ const COMMAND_COOLDOWN_MS = 120_000;
 type RuntimeAction = 'charge' | 'discharge' | 'hold' | 'idle';
 type RuntimeReason =
   | 'manual_override'
+  | 'scheduled_action'
   | 'scheduled_slot'
   | 'target_soc_reached'
   | 'solar_surplus'
@@ -57,6 +60,7 @@ interface WatchdogState {
   pendingReasons: Set<string>;
   lastCommandSignature: string | null;
   lastCommandAt: number;
+  preHoldStopDischarge: number | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -73,6 +77,7 @@ function getWatchdogState(): WatchdogState {
       pendingReasons: new Set(),
       lastCommandSignature: null,
       lastCommandAt: 0,
+      preHoldStopDischarge: null,
     };
   }
 
@@ -148,6 +153,16 @@ export function resolveRuntimeIntent(
       detail: `Manual override ${override.action} is active for the current slot.`,
       slotStart: override.slot_start,
       slotEnd: override.slot_end,
+    };
+  }
+
+  // Scheduled actions (user-defined time + SOC rules) take priority over plan slots
+  const scheduled = evaluateScheduledActions(now, state.battery_soc);
+  if (scheduled) {
+    return {
+      action: toRuntimeAction(scheduled.action),
+      reason: 'scheduled_action',
+      detail: scheduled.reason,
     };
   }
 
@@ -229,7 +244,17 @@ function isHoldStateSatisfied(state: InverterState): boolean {
     return false;
   }
 
-  return state.work_mode === 'Load first' && (outputPriority === null || outputPriority === 'USB' || outputPriority === 'Load first');
+  const stopDischargeMatchesSoc =
+    state.load_first_stop_discharge !== null &&
+    state.battery_soc !== null &&
+    state.load_first_stop_discharge >= state.battery_soc - 3 &&
+    state.load_first_stop_discharge <= state.battery_soc + 3;
+
+  return (
+    state.work_mode === 'Load first' &&
+    (outputPriority === null || outputPriority === 'USB' || outputPriority === 'Load first') &&
+    stopDischargeMatchesSoc
+  );
 }
 
 function isForcedChargeActive(state: InverterState): boolean {
@@ -261,6 +286,16 @@ function clearCommandCooldown() {
   runtime.lastCommandAt = 0;
 }
 
+async function restoreStopDischargeFromHold(): Promise<void> {
+  const runtime = getWatchdogState();
+  if (runtime.preHoldStopDischarge === null) {
+    return;
+  }
+  const restoreValue = runtime.preHoldStopDischarge;
+  runtime.preHoldStopDischarge = null;
+  await setLoadFirstStopDischarge(restoreValue);
+}
+
 async function applyIntent(intent: RuntimeIntent, state: InverterState) {
   const settings = getSettings();
   const chargeRate = parseInt(settings.charge_rate, 10) || 100;
@@ -279,6 +314,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       if (isForcedDischargeActive(state)) {
         await stopGridDischarge(defaultMode);
       }
+      await restoreStopDischargeFromHold();
       await startGridCharging(chargeRate);
       recordCommand(signature);
       appendEvent({
@@ -299,6 +335,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       if (isForcedChargeActive(state)) {
         await stopGridCharging(defaultMode);
       }
+      await restoreStopDischargeFromHold();
       await startGridDischarge();
       recordCommand(signature);
       appendEvent({
@@ -310,6 +347,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
     }
     case 'idle': {
       if (isForcedDischargeActive(state)) {
+        await restoreStopDischargeFromHold();
         await stopGridDischarge(defaultMode);
         recordCommand(signature);
         appendEvent({
@@ -320,6 +358,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         return;
       }
       if (isForcedChargeActive(state)) {
+        await restoreStopDischargeFromHold();
         await stopGridCharging(defaultMode);
         recordCommand(signature);
         appendEvent({
@@ -333,6 +372,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         if (shouldRespectCooldown(signature)) {
           return;
         }
+        await restoreStopDischargeFromHold();
         await setWorkMode(defaultMode);
         recordCommand(signature);
         appendEvent({
@@ -342,6 +382,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         });
         return;
       }
+      await restoreStopDischargeFromHold();
       clearCommandCooldown();
       return;
     }
@@ -353,7 +394,13 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       if (shouldRespectCooldown(signature)) {
         return;
       }
-      await startBatteryHold();
+      const runtime = getWatchdogState();
+      if (runtime.preHoldStopDischarge === null) {
+        const fallback = parseInt(settings.discharge_soc_floor, 10);
+        runtime.preHoldStopDischarge =
+          state.load_first_stop_discharge ?? (Number.isFinite(fallback) ? fallback : 10);
+      }
+      await startBatteryHold(state.battery_soc ?? 50);
       recordCommand(signature);
       appendEvent({
         level: 'info',
@@ -464,5 +511,6 @@ export function stopInverterWatchdog() {
   }
   runtime.pendingReasons.clear();
   runtime.running = false;
+  runtime.preHoldStopDischarge = null;
   clearCommandCooldown();
 }

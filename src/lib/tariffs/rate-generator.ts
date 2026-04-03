@@ -39,6 +39,40 @@ export function generateSyntheticRates(
   return rates;
 }
 
+/**
+ * Generate flat-rate export slots for a period.
+ * Used when the user has no dynamic export tariff — `rate` comes from
+ * the fixed `export_rate` setting (defaults to 0 when not configured).
+ */
+export function generateSyntheticExportRates(
+  rate: number,
+  from: string,
+  to: string,
+): AgileRate[] {
+  const rates: AgileRate[] = [];
+  const startTime = new Date(from);
+  const endTime = new Date(to);
+
+  startTime.setMinutes(startTime.getMinutes() < 30 ? 0 : 30, 0, 0);
+
+  let current = startTime.getTime();
+  const end = endTime.getTime();
+
+  while (current < end) {
+    const slotStart = new Date(current);
+    const slotEnd = new Date(current + SLOT_DURATION_MS);
+    rates.push({
+      valid_from: slotStart.toISOString(),
+      valid_to: slotEnd.toISOString(),
+      price_inc_vat: rate,
+      price_exc_vat: rate / 1.05,
+    });
+    current += SLOT_DURATION_MS;
+  }
+
+  return rates;
+}
+
 function resolveSlotPrice(
   validFrom: string,
   tariff: TariffDefinition,

@@ -8,6 +8,9 @@ const baseSettings = {
   octopus_product_code: 'AGILE-24-10-01',
   octopus_mpan: '',
   octopus_meter_serial: '',
+  octopus_export_mpan: '',
+  octopus_export_meter_serial: '',
+  octopus_export_product_code: '',
   tariff_type: 'agile',
   mqtt_host: 'solar-assistant.local',
 };
@@ -42,5 +45,29 @@ describe('mergeVerifiedOctopusSettings', () => {
     });
 
     expect(merged.octopus_meter_serial).toBe('');
+  });
+
+  it('merges export meter info when present', () => {
+    const merged = mergeVerifiedOctopusSettings(baseSettings, {
+      ...verifiedAccount,
+      export: {
+        mpan: '2000098765432',
+        meterSerial: '21E9876543',
+        tariffCode: 'E-1R-AGILE-OUTGOING-19-05-13-H',
+        productCode: 'AGILE-OUTGOING-19-05-13',
+      },
+    });
+
+    expect(merged.octopus_export_mpan).toBe('2000098765432');
+    expect(merged.octopus_export_meter_serial).toBe('21E9876543');
+    expect(merged.octopus_export_product_code).toBe('AGILE-OUTGOING-19-05-13');
+  });
+
+  it('leaves export fields unchanged when no export info in verification', () => {
+    const merged = mergeVerifiedOctopusSettings(baseSettings, verifiedAccount);
+
+    expect(merged.octopus_export_mpan).toBe('');
+    expect(merged.octopus_export_meter_serial).toBe('');
+    expect(merged.octopus_export_product_code).toBe('');
   });
 });
