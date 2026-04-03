@@ -218,14 +218,9 @@ function toRuntimeAction(action: PlanAction): RuntimeAction {
 }
 
 function isChargeStateSatisfied(state: InverterState, chargeRate: number): boolean {
-  const chargeEnabled = parseEnabledState(state.battery_first_grid_charge);
   const workModeMatches = state.work_mode === 'Grid first';
   const chargeRateMatches =
     state.battery_first_charge_rate === null || state.battery_first_charge_rate === chargeRate;
-
-  if (chargeEnabled === false) {
-    return false;
-  }
 
   return workModeMatches && chargeRateMatches;
 }
@@ -235,12 +230,7 @@ function isDischargeStateSatisfied(state: InverterState, defaultMode: string): b
 }
 
 function isHoldStateSatisfied(state: InverterState): boolean {
-  const chargeEnabled = parseEnabledState(state.battery_first_grid_charge);
   const outputPriority = resolveOutputSourcePriority(state);
-
-  if (chargeEnabled === true) {
-    return false;
-  }
 
   const stopDischargeMatchesSoc =
     state.load_first_stop_discharge !== null &&
@@ -273,11 +263,7 @@ function isGridChargingFromTelemetry(state: Pick<InverterState, 'battery_power' 
 }
 
 function isForcedChargeActive(state: InverterState): boolean {
-  return (
-    state.work_mode === 'Grid first' ||
-    parseEnabledState(state.battery_first_grid_charge) === true ||
-    isGridChargingFromTelemetry(state)
-  );
+  return state.work_mode === 'Grid first' || isGridChargingFromTelemetry(state);
 }
 
 function isForcedDischargeActive(state: InverterState): boolean {

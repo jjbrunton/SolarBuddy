@@ -44,7 +44,6 @@ export const SUBSCRIBE_TOPICS = [
 
 export const COMMAND_TOPICS = {
   workMode: 'solar_assistant/inverter_1/work_mode_priority/set',
-  batterySlot1Enabled: 'solar_assistant/inverter_1/battery_first_slot_1_enabled/set',
   gridChargeRate: 'solar_assistant/inverter_1/grid_charge_rate/set',
   batteryChargeRate: 'solar_assistant/inverter_1/battery_first_charge_rate/set',
   outputSourcePriority: 'solar_assistant/inverter_1/output_source_priority/set',

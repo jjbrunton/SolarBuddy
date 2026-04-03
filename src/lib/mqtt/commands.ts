@@ -42,11 +42,6 @@ export async function setWorkMode(mode: 'Grid first' | 'Battery first' | 'Load f
   await publish(COMMAND_TOPICS.workMode, mode);
 }
 
-export async function setBatterySlot1(enabled: boolean) {
-  console.log(`[CMD] Battery slot 1: ${enabled ? 'enabled' : 'disabled'}`);
-  await publish(COMMAND_TOPICS.batterySlot1Enabled, enabled ? '1' : '0');
-}
-
 export async function setGridChargeRate(rate: number) {
   console.log(`[CMD] Grid charge rate: ${rate}%`);
   await publish(COMMAND_TOPICS.gridChargeRate, String(rate));
@@ -54,18 +49,15 @@ export async function setGridChargeRate(rate: number) {
 
 export async function startGridCharging(chargeRate: number) {
   await setWorkMode('Grid first');
-  await setBatterySlot1(true);
   await setGridChargeRate(chargeRate);
 }
 
 export async function stopGridCharging(defaultMode: 'Battery first' | 'Load first' = 'Battery first') {
-  await setBatterySlot1(false);
   await setWorkMode(defaultMode);
 }
 
 export async function startGridDischarge(defaultMode: 'Battery first' | 'Load first' = 'Load first') {
   console.log('[CMD] Starting grid discharge (sell-back)');
-  await setBatterySlot1(false);
   await setWorkMode(defaultMode);
   await setOutputSourcePriority('SBU');
 }
@@ -78,7 +70,6 @@ export async function stopGridDischarge(defaultMode: 'Battery first' | 'Load fir
 
 export async function startBatteryHold(currentSoc: number) {
   console.log(`[CMD] Holding battery (prevent discharge, stop-discharge=${currentSoc}%)`);
-  await setBatterySlot1(false);
   await setOutputSourcePriority('USB');
   await setWorkMode('Load first');
   await setLoadFirstStopDischarge(currentSoc);
