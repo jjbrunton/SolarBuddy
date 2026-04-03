@@ -2,6 +2,8 @@
 
 This document defines the deployment contract for SolarBuddy without coupling the repository to a specific platform. It is intended to work equally well for Dokploy, plain Docker, and other container-oriented hosts.
 
+SolarBuddy is open source and does not have a shared hosted production environment. Maintainers publish source changes and release artifacts; self-hosters choose how and when to deploy them.
+
 ## Deployment Model
 
 - SolarBuddy runs as a single Node.js process.
@@ -31,6 +33,8 @@ docker run --rm -p 3000:3000 \
   solarbuddy
 ```
 
+Published releases can also ship a prebuilt container image via GitHub Container Registry. Self-hosters may choose either the published image or the repository `Dockerfile`, but the runtime contract stays the same.
+
 ## Runtime Environment
 
 SolarBuddy keeps most operator settings in SQLite and manages them through the UI. The runtime environment contract is intentionally small:
@@ -42,6 +46,13 @@ SolarBuddy keeps most operator settings in SQLite and manages them through the U
 | `HOSTNAME` | No | HTTP bind address for containerized deployments. Recommended: `0.0.0.0`. |
 
 MQTT broker settings, Octopus credentials, and scheduling preferences are configured through the application UI and stored in SQLite.
+
+## Persistence and Backup
+
+- Treat the SQLite database as operational state that must survive container replacement.
+- Mount the database on persistent storage.
+- Back up the database before upgrades and before manual experimentation with scheduler settings.
+- Keep at least one previous known-good image tag or digest available so you can roll back quickly.
 
 ## Health Checks
 

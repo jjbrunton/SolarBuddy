@@ -4,8 +4,6 @@ import { getSettings } from '@/lib/config';
 import { getState } from '@/lib/state';
 import { getEventsLog } from '@/lib/events';
 import { getRecentMqttLogs } from '@/lib/mqtt/logs';
-import fs from 'fs';
-import path from 'path';
 import SystemPageView from './SystemPageView';
 
 export const metadata: Metadata = { title: 'System' };
@@ -17,12 +15,10 @@ export default function SystemPage() {
   const settings = getSettings();
   const state = getState();
 
-  const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'solarbuddy.db');
-  let dbSize = 0;
-  try {
-    const stats = fs.statSync(dbPath);
-    dbSize = stats.size;
-  } catch { /* file may not exist */ }
+  const dbPath = process.env.DB_PATH || 'data/solarbuddy.db';
+  const pageCount = db.prepare('PRAGMA page_count').pluck().get() as number;
+  const pageSize = db.prepare('PRAGMA page_size').pluck().get() as number;
+  const dbSize = pageCount * pageSize;
 
   const latestRate = db
     .prepare('SELECT MAX(valid_from) as latest FROM rates')

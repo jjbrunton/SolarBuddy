@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -105,7 +105,7 @@ export default function RatesView() {
     enabled: editMode,
   });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [ratesRes, scheduleRes, settingsRes, overridesRes] = await Promise.all([
         fetch('/api/rates'),
@@ -190,13 +190,13 @@ export default function RatesView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setSelectedIndices]);
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
 
   // Combine scheduled + manual override slots for SOC forecast
   const allSlotActions = useMemo(() => {

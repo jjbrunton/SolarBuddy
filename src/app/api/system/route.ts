@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getSettings } from '@/lib/config';
 import { getState } from '@/lib/state';
-import fs from 'fs';
-import path from 'path';
 
 const startTime = Date.now();
 
@@ -12,13 +10,10 @@ export async function GET() {
   const settings = getSettings();
   const state = getState();
 
-  // DB file size
-  const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'solarbuddy.db');
-  let dbSize = 0;
-  try {
-    const stats = fs.statSync(dbPath);
-    dbSize = stats.size;
-  } catch { /* file may not exist */ }
+  const pageCount = db.prepare('PRAGMA page_count').pluck().get() as number;
+  const pageSize = db.prepare('PRAGMA page_size').pluck().get() as number;
+  const dbPath = process.env.DB_PATH || 'data/solarbuddy.db';
+  const dbSize = pageCount * pageSize;
 
   // Latest rate
   const latestRate = db

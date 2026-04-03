@@ -171,3 +171,4 @@ The default database path is `data/solarbuddy.db`, unless `DB_PATH` is set.
 - Keep API handlers thin and move new behavior into `src/lib/` modules.
 - Prefer additive schema changes with migration logic in [`src/lib/db.ts`](../src/lib/db.ts).
 - Any change to scheduling rules, data shape, or operator flows should update this document and the relevant API or development docs in the same change.
+- The supported runtime model remains a single active process per deployment. Record any architectural change to that assumption in [`decisions/`](decisions/README.md) before implementation.

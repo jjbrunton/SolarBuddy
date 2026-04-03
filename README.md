@@ -1,6 +1,22 @@
 # SolarBuddy
 
+[![Validation](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml)
+
 A self-hosted dashboard for managing solar battery charging and discharge with Octopus Energy Agile tariff integration. It plans battery actions across half-hour tariff slots and executes the resulting charge and discharge windows automatically.
+
+## Screenshots
+
+**Dashboard** — live gauges, energy flow diagram, and current rate overview
+
+![Dashboard](docs/images/dashboard.png)
+
+**Energy Rates** — Agile tariff visualization with charge, discharge, and hold slot overlays
+
+![Energy Rates](docs/images/rates.png)
+
+**Schedule** — slot-by-slot charge plan with planner reasoning and manual override controls
+
+![Schedule](docs/images/schedule.png)
 
 ## Documentation
 
@@ -9,7 +25,12 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 - [API Reference](docs/api.md)
 - [Development and Verification](docs/development.md)
 - [Deployment](docs/deployment.md)
+- [Testing Strategy](docs/testing-strategy.md)
+- [AI-Assisted Workflow](docs/ai-workflow.md)
+- [Release Process](docs/release-process.md)
 - [Design System](docs/design-system.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
 
 ## Features
 
@@ -46,7 +67,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22 recommended (`.nvmrc` is provided)
 - A Solar Assistant device on your network (for inverter data)
 - An Octopus Energy account with an Agile tariff (for rate data)
 
@@ -137,14 +158,29 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 npm test          # Run all tests once
 npm run test:coverage  # Generate a backend/API coverage report
 npm run test:watch  # Run in watch mode
+npm run lint      # Run the Next.js/TypeScript lint rules
+npm run test:e2e:install  # One-time Playwright browser install
+npm run test:e2e  # Run browser E2E tests against the production build
+npm run verify    # Docs check, tests, production build, and smoke test
+npm run release:dry-run  # Build the release Docker image locally
 ```
 
 Tests use [Vitest](https://vitest.dev/) and live in `__tests__/` directories alongside source files.
 Coverage currently focuses on non-UI code under `src/lib/` and `src/app/api/`.
 
-GitHub Actions also validates commits and pull requests with the same core checks in [`.github/workflows/validation.yml`](.github/workflows/validation.yml): `npm test` and `npm run build` on Node.js 20.
+GitHub Actions validates commits and pull requests with the workflows under [`.github/workflows/`](.github/workflows/): validation, dependency review, and CodeQL. The validation workflow uses the same repo-facing commands documented in [docs/development.md](docs/development.md) and [docs/testing-strategy.md](docs/testing-strategy.md).
 
 For local setup and verification workflow details, see [docs/development.md](docs/development.md).
+
+## Releases
+
+SolarBuddy is an open source, self-hosted application. There is no shared hosted deployment: maintainers publish source changes and release artifacts, and self-hosters choose when to deploy them.
+
+- `main` is the integration branch
+- GitHub Releases publish container artifacts to GHCR
+- Self-hosters can deploy from the published image or build from source with the included `Dockerfile`
+
+See [docs/release-process.md](docs/release-process.md) and [docs/deployment.md](docs/deployment.md) for the release and self-hosting contract.
 
 ## Data Storage
 

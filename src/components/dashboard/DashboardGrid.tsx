@@ -50,26 +50,6 @@ export function DashboardGrid({ widgets }: { widgets: WidgetDefinition[] }) {
     saveLayout(next);
   }, []);
 
-  const moveUp = useCallback(
-    (index: number) => {
-      if (index <= 0) return;
-      const next = [...layout];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      updateLayout(next);
-    },
-    [layout, updateLayout],
-  );
-
-  const moveDown = useCallback(
-    (index: number) => {
-      if (index >= layout.length - 1) return;
-      const next = [...layout];
-      [next[index], next[index + 1]] = [next[index + 1], next[index]];
-      updateLayout(next);
-    },
-    [layout, updateLayout],
-  );
-
   const toggleVisibility = useCallback(
     (id: string) => {
       updateLayout(layout.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w)));
