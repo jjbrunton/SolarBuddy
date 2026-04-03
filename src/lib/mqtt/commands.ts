@@ -63,9 +63,10 @@ export async function stopGridCharging(defaultMode: 'Battery first' | 'Load firs
   await setWorkMode(defaultMode);
 }
 
-export async function startGridDischarge() {
+export async function startGridDischarge(defaultMode: 'Battery first' | 'Load first' = 'Load first') {
   console.log('[CMD] Starting grid discharge (sell-back)');
-  await setWorkMode('Battery first');
+  await setBatterySlot1(false);
+  await setWorkMode(defaultMode);
   await setOutputSourcePriority('SBU');
 }
 

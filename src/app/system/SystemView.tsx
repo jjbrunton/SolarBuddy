@@ -6,7 +6,6 @@ import { FieldSet } from '@/components/ui/FieldSet';
 import { DescriptionList } from '@/components/ui/DescriptionList';
 import { Badge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { ConfigReadback } from '@/components/config/ConfigReadback';
 import { useSSE } from '@/hooks/useSSE';
 import { CheckCircle, XCircle, ExternalLink, Settings } from 'lucide-react';
@@ -64,26 +63,11 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
   const { state } = useSSE();
 
   if (!info) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          eyebrow="Diagnostics"
-          title="System status"
-          description="Review health indicators, runtime metadata, and the latest inverter configuration read-back from the broker."
-        />
-        <Card><p className="text-sb-text-muted">Loading system information...</p></Card>
-      </div>
-    );
+    return <Card><p className="text-sb-text-muted">Loading system information...</p></Card>;
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Diagnostics"
-        title="System status"
-        description="Review health indicators, runtime metadata, and the latest inverter configuration read-back from the broker."
-      />
-
       {/* Health checks */}
       <Card>
         <CardHeader title="Health" subtitle="Core infrastructure checks for the broker, rates, and scheduler services." />

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { PageHeader } from '@/components/ui/PageHeader';
 import { Play, RefreshCw } from 'lucide-react';
 
 interface TaskResult {
@@ -50,12 +49,6 @@ export default function TasksView() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Operations"
-        title="Scheduled tasks"
-        description="Run key background tasks manually and check the latest outcome reported by each server-side job."
-      />
-
       {tasks.map((task) => (
         <Card key={task.name}>
           <div className="flex items-start justify-between">

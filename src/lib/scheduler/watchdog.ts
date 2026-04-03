@@ -60,7 +60,6 @@ interface WatchdogState {
   pendingReasons: Set<string>;
   lastCommandSignature: string | null;
   lastCommandAt: number;
-  preHoldStopDischarge: number | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -77,7 +76,6 @@ function getWatchdogState(): WatchdogState {
       pendingReasons: new Set(),
       lastCommandSignature: null,
       lastCommandAt: 0,
-      preHoldStopDischarge: null,
     };
   }
 
@@ -232,8 +230,8 @@ function isChargeStateSatisfied(state: InverterState, chargeRate: number): boole
   return workModeMatches && chargeRateMatches;
 }
 
-function isDischargeStateSatisfied(state: InverterState): boolean {
-  return state.work_mode === 'Battery first' && resolveOutputSourcePriority(state) === 'SBU';
+function isDischargeStateSatisfied(state: InverterState, defaultMode: string): boolean {
+  return state.work_mode === defaultMode && resolveOutputSourcePriority(state) === 'SBU';
 }
 
 function isHoldStateSatisfied(state: InverterState): boolean {
@@ -257,8 +255,29 @@ function isHoldStateSatisfied(state: InverterState): boolean {
   );
 }
 
+function isGridChargingFromTelemetry(state: Pick<InverterState, 'battery_power' | 'grid_power' | 'load_power' | 'pv_power'>): boolean {
+  if (state.battery_power === null || state.battery_power <= 50) {
+    return false;
+  }
+
+  if (state.grid_power === null || state.grid_power <= 50) {
+    return false;
+  }
+
+  if (state.load_power !== null && state.pv_power !== null) {
+    const expectedImportForLoad = Math.max(0, state.load_power - state.pv_power);
+    return state.grid_power > expectedImportForLoad + 50;
+  }
+
+  return true;
+}
+
 function isForcedChargeActive(state: InverterState): boolean {
-  return state.work_mode === 'Grid first' || parseEnabledState(state.battery_first_grid_charge) === true;
+  return (
+    state.work_mode === 'Grid first' ||
+    parseEnabledState(state.battery_first_grid_charge) === true ||
+    isGridChargingFromTelemetry(state)
+  );
 }
 
 function isForcedDischargeActive(state: InverterState): boolean {
@@ -286,14 +305,14 @@ function clearCommandCooldown() {
   runtime.lastCommandAt = 0;
 }
 
-async function restoreStopDischargeFromHold(): Promise<void> {
-  const runtime = getWatchdogState();
-  if (runtime.preHoldStopDischarge === null) {
+async function ensureStopDischargeAtFloor(state: InverterState): Promise<void> {
+  const settings = getSettings();
+  const floor = parseInt(settings.discharge_soc_floor, 10);
+  const value = Number.isFinite(floor) ? floor : 20;
+  if (state.load_first_stop_discharge === value) {
     return;
   }
-  const restoreValue = runtime.preHoldStopDischarge;
-  runtime.preHoldStopDischarge = null;
-  await setLoadFirstStopDischarge(restoreValue);
+  await setLoadFirstStopDischarge(value);
 }
 
 async function applyIntent(intent: RuntimeIntent, state: InverterState) {
@@ -314,7 +333,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       if (isForcedDischargeActive(state)) {
         await stopGridDischarge(defaultMode);
       }
-      await restoreStopDischargeFromHold();
+      await ensureStopDischargeAtFloor(state);
       await startGridCharging(chargeRate);
       recordCommand(signature);
       appendEvent({
@@ -325,7 +344,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       return;
     }
     case 'discharge': {
-      if (isDischargeStateSatisfied(state)) {
+      if (isDischargeStateSatisfied(state, defaultMode)) {
         clearCommandCooldown();
         return;
       }
@@ -335,8 +354,8 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       if (isForcedChargeActive(state)) {
         await stopGridCharging(defaultMode);
       }
-      await restoreStopDischargeFromHold();
-      await startGridDischarge();
+      await ensureStopDischargeAtFloor(state);
+      await startGridDischarge(defaultMode);
       recordCommand(signature);
       appendEvent({
         level: 'info',
@@ -347,7 +366,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
     }
     case 'idle': {
       if (isForcedDischargeActive(state)) {
-        await restoreStopDischargeFromHold();
+        await ensureStopDischargeAtFloor(state);
         await stopGridDischarge(defaultMode);
         recordCommand(signature);
         appendEvent({
@@ -358,7 +377,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         return;
       }
       if (isForcedChargeActive(state)) {
-        await restoreStopDischargeFromHold();
+        await ensureStopDischargeAtFloor(state);
         await stopGridCharging(defaultMode);
         recordCommand(signature);
         appendEvent({
@@ -372,7 +391,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         if (shouldRespectCooldown(signature)) {
           return;
         }
-        await restoreStopDischargeFromHold();
+        await ensureStopDischargeAtFloor(state);
         await setWorkMode(defaultMode);
         recordCommand(signature);
         appendEvent({
@@ -382,7 +401,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         });
         return;
       }
-      await restoreStopDischargeFromHold();
+      await ensureStopDischargeAtFloor(state);
       clearCommandCooldown();
       return;
     }
@@ -393,12 +412,6 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       }
       if (shouldRespectCooldown(signature)) {
         return;
-      }
-      const runtime = getWatchdogState();
-      if (runtime.preHoldStopDischarge === null) {
-        const fallback = parseInt(settings.discharge_soc_floor, 10);
-        runtime.preHoldStopDischarge =
-          state.load_first_stop_discharge ?? (Number.isFinite(fallback) ? fallback : 10);
       }
       await startBatteryHold(state.battery_soc ?? 50);
       recordCommand(signature);
@@ -511,6 +524,5 @@ export function stopInverterWatchdog() {
   }
   runtime.pendingReasons.clear();
   runtime.running = false;
-  runtime.preHoldStopDischarge = null;
   clearCommandCooldown();
 }

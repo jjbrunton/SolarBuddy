@@ -2,152 +2,38 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
 import {
   LayoutDashboard,
   Zap,
   Calendar,
-  Battery,
-  Sun,
-  Activity,
-  BarChart3,
+  Wallet,
   FlaskConical,
   Settings,
   Server,
-  ChevronDown,
-  ChevronRight,
+  Sun,
   X,
-  Wallet,
-  ArrowLeftRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-
-interface NavChild {
-  label: string;
-  href: string;
-}
 
 interface NavItem {
   icon: LucideIcon;
   label: string;
   href: string;
-  children?: NavChild[];
 }
 
 const NAV_ITEMS: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
-  { icon: Zap, label: 'Energy Rates', href: '/rates' },
   { icon: Calendar, label: 'Schedule', href: '/schedule' },
-  { icon: Battery, label: 'Inverter', href: '/inverter' },
-  { icon: Sun, label: 'Solar', href: '/solar' },
-  { icon: Activity, label: 'Activity', href: '/activity' },
-  {
-    icon: BarChart3,
-    label: 'Analytics',
-    href: '/analytics',
-    children: [
-      { label: 'Cost Savings', href: '/analytics' },
-      { label: 'Energy Flow', href: '/analytics/energy' },
-      { label: 'Cost & Profit', href: '/analytics/accounting' },
-      { label: 'Tariff Comparison', href: '/analytics/tariff-comparison' },
-      { label: 'Battery Health', href: '/analytics/battery' },
-      { label: 'Carbon', href: '/analytics/carbon' },
-      { label: 'Rate Trends', href: '/analytics/rates' },
-    ],
-  },
+  { icon: Zap, label: 'Energy Rates', href: '/rates' },
+  { icon: Wallet, label: 'Savings', href: '/savings' },
   { icon: FlaskConical, label: 'Simulation', href: '/simulate' },
-  {
-    icon: Settings,
-    label: 'Settings',
-    href: '/settings',
-    children: [
-      { label: 'General', href: '/settings' },
-      { label: 'MQTT', href: '/settings/mqtt' },
-      { label: 'Octopus Energy', href: '/settings/octopus' },
-      { label: 'Charging', href: '/settings/charging' },
-      { label: 'Scheduled Actions', href: '/settings/scheduled-actions' },
-    ],
-  },
-  {
-    icon: Server,
-    label: 'System',
-    href: '/system',
-    children: [
-      { label: 'Status', href: '/system' },
-      { label: 'Tasks', href: '/system/tasks' },
-      { label: 'Logs', href: '/system/logs' },
-    ],
-  },
+  { icon: Settings, label: 'Settings', href: '/settings' },
+  { icon: Server, label: 'System', href: '/system' },
 ];
 
 function isActive(pathname: string, href: string) {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(href + '/');
-}
-
-function NavItemComponent({
-  item,
-  pathname,
-  closeMobile,
-}: {
-  item: NavItem;
-  pathname: string;
-  closeMobile: () => void;
-}) {
-  const active = isActive(pathname, item.href);
-  const [expanded, setExpanded] = useState(active && !!item.children);
-
-  if (item.children) {
-    return (
-      <div className="space-y-1">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
-            active
-              ? 'bg-sb-active text-sb-text'
-              : 'text-sb-text-muted hover:bg-sb-active/70 hover:text-sb-text'
-          }`}
-        >
-          <item.icon size={18} />
-          <span className="flex-1 text-left">{item.label}</span>
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
-        {expanded ? (
-          <div className="ml-4 space-y-1 border-l border-sb-border pl-4">
-            {item.children.map((child) => (
-              <Link
-                key={child.href}
-                href={child.href}
-                onClick={closeMobile}
-                className={`block rounded-xl px-3 py-2 text-sm transition-colors ${
-                  pathname === child.href
-                    ? 'bg-sb-active text-sb-text'
-                    : 'text-sb-text-muted hover:bg-sb-active/60 hover:text-sb-text'
-                }`}
-              >
-                {child.label}
-              </Link>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <Link
-      href={item.href}
-      onClick={closeMobile}
-      className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
-        active
-          ? 'bg-sb-active text-sb-text'
-          : 'text-sb-text-muted hover:bg-sb-active/70 hover:text-sb-text'
-      }`}
-    >
-      <item.icon size={18} />
-      <span>{item.label}</span>
-    </Link>
-  );
 }
 
 export function Sidebar({
@@ -186,14 +72,24 @@ export function Sidebar({
         </div>
 
         <nav className="mt-5 flex-1 space-y-2 overflow-y-auto pr-1">
-          {NAV_ITEMS.map((item) => (
-            <NavItemComponent
-              key={item.href}
-              item={item}
-              pathname={pathname}
-              closeMobile={onClose}
-            />
-          ))}
+          {NAV_ITEMS.map((item) => {
+            const active = isActive(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
+                  active
+                    ? 'bg-sb-active text-sb-text'
+                    : 'text-sb-text-muted hover:bg-sb-active/70 hover:text-sb-text'
+                }`}
+              >
+                <item.icon size={18} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="mt-5 rounded-2xl border border-sb-border bg-sb-card px-4 py-3">
