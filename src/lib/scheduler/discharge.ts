@@ -67,7 +67,7 @@ export interface SmartDischargeDebug {
   candidateResults?: Array<{
     key: string;
     price: number;
-    rejected: 'backfill' | 'floor' | 'value' | null;
+    rejected: 'backfill' | 'floor' | 'value' | 'marginal_cost' | null;
   }>;
 }
 
@@ -179,6 +179,15 @@ export function buildSmartDischargePlan(
     );
     if (!refill.feasible) {
       debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'backfill' });
+      continue;
+    }
+
+    // Reject if the discharge export price doesn't cover the cost of the
+    // energy most recently charged into the battery.  This prevents
+    // economically questionable patterns like charge@14.74p → discharge@14.51p.
+    const precedingCost = nearestPrecedingChargePrice(tentative, slots, candidate.startMs);
+    if (precedingCost > 0 && candidate.exportPrice <= precedingCost) {
+      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'marginal_cost' });
       continue;
     }
 
@@ -524,6 +533,27 @@ function resolveEnergyModel(settings: Pick<AppSettings, 'battery_capacity_kwh' |
 
 function percentageToWh(percentage: number, batteryCapacityWh: number): number {
   return batteryCapacityWh * (percentage / 100);
+}
+
+/**
+ * Price (p/kWh) of the charge slot closest before (or at) a given time.
+ * Returns 0 when no preceding charge exists — the energy predates the plan
+ * horizon and is effectively free.
+ */
+function nearestPrecedingChargePrice(
+  plan: ActionPlan,
+  slots: SlotModel[],
+  beforeMs: number,
+): number {
+  let best: SlotModel | null = null;
+  for (const slot of slots) {
+    if (!plan.chargeKeys.has(slot.key)) continue;
+    if (slot.endMs > beforeMs) continue;
+    if (!best || slot.startMs > best.startMs) {
+      best = slot;
+    }
+  }
+  return best?.rate.price_inc_vat ?? 0;
 }
 
 function clampPercentage(value: number): number | null {

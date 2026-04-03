@@ -154,6 +154,122 @@ describe('findSmartDischargeSlots', () => {
   });
 });
 
+describe('marginal cost gate', () => {
+  it('rejects discharge when export price is below the nearest preceding charge price', () => {
+    const rates: AgileRate[] = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 15),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 14),
+      rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 3),
+    ];
+
+    const initialCharge = [{
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      avg_price: 15,
+      slots: [rates[0]],
+    }];
+
+    const plan = buildSmartDischargePlan(rates, {
+      ...baseSettings,
+      charge_hours: '1',
+      estimated_consumption_w: '500',
+      discharge_price_threshold: '0',
+    }, initialCharge, [], {
+      currentSoc: 80,
+      now: new Date('2026-04-01T09:50:00Z'),
+    });
+
+    // The 14p slot should NOT be a discharge (below 15p preceding charge)
+    expect(plan.dischargeWindows.every((w) =>
+      w.slots.every((s) => s.price_inc_vat !== 14),
+    )).toBe(true);
+
+    // Should be rejected with marginal_cost reason
+    const rejected = plan._debug?.candidateResults?.find((r) => r.price === 14);
+    expect(rejected?.rejected).toBe('marginal_cost');
+  });
+
+  it('accepts discharge when export price significantly exceeds charge cost', () => {
+    const rates: AgileRate[] = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 3),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 25),
+    ];
+
+    const initialCharge = [{
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      avg_price: 3,
+      slots: [rates[0]],
+    }];
+
+    const plan = buildSmartDischargePlan(rates, {
+      ...baseSettings,
+      charge_hours: '1',
+      estimated_consumption_w: '500',
+      discharge_price_threshold: '0',
+    }, initialCharge, [], {
+      currentSoc: 80,
+      now: new Date('2026-04-01T09:50:00Z'),
+    });
+
+    expect(plan.dischargeWindows).toHaveLength(1);
+    expect(plan.dischargeWindows[0].slots[0].price_inc_vat).toBe(25);
+  });
+
+  it('allows any positive-price discharge when no charges exist (free energy)', () => {
+    const rates: AgileRate[] = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 5),
+    ];
+
+    const plan = buildSmartDischargePlan(rates, {
+      ...baseSettings,
+      charge_hours: '0',
+      estimated_consumption_w: '500',
+      discharge_price_threshold: '0',
+    }, [], [], {
+      currentSoc: 80,
+      now: new Date('2026-04-01T09:50:00Z'),
+    });
+
+    expect(plan.dischargeWindows).toHaveLength(1);
+  });
+
+  it('does not discharge at 14.51p right after a 14.74p charge', () => {
+    const rates: AgileRate[] = [
+      rate('2026-04-01T21:30:00Z', '2026-04-01T22:00:00Z', 14.74),
+      rate('2026-04-01T22:00:00Z', '2026-04-01T22:30:00Z', 14.51),
+      rate('2026-04-01T22:30:00Z', '2026-04-01T23:00:00Z', 9.31),
+      rate('2026-04-01T23:00:00Z', '2026-04-01T23:30:00Z', 3.34),
+    ];
+
+    // Simulate the user's scenario: base planner committed to charges
+    // at 14.74p and 3.34p (e.g. due to charge window restrictions).
+    const plannedCharges = [
+      { slot_start: rates[0].valid_from, slot_end: rates[0].valid_to, avg_price: 14.74, slots: [rates[0]] },
+      { slot_start: rates[3].valid_from, slot_end: rates[3].valid_to, avg_price: 3.34, slots: [rates[3]] },
+    ];
+
+    const plan = buildSmartDischargePlan(rates, {
+      ...baseSettings,
+      charge_hours: '2',
+      estimated_consumption_w: '500',
+      discharge_soc_floor: '20',
+      discharge_price_threshold: '0',
+    }, plannedCharges, [], {
+      currentSoc: 50,
+      now: new Date('2026-04-01T21:25:00Z'),
+    });
+
+    // 14.51p discharge must be rejected — it's below the preceding 14.74p charge
+    expect(plan.dischargeWindows.every((w) =>
+      w.slots.every((s) => s.price_inc_vat !== 14.51),
+    )).toBe(true);
+
+    const rejected = plan._debug?.candidateResults?.find((r) => r.price === 14.51);
+    expect(rejected?.rejected).toBe('marginal_cost');
+  });
+});
+
 describe('real-world: night_fill + peak protection with afternoon cheap rates', () => {
   // Reproduces the user's scenario: night_fill strategy, peak protection on,
   // cheap afternoon rates, expensive evening rates.  The planner should
