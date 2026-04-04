@@ -8,11 +8,12 @@ import { storePVForecast, getStoredPVForecast, getLatestForecastAge } from '../s
 import { syncInverterTime } from '../inverter/time-sync';
 import { checkForTariffChange } from '../octopus/tariff-monitor';
 import { getState } from '../state';
-import { buildSchedulePlan, getChargingStrategy, type ChargeWindow, type PlannedSlot } from './engine';
+import { buildSchedulePlan, getChargingStrategy } from './engine';
 import { scheduleExecution } from './executor';
-import { getDb } from '../db';
+import { persistSchedulePlan } from '../db/schedule-repository';
 import { appendEvent } from '../events';
 import { notify } from '../notifications/dispatcher';
+import type { AgileRate } from '../octopus/rates';
 
 let afternoonJob: cron.ScheduledTask | null = null;
 let eveningJob: cron.ScheduledTask | null = null;
@@ -35,6 +36,54 @@ function logScheduleEvent(level: 'success' | 'warning' | 'error', message: strin
     category: 'scheduler',
     message,
   });
+}
+
+interface PlanInput {
+  rates: AgileRate[];
+  exportRates: AgileRate[];
+  pvForecast: Awaited<ReturnType<typeof getStoredPVForecast>>;
+}
+
+/**
+ * Build, persist, and optionally execute a schedule plan.
+ * Shared core between runScheduleCycle and replanFromStoredRates.
+ */
+function buildAndPersistPlan(input: PlanInput, label: string): ScheduleCycleResult {
+  const settings = getSettings();
+  const strategy = getChargingStrategy(settings);
+  const strategyLabel = strategy === 'night_fill' ? 'Night Fill' : 'Opportunistic Top-up';
+  const state = getState();
+  const now = new Date();
+
+  const plan = buildSchedulePlan(input.rates, settings, {
+    currentSoc: state.battery_soc,
+    now,
+    exportRates: input.exportRates,
+    pvForecast: input.pvForecast,
+  });
+  const windows = plan.windows;
+  const plannedSlots = plan.slots;
+
+  console.log(`[${label}] Found ${windows.length} planned battery windows`);
+
+  persistSchedulePlan(windows, plannedSlots);
+
+  if (settings.auto_schedule === 'true') {
+    scheduleExecution(windows);
+  }
+
+  const message = windows.length === 0
+    ? `${strategyLabel}${label === 'Replan' ? ' replan' : ''}: no eligible battery windows.`
+    : `${strategyLabel}${label === 'Replan' ? ' replan' : ''}: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
+  logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
+  notify('schedule_updated', 'Schedule Updated', message);
+
+  return {
+    ok: true,
+    status: windows.length === 0 ? 'no_windows' : 'scheduled',
+    message,
+    windowsCount: windows.length,
+  };
 }
 
 export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
@@ -104,80 +153,9 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
       console.log(`[Cron] Using ${pvForecast.length} PV forecast slots`);
     }
 
-    const strategy = getChargingStrategy(settings);
-    const strategyLabel = strategy === 'night_fill' ? 'Night Fill' : 'Opportunistic Top-up';
-    const state = getState();
-    const plan = buildSchedulePlan(rates, settings, {
-      currentSoc: state.battery_soc,
-      now,
-      exportRates,
-      pvForecast,
-    });
-    const windows = plan.windows;
-    const plannedSlots = plan.slots;
-    console.log(`[Cron] Found ${windows.length} planned battery windows`);
-
-    const db = getDb();
-    const today = now.toISOString().split('T')[0];
-
-    const insertWindow = db.prepare(`
-      INSERT INTO schedules (date, slot_start, slot_end, avg_price, status, created_at, type)
-      VALUES (?, ?, ?, ?, 'planned', ?, ?)
-    `);
-    const insertSlot = db.prepare(`
-      INSERT OR REPLACE INTO plan_slots (
-        date,
-        slot_start,
-        slot_end,
-        action,
-        reason,
-        expected_soc_after,
-        expected_value,
-        status,
-        created_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'planned', ?)
-    `);
-    const insertAll = db.transaction((ws: ChargeWindow[], slots: PlannedSlot[]) => {
-      db.prepare("DELETE FROM schedules WHERE date = ? AND status = 'planned'").run(today);
-      db.prepare("DELETE FROM plan_slots WHERE date = ? AND status = 'planned'").run(today);
-      for (const w of ws) {
-        insertWindow.run(today, w.slot_start, w.slot_end, w.avg_price, new Date().toISOString(), w.type ?? 'charge');
-      }
-      for (const slot of slots) {
-        insertSlot.run(
-          today,
-          slot.slot_start,
-          slot.slot_end,
-          slot.action,
-          slot.reason,
-          slot.expected_soc_after,
-          slot.expected_value,
-          new Date().toISOString(),
-        );
-      }
-    });
-    insertAll(windows, plannedSlots);
-
-    // Schedule execution
-    if (settings.auto_schedule === 'true') {
-      scheduleExecution(windows);
-    }
-
+    const result = buildAndPersistPlan({ rates, exportRates, pvForecast }, 'Cron');
     console.log('[Cron] Schedule cycle complete');
-    const message = windows.length === 0
-      ? strategy === 'night_fill'
-        ? 'Night Fill did not find any eligible battery windows. The slot plan has been updated with hold actions only.'
-        : 'Opportunistic Top-up did not find any eligible battery windows. The slot plan has been updated with hold actions only.'
-      : `${strategyLabel}: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
-    logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
-    notify('schedule_updated', 'Schedule Updated', message);
-    return {
-      ok: true,
-      status: windows.length === 0 ? 'no_windows' : 'scheduled',
-      message,
-      windowsCount: windows.length,
-    };
+    return result;
   } catch (err) {
     console.error('[Cron] Schedule cycle failed:', err);
     const message = err instanceof Error ? err.message : 'Unknown scheduler error';
@@ -214,55 +192,9 @@ export async function replanFromStoredRates(): Promise<ScheduleCycleResult> {
       pvForecast = getStoredPVForecast(now.toISOString(), tomorrow.toISOString());
     }
 
-    const strategy = getChargingStrategy(settings);
-    const strategyLabel = strategy === 'night_fill' ? 'Night Fill' : 'Opportunistic Top-up';
-    const state = getState();
-    const plan = buildSchedulePlan(rates, settings, {
-      currentSoc: state.battery_soc,
-      now,
-      exportRates,
-      pvForecast,
-    });
-    const windows = plan.windows;
-    const plannedSlots = plan.slots;
-
-    const db = getDb();
-    const today = now.toISOString().split('T')[0];
-
-    const insertWindow = db.prepare(`
-      INSERT INTO schedules (date, slot_start, slot_end, avg_price, status, created_at, type)
-      VALUES (?, ?, ?, ?, 'planned', ?, ?)
-    `);
-    const insertSlot = db.prepare(`
-      INSERT OR REPLACE INTO plan_slots (
-        date, slot_start, slot_end, action, reason,
-        expected_soc_after, expected_value, status, created_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'planned', ?)
-    `);
-    const insertAll = db.transaction((ws: ChargeWindow[], slots: PlannedSlot[]) => {
-      db.prepare("DELETE FROM schedules WHERE date = ? AND status = 'planned'").run(today);
-      db.prepare("DELETE FROM plan_slots WHERE date = ? AND status = 'planned'").run(today);
-      for (const w of ws) {
-        insertWindow.run(today, w.slot_start, w.slot_end, w.avg_price, new Date().toISOString(), w.type ?? 'charge');
-      }
-      for (const slot of slots) {
-        insertSlot.run(today, slot.slot_start, slot.slot_end, slot.action, slot.reason, slot.expected_soc_after, slot.expected_value, new Date().toISOString());
-      }
-    });
-    insertAll(windows, plannedSlots);
-
-    if (settings.auto_schedule === 'true') {
-      scheduleExecution(windows);
-    }
-
-    const message = windows.length === 0
-      ? `${strategyLabel} replan: no eligible battery windows.`
-      : `${strategyLabel} replan: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
-    logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
-    notify('schedule_updated', 'Schedule Updated', message);
-    console.log(`[Replan] Complete — ${windows.length} windows`);
-    return { ok: true, status: windows.length === 0 ? 'no_windows' : 'scheduled', message, windowsCount: windows.length };
+    const result = buildAndPersistPlan({ rates, exportRates, pvForecast }, 'Replan');
+    console.log(`[Replan] Complete — ${result.windowsCount} windows`);
+    return result;
   } catch (err) {
     console.error('[Replan] Failed:', err);
     const message = err instanceof Error ? err.message : 'Unknown replan error';

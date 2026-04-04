@@ -2,6 +2,10 @@
 
 [![Validation](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml)
 
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jjbrunton)
+
+If you're on Octopus Energy or thinking of switching, you can use my [referral link](https://share.octopus.energy/beige-briar-856) — we both get £50 credit.
+
 A self-hosted dashboard for managing solar battery charging and discharge with Octopus Energy Agile tariff integration. It plans battery actions across half-hour tariff slots and executes the resulting charge and discharge windows automatically.
 
 ## Screenshots

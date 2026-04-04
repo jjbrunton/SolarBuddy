@@ -179,11 +179,21 @@ describe('verifyAccount', () => {
       new Response('Not found', { status: 404 })
     );
 
-    const result = await verifyAccount('sk_live_test', 'A-BADACCOUNT');
+    const result = await verifyAccount('sk_live_test', 'A-00000000');
     expect(result).toEqual({
       ok: false,
       error: 'Account not found — check your account number',
     });
+  });
+
+  it('rejects account numbers that do not match expected format', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{}', { status: 200 })
+    );
+
+    const result = await verifyAccount('sk_live_test', '../../admin');
+    expect(result).toEqual({ ok: false, error: 'Invalid account number format' });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('returns error on network failure', async () => {

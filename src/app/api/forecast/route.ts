@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSettings } from '@/lib/config';
 import { fetchPVForecast } from '@/lib/solcast/client';
 import { storePVForecast, getStoredPVForecast, getLatestForecastAge } from '@/lib/solcast/store';
+import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -10,7 +11,10 @@ export async function GET(request: Request) {
 
   const forecasts = getStoredPVForecast(from, to);
   const ageMinutes = getLatestForecastAge();
-  return NextResponse.json({ forecasts, ageMinutes: Math.round(ageMinutes) });
+  return NextResponse.json(
+    { forecasts, ageMinutes: Math.round(ageMinutes) },
+    { headers: { 'Cache-Control': 'private, max-age=120' } },
+  );
 }
 
 export async function POST(request: Request) {
@@ -19,9 +23,8 @@ export async function POST(request: Request) {
   const settings = getSettings();
 
   if (!settings.pv_latitude || !settings.pv_longitude || !settings.pv_kwp) {
-    return NextResponse.json(
-      { ok: false, error: 'PV system location (latitude, longitude) and capacity (kWp) must be configured' },
-      { status: 400 },
+    return errorResponse(
+      ApiError.badRequest('PV system location (latitude, longitude) and capacity (kWp) must be configured'),
     );
   }
 
@@ -50,9 +53,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, count: forecasts.length });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : 'Unknown error' },
-      { status: 500 },
-    );
+    return errorResponse(err);
   }
 }

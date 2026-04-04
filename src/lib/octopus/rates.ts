@@ -1,7 +1,10 @@
-import { getDb } from '../db';
 import { getSettings } from '../config';
 import { getTariffDefinition } from '../tariffs/definitions';
 import { generateSyntheticRates } from '../tariffs/rate-generator';
+import {
+  storeImportRates,
+  getStoredImportRates,
+} from '../db/rate-repository';
 
 export interface AgileRate {
   valid_from: string;
@@ -45,23 +48,7 @@ export async function fetchRates(periodFrom?: string, periodTo?: string): Promis
 }
 
 export function storeRates(rates: AgileRate[]) {
-  const db = getDb();
-  const upsert = db.prepare(`
-    INSERT INTO rates (valid_from, valid_to, price_inc_vat, price_exc_vat, fetched_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(valid_from) DO UPDATE SET
-      price_inc_vat = excluded.price_inc_vat,
-      price_exc_vat = excluded.price_exc_vat,
-      fetched_at = excluded.fetched_at
-  `);
-  const now = new Date().toISOString();
-  const transaction = db.transaction((rates: AgileRate[]) => {
-    for (const rate of rates) {
-      upsert.run(rate.valid_from, rate.valid_to, rate.price_inc_vat, rate.price_exc_vat, now);
-    }
-  });
-  transaction(rates);
-  console.log(`[Octopus] Stored ${rates.length} rates`);
+  storeImportRates(rates);
 }
 
 export async function fetchAndStoreRates(periodFrom?: string, periodTo?: string): Promise<AgileRate[]> {
@@ -89,24 +76,5 @@ export async function resolveRates(periodFrom: string, periodTo: string): Promis
 }
 
 export function getStoredRates(from?: string, to?: string): AgileRate[] {
-  const db = getDb();
-  let query = 'SELECT valid_from, valid_to, price_inc_vat, price_exc_vat FROM rates';
-  const conditions: string[] = [];
-  const params: string[] = [];
-
-  if (from) {
-    conditions.push('valid_from >= ?');
-    params.push(from);
-  }
-  if (to) {
-    conditions.push('valid_to <= ?');
-    params.push(to);
-  }
-
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-  query += ' ORDER BY valid_from ASC';
-
-  return db.prepare(query).all(...params) as AgileRate[];
+  return getStoredImportRates(from, to);
 }

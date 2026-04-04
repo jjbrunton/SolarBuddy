@@ -1,15 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prepareMock, allMock, runScheduleCycleMock } = vi.hoisted(() => ({
-  prepareMock: vi.fn(),
-  allMock: vi.fn(),
+const { getRecentPlanDataMock, runScheduleCycleMock } = vi.hoisted(() => ({
+  getRecentPlanDataMock: vi.fn(),
   runScheduleCycleMock: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({
-  getDb: () => ({
-    prepare: prepareMock,
-  }),
+vi.mock('@/lib/db/schedule-repository', () => ({
+  getRecentPlanData: getRecentPlanDataMock,
 }));
 
 vi.mock('@/lib/scheduler/cron', () => ({
@@ -23,7 +20,6 @@ describe('/api/schedule', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-03T10:15:00Z'));
-    prepareMock.mockReturnValue({ all: allMock });
   });
 
   afterEach(() => {
@@ -31,7 +27,10 @@ describe('/api/schedule', () => {
   });
 
   it('returns recent schedules and plan slots', async () => {
-    allMock.mockReturnValueOnce([{ id: 'schedule' }]).mockReturnValueOnce([{ id: 'plan' }]);
+    getRecentPlanDataMock.mockReturnValue({
+      schedules: [{ id: 'schedule' }],
+      plan_slots: [{ id: 'plan' }],
+    });
 
     const response = await GET();
 
@@ -39,8 +38,6 @@ describe('/api/schedule', () => {
       schedules: [{ id: 'schedule' }],
       plan_slots: [{ id: 'plan' }],
     });
-    expect(allMock).toHaveBeenNthCalledWith(1, '2026-03-04T00:00:00.000Z');
-    expect(allMock).toHaveBeenNthCalledWith(2, '2026-03-04T00:00:00.000Z');
   });
 
   it.each([
@@ -49,7 +46,10 @@ describe('/api/schedule', () => {
     [{ ok: false, status: 'failed' }, 500],
   ])('maps schedule-cycle status %o to HTTP %i', async (result, expectedStatus) => {
     runScheduleCycleMock.mockResolvedValue(result);
-    allMock.mockReturnValueOnce([{ id: 'schedule' }]).mockReturnValueOnce([{ id: 'plan' }]);
+    getRecentPlanDataMock.mockReturnValue({
+      schedules: [{ id: 'schedule' }],
+      plan_slots: [{ id: 'plan' }],
+    });
 
     const response = await POST();
 
