@@ -50,11 +50,11 @@ describe('pv forecast store', () => {
     prepareMock.mockImplementationOnce((query: string) => ({
       run: runMock,
       get: getMock,
-      all: (...params: string[]) => {
+      all: vi.fn((...params: string[]) => {
         capturedQuery = query;
         capturedParams = params;
         return [{ valid_from: 'a' }];
-      },
+      }),
     }));
 
     expect(getStoredPVForecast('from', 'to')).toEqual([{ valid_from: 'a' }]);

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { saveSettings, getSettings, SETTING_KEY_SET, type AppSettings } from '@/lib/config';
 import { getDb } from '@/lib/db';
+import { syncVirtualInverterSetting } from '@/lib/virtual-inverter/runtime';
 
 export async function saveSettingsAction(
   settings: Record<string, string>,
@@ -32,6 +33,14 @@ export async function saveSettingsAction(
   if (validated.watchdog_enabled !== undefined) {
     const { syncInverterWatchdogSetting } = await import('@/lib/scheduler/watchdog');
     syncInverterWatchdogSetting();
+  }
+
+  if (
+    validated.virtual_mode_enabled !== undefined ||
+    validated.virtual_scenario_id !== undefined ||
+    validated.virtual_speed !== undefined
+  ) {
+    await syncVirtualInverterSetting();
   }
 
   // Trigger schedule replan if any schedule-relevant setting changed

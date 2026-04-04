@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import { ACTION_COLORS, ACTION_LABELS, type PlanAction } from '@/lib/plan-actions';
+import { useSSE } from '@/hooks/useSSE';
 
 interface Rate {
   valid_from: string;
@@ -31,9 +32,19 @@ interface ChartData {
 }
 
 export default function RateChart() {
+  const { state } = useSSE();
+  const effectiveNow = useMemo(
+    () => (state.runtime_mode === 'virtual' && state.virtual_time ? new Date(state.virtual_time) : new Date()),
+    [state.runtime_mode, state.virtual_time],
+  );
+  const effectiveNowRef = useRef(effectiveNow);
   const [data, setData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    effectiveNowRef.current = effectiveNow;
+  }, [effectiveNow]);
 
   const fetchData = async () => {
     try {
@@ -46,7 +57,7 @@ export default function RateChart() {
       const schedules: Schedule[] = scheduleJson.schedules || [];
       const plannedSlots: PlannedSlotRow[] = scheduleJson.plan_slots || [];
 
-      const now = new Date();
+      const now = effectiveNowRef.current;
 
       const plannedActionMap = new Map<string, PlanAction>();
       for (const slot of plannedSlots) {

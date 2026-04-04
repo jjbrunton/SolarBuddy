@@ -6,9 +6,14 @@ export async function register() {
     const { syncInverterWatchdogSetting } = await import('./lib/scheduler/watchdog');
     const { startReadingsIngestion } = await import('./lib/readings/ingest');
     const { scheduleStartupReplan } = await import('./lib/scheduler/reevaluate');
+    const { syncVirtualInverterSetting, isVirtualModeEnabled } = await import('./lib/virtual-inverter/runtime');
 
     console.log('[Init] Starting background services...');
-    connectMqtt();
+    if (!isVirtualModeEnabled()) {
+      connectMqtt();
+    } else {
+      await syncVirtualInverterSetting();
+    }
     startCronJobs();
     syncInverterWatchdogSetting();
     startReadingsIngestion();

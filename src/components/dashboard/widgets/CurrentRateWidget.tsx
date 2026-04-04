@@ -10,6 +10,7 @@ import {
 import type { AgileRate } from '@/lib/octopus/rates';
 import { Badge } from '@/components/ui/Badge';
 import { ACTION_LABELS, ACTION_BADGE_KIND, type PlanAction } from '@/lib/plan-actions';
+import { useSSE } from '@/hooks/useSSE';
 
 function formatPrice(price: number) {
   return price.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
@@ -88,8 +89,13 @@ function getStatusCopy(status: CurrentRateStatus, currentPrice: number, averageP
 
 export default function CurrentRateWidget() {
   const router = useRouter();
+  const { state } = useSSE();
+  const effectiveNow = useMemo(
+    () => (state.runtime_mode === 'virtual' && state.virtual_time ? new Date(state.virtual_time) : new Date()),
+    [state.runtime_mode, state.virtual_time],
+  );
   const [rates, setRates] = useState<AgileRate[]>([]);
-  const [currentAction, setCurrentAction] = useState<PlanAction | null>(null);
+  const [planSlots, setPlanSlots] = useState<{ slot_start: string; slot_end: string; action: PlanAction }[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -102,12 +108,7 @@ export default function CurrentRateWidget() {
         setRates(ratesJson.rates || []);
 
         const schedJson = await schedRes.json();
-        const planSlots: { slot_start: string; slot_end: string; action: PlanAction }[] = schedJson.plan_slots || [];
-        const now = Date.now();
-        const match = planSlots.find(
-          (s) => now >= new Date(s.slot_start).getTime() && now < new Date(s.slot_end).getTime(),
-        );
-        setCurrentAction(match?.action ?? null);
+        setPlanSlots(schedJson.plan_slots || []);
       } catch {
         // Silent: the dashboard should remain usable without rate data.
       }
@@ -118,7 +119,14 @@ export default function CurrentRateWidget() {
     return () => clearInterval(interval);
   }, []);
 
-  const summary = useMemo(() => summarizeCurrentRate(rates), [rates]);
+  const summary = useMemo(() => summarizeCurrentRate(rates, effectiveNow), [effectiveNow, rates]);
+  const currentAction = useMemo(() => {
+    const now = effectiveNow.getTime();
+    return (
+      planSlots.find((slot) => now >= new Date(slot.slot_start).getTime() && now < new Date(slot.slot_end).getTime())
+        ?.action ?? null
+    );
+  }, [effectiveNow, planSlots]);
 
   if (!summary) return null;
 

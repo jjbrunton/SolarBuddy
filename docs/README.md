@@ -10,6 +10,7 @@ This directory is the documentation entry point for SolarBuddy. Use it alongside
 - [Deployment](deployment.md) documents the container runtime contract and platform-neutral self-hosting guidance.
 - [Testing Strategy](testing-strategy.md) defines the automated verification layers and required regression areas.
 - [AI-Assisted Workflow](ai-workflow.md) captures the repo's human-led, AI-assisted development model.
+- [Virtual Inverter](virtual-inverter.md) documents the sandbox runtime, preset scenarios, and mode-aware API behavior.
 - [Release Process](release-process.md) documents how maintainers publish trustworthy artifacts for self-hosters.
 - [Runbooks](runbooks.md) provides operator and maintainer procedures for backup, restore, and release checks.
 - [GitHub Repository Settings](github-settings.md) lists the GitHub-side controls that maintainers should enable outside Git.
@@ -25,6 +26,7 @@ This directory is the documentation entry point for SolarBuddy. Use it alongside
 - Deployment and self-hosting: [Deployment](deployment.md)
 - Open source release workflow: [Release Process](release-process.md)
 - Durable AI guidance: [AI-Assisted Workflow](ai-workflow.md)
+- Sandbox runtime and preset scenarios: [Virtual Inverter](virtual-inverter.md)
 - GitHub-side branch and security controls: [GitHub Repository Settings](github-settings.md)
 - Shared UI strategy and styling conventions: [Design System](design-system.md)
 

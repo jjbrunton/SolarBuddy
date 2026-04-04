@@ -57,6 +57,10 @@ export interface AppSettings {
   time_sync_enabled: string;
   // Tariff monitor
   tariff_monitor_enabled: string;
+  // Virtual inverter
+  virtual_mode_enabled: string;
+  virtual_scenario_id: string;
+  virtual_speed: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -113,6 +117,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   time_sync_enabled: 'false',
   // Tariff monitor
   tariff_monitor_enabled: 'true',
+  // Virtual inverter
+  virtual_mode_enabled: 'false',
+  virtual_scenario_id: 'overnight-recovery',
+  virtual_speed: '6x',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];

@@ -4,6 +4,7 @@ import { updateState } from '../state';
 import { appendEvent } from '../events';
 import { appendMqttLog } from './logs';
 import { SUBSCRIBE_TOPICS, parseTopicKey, STRING_KEYS } from './topics';
+import { isVirtualModeEnabled } from '../virtual-inverter/runtime';
 
 // Use globalThis to share MQTT client across Next.js workers
 const g = globalThis as unknown as {
@@ -15,6 +16,17 @@ export function getMqttClient(): MqttClient | null {
 }
 
 export function connectMqtt() {
+  if (isVirtualModeEnabled()) {
+    disconnectMqtt();
+    appendMqttLog({
+      level: 'info',
+      direction: 'system',
+      topic: null,
+      payload: 'MQTT connection skipped because virtual inverter mode is enabled',
+    });
+    return;
+  }
+
   const settings = getSettings();
   if (!settings.mqtt_host) {
     console.log('[MQTT] No host configured, skipping connection');

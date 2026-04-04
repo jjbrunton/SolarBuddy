@@ -2,6 +2,8 @@
 
 SolarBuddy is a self-hosted Next.js application that combines a server-rendered dashboard with long-lived background services. It monitors inverter telemetry from Solar Assistant over MQTT, fetches Octopus Agile tariff data over HTTP, computes slot-level battery actions plus derived execution windows, and persists operational data in SQLite.
 
+SolarBuddy also supports an optional Virtual Inverter runtime that swaps the live MQTT-backed inverter for a scripted in-memory scenario. When enabled, the UI, scheduler, and simulator all read from the virtual runtime while outbound inverter commands are intercepted and simulated instead of being published to MQTT.
+
 ## Runtime Overview
 
 ```mermaid
@@ -11,6 +13,7 @@ flowchart LR
   API --> DB["SQLite database"]
   MQTT["Solar Assistant MQTT broker"] --> MQ["MQTT client"]
   MQ --> STATE["In-memory state store"]
+  VIRT["Virtual inverter runtime"] --> STATE
   MQ --> MLOG["MQTT log store"]
   STATE --> SSE["SSE stream /api/events"]
   MLOG --> MLOGSSE["SSE stream /api/system/mqtt-log"]
@@ -35,6 +38,7 @@ flowchart LR
   - Inverter state reconciliation via [`src/lib/scheduler/watchdog.ts`](../src/lib/scheduler/watchdog.ts)
   - Telemetry snapshot ingestion via [`src/lib/readings/ingest.ts`](../src/lib/readings/ingest.ts)
 - SQLite is opened lazily through [`src/lib/db.ts`](../src/lib/db.ts). The module is also responsible for schema creation and lightweight additive migrations.
+- [`src/lib/virtual-inverter/runtime.ts`](../src/lib/virtual-inverter/runtime.ts) owns the optional sandbox runtime, virtual clock, preset scenario playback, and mode-aware schedule/rate sources.
 
 ## Architectural Style
 
@@ -44,6 +48,7 @@ flowchart LR
   - the live inverter state store in [`src/lib/state.ts`](../src/lib/state.ts)
   - the MQTT client in [`src/lib/mqtt/client.ts`](../src/lib/mqtt/client.ts)
   - the MQTT live log query helpers in `src/lib/mqtt/logs.ts`
+  - the virtual inverter runtime in [`src/lib/virtual-inverter/runtime.ts`](../src/lib/virtual-inverter/runtime.ts)
 - Durable state is stored in SQLite, which acts as the operational system of record for settings, tariff data, telemetry history, slot plans, schedules, and overrides.
 
 ## Main Subsystems
@@ -64,6 +69,7 @@ flowchart LR
 ### 3. Telemetry Ingestion
 
 - The MQTT client subscribes to Solar Assistant topics and normalizes payloads into the in-memory inverter state store.
+- When Virtual Inverter mode is enabled, the virtual runtime becomes the active producer for the shared state store and emits scripted telemetry snapshots on its own timer instead of subscribing to MQTT.
 - MQTT connection lifecycle events, inbound topic payloads, and outbound command publishes are written into a bounded SQLite-backed log for the System Logs UI.
 - [`src/lib/state.ts`](../src/lib/state.ts) emits change events whenever new telemetry arrives.
 - [`src/lib/readings/ingest.ts`](../src/lib/readings/ingest.ts) snapshots the latest live state into SQLite once per minute, but only while MQTT is connected so stale values are not recorded.
@@ -72,6 +78,7 @@ flowchart LR
 ### 4. Tariff Fetching and Scheduling
 
 - [`src/lib/octopus/rates.ts`](../src/lib/octopus/rates.ts) fetches Agile tariff data from the Octopus Energy REST API and upserts it into `rates`.
+- In Virtual Inverter mode, rate, export-rate, forecast, and plan data are served from the active scenario fixture rather than from SQLite-backed live integrations.
 - [`src/lib/scheduler/cron.ts`](../src/lib/scheduler/cron.ts) runs the scheduling cycle during the afternoon and evening publication window for Agile rates.
 - [`src/lib/scheduler/engine.ts`](../src/lib/scheduler/engine.ts) supports two operator-selectable planning strategies:
   - `night_fill`: filters rates into the configured overnight window, estimates how many half-hour slots are needed to reach the target SOC from the current SOC, and picks the cheapest eligible slots up to the configured max-slot cap.
@@ -85,6 +92,7 @@ flowchart LR
 ### 5. Charge Execution
 
 - [`src/lib/scheduler/executor.ts`](../src/lib/scheduler/executor.ts) translates planned windows into `setTimeout` timers.
+- A mode-aware command boundary under `src/lib/inverter/commands.ts` routes executor/watchdog actions either to live MQTT commands or to the virtual command adapter.
 - At window start, SolarBuddy activates the planned window and evaluates live telemetry before forcing grid charge.
 - Discharge windows use the inverter's forced discharge mode for their full duration and are persisted in SQLite with `type = 'discharge'`.
 - When SolarBuddy transitions into discharge, it explicitly clears the battery charge slot first so inverter models without a reliable charge-enabled read-back cannot remain stuck charging.
@@ -111,6 +119,8 @@ flowchart LR
 7. Browser clients persist the most recent non-empty telemetry snapshot locally so transient reloads do not blank the UI before the next MQTT update arrives.
 8. The watchdog queues reconciliation after relevant telemetry changes so the inverter is nudged back toward the active schedule or override if it drifts.
 
+When the virtual runtime is active, the same shared state store and SSE stream are used, but the producer is the scripted scenario ticker. The UI does not need a separate live-data path for sandbox mode.
+
 ### Daily Scheduling Flow
 
 1. The cron service triggers `runScheduleCycle()`.
@@ -126,6 +136,8 @@ flowchart LR
 3. The schedule and rates views normalize persisted UTC slot timestamps before matching `plan_slots`, `schedules`, and overrides back onto half-hour rate rows, and the Charge Plan view groups those rows into UK-local day slices so operators can navigate today and recent history without reading one long mixed timeline.
 4. Updating `/api/overrides` persists the operator’s slot choice and immediately triggers a reconciliation pass, so current-slot overrides can actuate the inverter without waiting for a future scheduler timer.
 5. The UI renders a mix of persisted history and live SSE state.
+
+When Virtual Inverter mode is enabled, mode-aware API handlers serve virtual rates, forecasts, schedules, and status directly from the in-memory sandbox runtime while keeping the JSON response shapes compatible with the live mode.
 
 ## Persistence Model
 
@@ -149,6 +161,7 @@ The default database path is `data/solarbuddy.db`, unless `DB_PATH` is set.
 
 - Scheduler time calculations are normalized to `Europe/London` in the charge window engine.
 - The in-memory state store and timer-based executor are process-local. If SolarBuddy is ever run as multiple Node processes, live telemetry state and scheduled timers would not be coordinated across instances.
+- The virtual inverter runtime is also process-local and global to the instance. It is not scoped per browser session.
 - The supported deployment topology is a single app replica with persistent SQLite storage mounted into the container or host runtime.
 - Recent MQTT log history is persisted in SQLite and trimmed to a bounded recent window for the live logs view.
 - Cron scheduling assumes Octopus Agile rates become available during the configured afternoon and evening retry window.

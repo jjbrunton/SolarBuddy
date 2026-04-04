@@ -26,6 +26,11 @@ export function getState(): InverterState {
   return { ...state };
 }
 
+export function replaceState(nextState: InverterState) {
+  Object.assign(state, nextState, { last_updated: new Date().toISOString() });
+  emitter.emit('change', getState());
+}
+
 export function updateState(partial: Partial<InverterState>) {
   Object.assign(state, partial, { last_updated: new Date().toISOString() });
   emitter.emit('change', getState());

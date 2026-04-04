@@ -100,6 +100,9 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     pv_kwp: '',
     time_sync_enabled: 'false',
     tariff_monitor_enabled: 'true',
+    virtual_mode_enabled: 'false',
+    virtual_scenario_id: 'overnight-recovery',
+    virtual_speed: '6x',
     ...overrides,
   };
 }
@@ -207,11 +210,11 @@ describe('octopus export rates', () => {
 
     prepareMock.mockImplementationOnce((query: string) => ({
       run: runMock,
-      all: (...params: string[]) => {
+      all: vi.fn((...params: string[]) => {
         capturedQuery = query;
         capturedParams = params;
         return rows;
-      },
+      }),
     }));
 
     const result = getStoredExportRates('2026-04-03T00:00:00Z', '2026-04-03T01:00:00Z');

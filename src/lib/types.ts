@@ -1,6 +1,11 @@
 // Shared types between server and client (no Node.js dependencies)
 
 export interface InverterState {
+  runtime_mode: 'real' | 'virtual';
+  virtual_scenario_id: string | null;
+  virtual_scenario_name: string | null;
+  virtual_playback_state: 'stopped' | 'running' | 'paused' | null;
+  virtual_time: string | null;
   // === Core (existing) ===
   battery_soc: number | null;
   pv_power: number | null;
@@ -41,6 +46,11 @@ export interface InverterState {
 }
 
 export const INITIAL_STATE: InverterState = {
+  runtime_mode: 'real',
+  virtual_scenario_id: null,
+  virtual_scenario_name: null,
+  virtual_playback_state: null,
+  virtual_time: null,
   // Core
   battery_soc: null,
   pv_power: null,

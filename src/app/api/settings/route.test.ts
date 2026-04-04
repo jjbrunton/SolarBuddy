@@ -5,11 +5,13 @@ const {
   saveSettingsMock,
   connectMqttMock,
   syncInverterWatchdogSettingMock,
+  syncVirtualInverterSettingMock,
 } = vi.hoisted(() => ({
   getSettingsMock: vi.fn(),
   saveSettingsMock: vi.fn(),
   connectMqttMock: vi.fn(),
   syncInverterWatchdogSettingMock: vi.fn(),
+  syncVirtualInverterSettingMock: vi.fn(),
 }));
 
 vi.mock('@/lib/config', async () => {
@@ -18,7 +20,15 @@ vi.mock('@/lib/config', async () => {
     ...actual,
     getSettings: getSettingsMock,
     saveSettings: saveSettingsMock,
-    SETTING_KEY_SET: new Set(['mqtt_host', 'mqtt_port', 'watchdog_enabled', 'charge_rate']),
+    SETTING_KEY_SET: new Set([
+      'mqtt_host',
+      'mqtt_port',
+      'watchdog_enabled',
+      'charge_rate',
+      'virtual_mode_enabled',
+      'virtual_scenario_id',
+      'virtual_speed',
+    ]),
   };
 });
 
@@ -28,6 +38,10 @@ vi.mock('@/lib/mqtt/client', () => ({
 
 vi.mock('@/lib/scheduler/watchdog', () => ({
   syncInverterWatchdogSetting: syncInverterWatchdogSettingMock,
+}));
+
+vi.mock('@/lib/virtual-inverter/runtime', () => ({
+  syncVirtualInverterSetting: syncVirtualInverterSettingMock,
 }));
 
 import { GET, POST } from './route';
@@ -98,6 +112,36 @@ describe('/api/settings', () => {
         mqtt_port: '1884',
         watchdog_enabled: 'false',
         charge_rate: '90',
+      },
+    });
+  });
+
+  it('syncs the virtual runtime when virtual settings change', async () => {
+    getSettingsMock.mockReturnValueOnce({
+      virtual_mode_enabled: 'true',
+      virtual_scenario_id: 'sunny-surplus',
+      virtual_speed: '30x',
+    });
+
+    const response = await POST(
+      new Request('http://localhost/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          virtual_mode_enabled: 'true',
+          virtual_scenario_id: 'sunny-surplus',
+          virtual_speed: '30x',
+        }),
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    expect(syncVirtualInverterSettingMock).toHaveBeenCalledTimes(1);
+    expect(await response.json()).toEqual({
+      ok: true,
+      settings: {
+        virtual_mode_enabled: 'true',
+        virtual_scenario_id: 'sunny-surplus',
+        virtual_speed: '30x',
       },
     });
   });

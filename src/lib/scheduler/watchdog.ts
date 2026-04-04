@@ -14,9 +14,10 @@ import {
   startBatteryHold,
   stopGridCharging,
   stopGridDischarge,
-} from '../mqtt/commands';
+} from '../inverter/commands';
 import { getChargingStrategy } from './engine';
 import { shouldHoldForSolarSurplus } from './executor';
+import { getVirtualCurrentPlanSlot, getVirtualNow, isVirtualModeEnabled } from '../virtual-inverter/runtime';
 
 const WATCHDOG_INTERVAL_MS = 30_000;
 const WATCHDOG_DEBOUNCE_MS = 1_000;
@@ -124,6 +125,10 @@ function getCurrentOverride(nowIso: string): OverrideRow | null {
 }
 
 function getCurrentPlanSlot(nowIso: string): PlanSlotRow | null {
+  if (isVirtualModeEnabled()) {
+    return getVirtualCurrentPlanSlot(nowIso);
+  }
+
   const db = getDb();
   return (
     (db
@@ -430,7 +435,7 @@ export async function reconcileInverterState(reason = 'manual trigger') {
       return;
     }
 
-    const intent = resolveRuntimeIntent(new Date(), state);
+    const intent = resolveRuntimeIntent(getVirtualNow(), state);
     await applyIntent(intent, state);
   } catch (err) {
     appendEvent({

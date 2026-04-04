@@ -45,6 +45,11 @@ let currentSettings: AppSettings;
 
 function buildState(partial: Partial<InverterState> = {}): InverterState {
   return {
+    runtime_mode: 'real',
+    virtual_scenario_id: null,
+    virtual_scenario_name: null,
+    virtual_playback_state: null,
+    virtual_time: null,
     battery_soc: 40,
     pv_power: 200,
     grid_power: 800,
@@ -128,7 +133,7 @@ vi.mock('../../state', () => ({
   },
 }));
 
-vi.mock('../../mqtt/commands', () => ({
+vi.mock('../../inverter/commands', () => ({
   startGridCharging,
   startGridDischarge,
   startBatteryHold,
@@ -140,6 +145,12 @@ vi.mock('../../mqtt/commands', () => ({
 
 vi.mock('../../events', () => ({
   appendEvent,
+}));
+
+vi.mock('../../virtual-inverter/runtime', () => ({
+  getVirtualCurrentPlanSlot: () => null,
+  getVirtualNow: () => new Date('2026-04-01T10:10:00Z'),
+  isVirtualModeEnabled: () => false,
 }));
 
 import {

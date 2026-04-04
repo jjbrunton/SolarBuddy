@@ -18,6 +18,11 @@ const {
 });
 
 let currentState: InverterState = {
+  runtime_mode: 'real',
+  virtual_scenario_id: null,
+  virtual_scenario_name: null,
+  virtual_playback_state: null,
+  virtual_time: null,
   battery_soc: 40,
   pv_power: 1400,
   grid_power: -200,
@@ -73,9 +78,39 @@ vi.mock('../../config', () => ({
     default_work_mode: 'Battery first',
     charge_rate: '100',
     auto_schedule: 'true',
+    watchdog_enabled: 'true',
     battery_capacity_kwh: '5.12',
     max_charge_power_kw: '3.6',
     estimated_consumption_w: '500',
+    tariff_type: 'agile',
+    tariff_offpeak_rate: '7.5',
+    tariff_peak_rate: '35',
+    tariff_standard_rate: '24.5',
+    negative_price_charging: 'true',
+    negative_price_pre_discharge: 'false',
+    smart_discharge: 'false',
+    discharge_price_threshold: '0',
+    discharge_soc_floor: '20',
+    peak_protection: 'false',
+    peak_period_start: '16:00',
+    peak_period_end: '19:00',
+    peak_soc_target: '90',
+    octopus_export_mpan: '',
+    octopus_export_meter_serial: '',
+    octopus_export_product_code: '',
+    export_rate: '0',
+    pv_forecast_enabled: 'false',
+    pv_forecast_confidence: 'estimate',
+    pv_latitude: '',
+    pv_longitude: '',
+    pv_declination: '35',
+    pv_azimuth: '0',
+    pv_kwp: '',
+    time_sync_enabled: 'false',
+    tariff_monitor_enabled: 'true',
+    virtual_mode_enabled: 'false',
+    virtual_scenario_id: 'overnight-recovery',
+    virtual_speed: '6x',
   }),
 }));
 
@@ -89,7 +124,7 @@ vi.mock('../../state', () => ({
   },
 }));
 
-vi.mock('../../mqtt/commands', () => ({
+vi.mock('../../inverter/commands', () => ({
   startGridCharging,
   stopGridCharging,
 }));

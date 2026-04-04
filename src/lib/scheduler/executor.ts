@@ -2,7 +2,7 @@ import { getDb } from '../db';
 import { getSettings } from '../config';
 import { getState, onStateChange } from '../state';
 import type { InverterState } from '../types';
-import { startGridCharging, stopGridCharging, startGridDischarge, stopGridDischarge } from '../mqtt/commands';
+import { startGridCharging, stopGridCharging, startGridDischarge, stopGridDischarge } from '../inverter/commands';
 import { ChargeWindow, getChargingStrategy } from './engine';
 
 const activeTimers: NodeJS.Timeout[] = [];

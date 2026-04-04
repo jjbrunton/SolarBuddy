@@ -24,6 +24,10 @@ function formatTimestamp(timestamp: string | null) {
 export function TelemetryStatusBanner() {
   const { connected, state, hasTelemetry, showingCachedTelemetry, cachedTelemetryAt } = useSSE();
 
+  if (state.runtime_mode === 'virtual') {
+    return null;
+  }
+
   if (hasTelemetry && !showingCachedTelemetry) {
     return null;
   }

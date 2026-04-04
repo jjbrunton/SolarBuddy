@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { FieldSet } from '@/components/ui/FieldSet';
 import { DescriptionList } from '@/components/ui/DescriptionList';
@@ -13,6 +14,9 @@ import { CheckCircle, XCircle, ExternalLink, Settings } from 'lucide-react';
 interface SystemInfo {
   health: {
     mqtt_connected: boolean;
+    runtime_mode: 'real' | 'virtual';
+    virtual_mode_active: boolean;
+    virtual_scenario_name: string | null;
     rates_fresh: boolean;
     last_rate_fetch: string | null;
     last_schedule: string | null;
@@ -72,7 +76,10 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
       <Card>
         <CardHeader title="Health" subtitle="Core infrastructure checks for the broker, rates, and scheduler services." />
         <div className="space-y-2">
-          <HealthCheck label="MQTT Connection" ok={info.health.mqtt_connected} />
+          <HealthCheck
+            label={info.health.virtual_mode_active ? 'Virtual Runtime' : 'MQTT Connection'}
+            ok={info.health.virtual_mode_active || info.health.mqtt_connected}
+          />
           <HealthCheck label="Rate Data Fresh (< 24h)" ok={info.health.rates_fresh} />
           <HealthCheck
             label="Rates Available"
@@ -90,7 +97,9 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
         <CardHeader title="Live Inverter Configuration">
           <div className="flex items-center gap-1.5">
             <Settings size={14} className="text-sb-text-muted" />
-            <span className="text-xs text-sb-text-muted">Live from MQTT</span>
+            <span className="text-xs text-sb-text-muted">
+              {info.health.virtual_mode_active ? 'Virtual runtime state' : 'Live from MQTT'}
+            </span>
           </div>
         </CardHeader>
         <ConfigReadback state={state} />
@@ -118,6 +127,17 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
         <DescriptionList
           items={[
             { label: 'Version', value: <Badge kind="info">v{info.about.version}</Badge> },
+            {
+              label: 'Runtime Mode',
+              value: (
+                <Badge kind={info.health.virtual_mode_active ? 'warning' : 'success'}>
+                  {info.health.virtual_mode_active ? 'Virtual' : 'Real'}
+                </Badge>
+              ),
+            },
+            info.health.virtual_mode_active
+              ? { label: 'Virtual Scenario', value: info.health.virtual_scenario_name || 'Unknown' }
+              : null,
             { label: 'Node.js', value: info.about.node_version },
             { label: 'Platform', value: `${info.about.platform} (${info.about.arch})` },
             { label: 'Uptime', value: info.about.uptime },
@@ -149,7 +169,7 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
                 </Badge>
               ),
             },
-          ]}
+          ].filter(Boolean) as { label: string; value: ReactNode }[]}
         />
       </FieldSet>
 

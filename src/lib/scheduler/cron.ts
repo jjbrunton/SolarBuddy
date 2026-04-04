@@ -12,6 +12,14 @@ import { buildSchedulePlan, getChargingStrategy, type ChargeWindow, type Planned
 import { scheduleExecution } from './executor';
 import { getDb } from '../db';
 import { appendEvent } from '../events';
+import {
+  getVirtualExportRates,
+  getVirtualForecast,
+  getVirtualNow,
+  getVirtualRates,
+  getVirtualScheduleData,
+  isVirtualModeEnabled,
+} from '../virtual-inverter/runtime';
 
 let afternoonJob: cron.ScheduledTask | null = null;
 let eveningJob: cron.ScheduledTask | null = null;
@@ -37,6 +45,42 @@ function logScheduleEvent(level: 'success' | 'warning' | 'error', message: strin
 }
 
 export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
+  if (isVirtualModeEnabled()) {
+    const settings = getSettings();
+    const now = getVirtualNow();
+    const rates = getVirtualRates();
+    if (rates.length === 0) {
+      return {
+        ok: false,
+        status: 'no_rates',
+        message: 'No virtual rates are available for the active scenario.',
+        windowsCount: 0,
+      };
+    }
+
+    const state = getState();
+    const plan = buildSchedulePlan(rates, settings, {
+      currentSoc: state.battery_soc,
+      now,
+      exportRates: getVirtualExportRates(),
+      pvForecast: getVirtualForecast(),
+    });
+    const strategy = getChargingStrategy(settings);
+    const strategyLabel = strategy === 'night_fill' ? 'Night Fill' : 'Opportunistic Top-up';
+    const windows = plan.windows;
+    const message = windows.length === 0
+      ? `${strategyLabel}: no eligible virtual battery windows were found for the current scenario.`
+      : `${strategyLabel}: planned ${windows.length} virtual battery window${windows.length === 1 ? '' : 's'}.`;
+
+    logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
+    return {
+      ok: true,
+      status: windows.length === 0 ? 'no_windows' : 'scheduled',
+      message,
+      windowsCount: windows.length,
+    };
+  }
+
   const settings = getSettings();
   const tariffType = settings.tariff_type || 'agile';
   if (tariffType === 'agile' && !settings.octopus_region) {
@@ -190,6 +234,18 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
 }
 
 export async function replanFromStoredRates(): Promise<ScheduleCycleResult> {
+  if (isVirtualModeEnabled()) {
+    const { schedules } = getVirtualScheduleData(getVirtualNow());
+    return {
+      ok: true,
+      status: schedules.length === 0 ? 'no_windows' : 'scheduled',
+      message: schedules.length === 0
+        ? 'Virtual replan found no eligible battery windows.'
+        : `Virtual replan refreshed ${schedules.length} battery window${schedules.length === 1 ? '' : 's'}.`,
+      windowsCount: schedules.length,
+    };
+  }
+
   const settings = getSettings();
   console.log('[Replan] Rebuilding schedule from stored rates...');
 

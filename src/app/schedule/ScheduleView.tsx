@@ -89,7 +89,16 @@ function formatSlotTime(iso: string) {
 export default function ScheduleView() {
   const colors = useChartColors();
   const { state } = useSSE();
+  const effectiveNow = useMemo(
+    () => (state.runtime_mode === 'virtual' && state.virtual_time ? new Date(state.virtual_time) : new Date()),
+    [state.runtime_mode, state.virtual_time],
+  );
+  const effectiveNowRef = useRef(effectiveNow);
   const tableRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    effectiveNowRef.current = effectiveNow;
+  }, [effectiveNow]);
 
   const [slots, setSlots] = useState<PlanSlot[]>([]);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -103,7 +112,7 @@ export default function ScheduleView() {
     estimated_consumption_w: string;
   } | null>(null);
 
-  const todayDay = getTodayScheduleDayKey();
+  const todayDay = getTodayScheduleDayKey(effectiveNow);
 
   const fetchData = useCallback(async () => {
     try {
@@ -127,7 +136,7 @@ export default function ScheduleView() {
       const plannedSlots: PlannedSlotRow[] = scheduleJson.plan_slots || [];
       const overrides: Override[] = overridesJson.overrides || [];
 
-      setSlots(buildSchedulePlanSlots(rates, schedules, plannedSlots, overrides, new Date()));
+      setSlots(buildSchedulePlanSlots(rates, schedules, plannedSlots, overrides, effectiveNowRef.current));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load plan data');

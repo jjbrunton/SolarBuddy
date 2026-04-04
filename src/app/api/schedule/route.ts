@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { runScheduleCycle } from '@/lib/scheduler/cron';
+import { getVirtualNow, getVirtualScheduleData, isVirtualModeEnabled } from '@/lib/virtual-inverter/runtime';
 
 const SCHEDULE_HISTORY_WINDOW_DAYS = 30;
 
 function getRecentPlanData() {
+  if (isVirtualModeEnabled()) {
+    return getVirtualScheduleData(getVirtualNow());
+  }
+
   const db = getDb();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - SCHEDULE_HISTORY_WINDOW_DAYS);

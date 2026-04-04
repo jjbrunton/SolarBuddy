@@ -5,6 +5,7 @@ import { getState } from '@/lib/state';
 import { getEventsLog } from '@/lib/events';
 import { getRecentMqttLogs } from '@/lib/mqtt/logs';
 import SystemPageView from './SystemPageView';
+import { getVirtualInverterStatus, isVirtualModeEnabled } from '@/lib/virtual-inverter/runtime';
 
 export const metadata: Metadata = { title: 'System' };
 
@@ -14,6 +15,7 @@ export default function SystemPage() {
   const db = getDb();
   const settings = getSettings();
   const state = getState();
+  const virtualStatus = getVirtualInverterStatus();
 
   const dbPath = process.env.DB_PATH || 'data/solarbuddy.db';
   const pageCount = db.prepare('PRAGMA page_count').pluck().get() as number;
@@ -43,6 +45,9 @@ export default function SystemPage() {
   const info = {
     health: {
       mqtt_connected: state.mqtt_connected,
+      runtime_mode: state.runtime_mode,
+      virtual_mode_active: isVirtualModeEnabled(),
+      virtual_scenario_name: virtualStatus.scenarioName,
       rates_fresh: latestRate?.latest
         ? Date.now() - new Date(latestRate.latest).getTime() < 24 * 60 * 60 * 1000
         : false,

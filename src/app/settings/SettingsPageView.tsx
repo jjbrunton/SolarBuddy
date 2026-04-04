@@ -9,6 +9,7 @@ import OctopusSettingsView from './octopus/OctopusSettingsView';
 import ChargingSettingsView from './charging/ChargingSettingsView';
 import SolarSettingsView from './solar/SolarSettingsView';
 import ScheduledActionsView from './scheduled-actions/ScheduledActionsView';
+import SettingsVirtualInverterView from './SettingsVirtualInverterView';
 
 const TABS = [
   { label: 'General', value: 'general' },
@@ -16,6 +17,7 @@ const TABS = [
   { label: 'Octopus Energy', value: 'octopus' },
   { label: 'Charging', value: 'charging' },
   { label: 'Solar Forecast', value: 'solar' },
+  { label: 'Virtual Inverter', value: 'virtual' },
   { label: 'Scheduled Actions', value: 'actions' },
 ];
 
@@ -37,6 +39,7 @@ export default function SettingsPageView() {
       {tab === 'octopus' && <OctopusSettingsView />}
       {tab === 'charging' && <ChargingSettingsView />}
       {tab === 'solar' && <SolarSettingsView />}
+      {tab === 'virtual' && <SettingsVirtualInverterView />}
       {tab === 'actions' && <ScheduledActionsView />}
     </div>
   );

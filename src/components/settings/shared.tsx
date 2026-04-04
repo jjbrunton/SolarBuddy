@@ -59,6 +59,10 @@ export interface Settings {
   time_sync_enabled: string;
   // Tariff monitor
   tariff_monitor_enabled: string;
+  // Virtual inverter
+  virtual_mode_enabled: string;
+  virtual_scenario_id: string;
+  virtual_speed: string;
 }
 
 const tabs = [
