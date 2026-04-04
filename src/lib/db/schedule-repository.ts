@@ -17,9 +17,10 @@ export function persistSchedulePlan(windows: ChargeWindow[], plannedSlots: Plann
     VALUES (?, ?, ?, ?, ?, ?, ?, 'planned', ?)
   `);
 
+  const nowIso = new Date().toISOString();
   const insertAll = db.transaction((ws: ChargeWindow[], slots: PlannedSlot[]) => {
-    db.prepare("DELETE FROM schedules WHERE date = ? AND status = 'planned'").run(today);
-    db.prepare("DELETE FROM plan_slots WHERE date = ? AND status = 'planned'").run(today);
+    db.prepare("DELETE FROM schedules WHERE (date = ? OR slot_end <= ?) AND status = 'planned'").run(today, nowIso);
+    db.prepare("DELETE FROM plan_slots WHERE (date = ? OR slot_end <= ?) AND status = 'planned'").run(today, nowIso);
     for (const w of ws) {
       insertWindow.run(today, w.slot_start, w.slot_end, w.avg_price, new Date().toISOString(), w.type ?? 'charge');
     }
