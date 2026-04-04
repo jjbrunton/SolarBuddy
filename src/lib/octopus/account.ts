@@ -79,7 +79,13 @@ export function findActiveAgreement(agreements: OctopusAgreement[]): OctopusAgre
   return future[0] ?? null;
 }
 
+const ACCOUNT_NUMBER_RE = /^A-[0-9A-Fa-f]{8}$/;
+
 export async function verifyAccount(apiKey: string, accountNumber: string): Promise<OctopusVerifyResult> {
+  if (!ACCOUNT_NUMBER_RE.test(accountNumber)) {
+    return { ok: false, error: 'Invalid account number format' };
+  }
+
   const auth = Buffer.from(apiKey + ':').toString('base64');
 
   let res: Response;
