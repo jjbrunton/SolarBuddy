@@ -198,8 +198,9 @@ export function resolveRuntimeIntent(
       };
     }
 
+    const isNegativePriceSlot = plannedSlot.reason?.toLowerCase().includes('negative-price') ?? false;
     const strategy = getChargingStrategy(settings);
-    if (strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
+    if (!isNegativePriceSlot && strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
       return {
         action: 'idle',
         reason: 'solar_surplus',
@@ -228,31 +229,28 @@ function toRuntimeAction(action: PlanAction): RuntimeAction {
 }
 
 function isChargeStateSatisfied(state: InverterState, chargeRate: number): boolean {
-  const workModeMatches = state.work_mode === 'Grid first';
+  const workModeMatches = state.work_mode === 'Battery first';
   const chargeRateMatches =
     state.battery_first_charge_rate === null || state.battery_first_charge_rate === chargeRate;
 
   return workModeMatches && chargeRateMatches;
 }
 
-function isDischargeStateSatisfied(state: InverterState, defaultMode: string): boolean {
-  return state.work_mode === defaultMode && resolveOutputSourcePriority(state) === 'SBU';
+function isDischargeStateSatisfied(state: InverterState, floor: number): boolean {
+  if (state.work_mode !== 'Load first') return false;
+  if (isGridChargingFromTelemetry(state)) return false;
+  if (state.load_first_stop_discharge !== null && state.load_first_stop_discharge !== floor) return false;
+  return true;
 }
 
 function isHoldStateSatisfied(state: InverterState): boolean {
-  const outputPriority = resolveOutputSourcePriority(state);
-
   const stopDischargeMatchesSoc =
     state.load_first_stop_discharge !== null &&
     state.battery_soc !== null &&
     state.load_first_stop_discharge >= state.battery_soc - 3 &&
     state.load_first_stop_discharge <= state.battery_soc + 3;
 
-  return (
-    state.work_mode === 'Load first' &&
-    (outputPriority === null || outputPriority === 'USB' || outputPriority === 'Load first') &&
-    stopDischargeMatchesSoc
-  );
+  return state.work_mode === 'Load first' && stopDischargeMatchesSoc;
 }
 
 function isGridChargingFromTelemetry(state: Pick<InverterState, 'battery_power' | 'grid_power' | 'load_power' | 'pv_power'>): boolean {
@@ -273,7 +271,7 @@ function isGridChargingFromTelemetry(state: Pick<InverterState, 'battery_power' 
 }
 
 function isForcedChargeActive(state: InverterState): boolean {
-  return state.work_mode === 'Grid first' || isGridChargingFromTelemetry(state);
+  return state.work_mode === 'Battery first' || isGridChargingFromTelemetry(state);
 }
 
 function isForcedDischargeActive(state: InverterState): boolean {
@@ -322,6 +320,8 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
   const settings = getSettings();
   const chargeRate = parseInt(settings.charge_rate, 10) || 100;
   const defaultMode = settings.default_work_mode as 'Battery first' | 'Load first';
+  const floorRaw = parseInt(settings.discharge_soc_floor, 10);
+  const floor = Number.isFinite(floorRaw) ? floorRaw : 20;
   const signature = buildCommandSignature(intent.action, intent.slotStart, chargeRate, defaultMode);
 
   switch (intent.action) {
@@ -348,7 +348,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       return;
     }
     case 'discharge': {
-      if (isDischargeStateSatisfied(state, defaultMode)) {
+      if (isDischargeStateSatisfied(state, floor)) {
         clearCommandCooldown();
         return;
       }

@@ -55,7 +55,7 @@ function buildState(partial: Partial<InverterState> = {}): InverterState {
     grid_power: 800,
     load_power: 900,
     battery_power: 0,
-    work_mode: 'Battery first',
+    work_mode: 'Load first',
     mqtt_connected: true,
     last_updated: new Date().toISOString(),
     battery_voltage: null,
@@ -252,14 +252,14 @@ describe('reconcileInverterState', () => {
   });
 
   it('restores the default mode when no active window should be forcing charge', async () => {
+    currentSettings = buildSettings({ default_work_mode: 'Load first' });
     currentState = buildState({
-      work_mode: 'Grid first',
-      battery_first_grid_charge: 'Enabled',
+      work_mode: 'Battery first',
     });
 
     await reconcileInverterState('watchdog interval');
 
-    expect(stopGridCharging).toHaveBeenCalledWith('Battery first');
+    expect(stopGridCharging).toHaveBeenCalledWith('Load first');
   });
 
   it('stops lingering grid charging before starting a discharge slot when charge read-back is unavailable', async () => {
@@ -286,6 +286,7 @@ describe('reconcileInverterState', () => {
   });
 
   it('holds a scheduled opportunistic charge window when solar surplus is already covering demand', async () => {
+    currentSettings = buildSettings({ default_work_mode: 'Load first' });
     planSlotRow = {
       slot_start: '2026-04-01T10:00:00Z',
       slot_end: '2026-04-01T10:30:00Z',
@@ -293,8 +294,7 @@ describe('reconcileInverterState', () => {
       reason: 'Charge slot selected by the planner.',
     };
     currentState = buildState({
-      work_mode: 'Grid first',
-      battery_first_grid_charge: 'Enabled',
+      work_mode: 'Battery first',
       pv_power: 1800,
       load_power: 400,
       grid_power: -300,
@@ -303,7 +303,7 @@ describe('reconcileInverterState', () => {
 
     await reconcileInverterState('watchdog startup');
 
-    expect(stopGridCharging).toHaveBeenCalledWith('Battery first');
+    expect(stopGridCharging).toHaveBeenCalledWith('Load first');
     expect(startGridCharging).not.toHaveBeenCalled();
   });
 

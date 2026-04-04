@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  setBatteryChargeRate,
   setChargerSourcePriority,
-  setGridChargeRate,
   setLoadFirstStopDischarge,
   setMaxGridChargeCurrent,
   setOutputSourcePriority,
@@ -53,23 +53,23 @@ describe('mqtt commands', () => {
     });
     getMqttClientMock.mockReturnValue({ connected: true, publish });
 
-    await expect(setGridChargeRate(75)).rejects.toThrow(
-      `failed:${COMMAND_TOPICS.gridChargeRate}:75:1`,
+    await expect(setBatteryChargeRate(75)).rejects.toThrow(
+      `failed:${COMMAND_TOPICS.batteryChargeRate}:75:1`,
     );
 
     expect(appendMqttLogMock).toHaveBeenCalledWith({
       level: 'error',
       direction: 'outbound',
-      topic: COMMAND_TOPICS.gridChargeRate,
+      topic: COMMAND_TOPICS.batteryChargeRate,
       payload: '75',
     });
   });
 
   it.each([
     {
-      label: 'grid charge rate',
-      run: () => setGridChargeRate(75),
-      topic: COMMAND_TOPICS.gridChargeRate,
+      label: 'battery charge rate',
+      run: () => setBatteryChargeRate(75),
+      topic: COMMAND_TOPICS.batteryChargeRate,
       payload: '75',
     },
     {
@@ -134,8 +134,8 @@ describe('mqtt commands', () => {
     await startGridCharging(88);
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
-      [COMMAND_TOPICS.workMode, 'Grid first'],
-      [COMMAND_TOPICS.gridChargeRate, '88'],
+      [COMMAND_TOPICS.batteryChargeRate, '88'],
+      [COMMAND_TOPICS.workMode, 'Battery first'],
     ]);
   });
 
@@ -163,8 +163,6 @@ describe('mqtt commands', () => {
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
       [COMMAND_TOPICS.workMode, 'Load first'],
-      [COMMAND_TOPICS.outputSourcePriority, 'SBU'],
-      [COMMAND_TOPICS.outputSourcePriority, 'USB'],
       [COMMAND_TOPICS.workMode, 'Load first'],
     ]);
   });
@@ -178,7 +176,6 @@ describe('mqtt commands', () => {
     await startBatteryHold(57);
 
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
-      [COMMAND_TOPICS.outputSourcePriority, 'USB'],
       [COMMAND_TOPICS.workMode, 'Load first'],
       [COMMAND_TOPICS.loadFirstStopDischarge, '57'],
     ]);

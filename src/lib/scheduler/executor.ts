@@ -132,7 +132,7 @@ export function scheduleExecution(windows: ChargeWindow[]) {
           return;
         }
 
-        if (strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
+        if (window.avg_price >= 0 && strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
           if (ws.gridChargingActive) {
             console.log('[Executor] Solar surplus detected, stopping forced grid charging for opportunistic window');
             await stopGridCharging(defaultMode);

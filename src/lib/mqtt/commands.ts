@@ -42,35 +42,34 @@ export async function setWorkMode(mode: 'Grid first' | 'Battery first' | 'Load f
   await publish(COMMAND_TOPICS.workMode, mode);
 }
 
-export async function setGridChargeRate(rate: number) {
-  console.log(`[CMD] Grid charge rate: ${rate}%`);
-  await publish(COMMAND_TOPICS.gridChargeRate, String(rate));
+export async function setBatteryChargeRate(rate: number) {
+  console.log(`[CMD] Battery charge rate: ${rate}%`);
+  await publish(COMMAND_TOPICS.batteryChargeRate, String(rate));
 }
+
+const COMMAND_GAP_MS = 1_500;
 
 export async function startGridCharging(chargeRate: number) {
-  await setWorkMode('Grid first');
-  await setGridChargeRate(chargeRate);
+  await setBatteryChargeRate(chargeRate);
+  await setWorkMode('Battery first');
 }
 
-export async function stopGridCharging(defaultMode: 'Battery first' | 'Load first' = 'Battery first') {
+export async function stopGridCharging(defaultMode: 'Battery first' | 'Load first' = 'Load first') {
   await setWorkMode(defaultMode);
 }
 
 export async function startGridDischarge(defaultMode: 'Battery first' | 'Load first' = 'Load first') {
-  console.log('[CMD] Starting grid discharge (sell-back)');
-  await setWorkMode(defaultMode);
-  await setOutputSourcePriority('SBU');
+  console.log('[CMD] Starting discharge');
+  await setWorkMode('Load first');
 }
 
-export async function stopGridDischarge(defaultMode: 'Battery first' | 'Load first' = 'Battery first') {
-  console.log('[CMD] Stopping grid discharge');
-  await setOutputSourcePriority('USB');
+export async function stopGridDischarge(defaultMode: 'Battery first' | 'Load first' = 'Load first') {
+  console.log('[CMD] Stopping discharge');
   await setWorkMode(defaultMode);
 }
 
 export async function startBatteryHold(currentSoc: number) {
-  console.log(`[CMD] Holding battery (prevent discharge, stop-discharge=${currentSoc}%)`);
-  await setOutputSourcePriority('USB');
+  console.log(`[CMD] Holding battery at ${currentSoc}%`);
   await setWorkMode('Load first');
   await setLoadFirstStopDischarge(currentSoc);
 }

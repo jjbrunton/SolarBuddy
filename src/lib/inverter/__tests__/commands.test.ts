@@ -21,7 +21,7 @@ vi.mock('@/lib/mqtt/commands', () => ({
   startGridCharging: startRealGridChargingMock,
   stopGridCharging: stopRealGridChargingMock,
   setWorkMode: vi.fn(),
-  setGridChargeRate: vi.fn(),
+  setBatteryChargeRate: vi.fn(),
   startGridDischarge: vi.fn(),
   stopGridDischarge: vi.fn(),
   startBatteryHold: vi.fn(),
