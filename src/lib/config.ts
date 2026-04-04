@@ -45,6 +45,14 @@ export interface AppSettings {
   octopus_export_meter_serial: string;
   octopus_export_product_code: string;
   export_rate: string;
+  // Advanced scheduling heuristics
+  always_charge_below_price: string;
+  peak_detection: string;
+  peak_duration_slots: string;
+  solar_skip_enabled: string;
+  solar_skip_threshold_kwh: string;
+  pre_cheapest_suppression: string;
+  negative_run_discharge: string;
   // PV Forecast (forecast.solar)
   pv_forecast_enabled: string;
   pv_forecast_confidence: string;
@@ -110,6 +118,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   peak_period_start: '16:00',
   peak_period_end: '19:00',
   peak_soc_target: '90',
+  // Advanced scheduling heuristics
+  always_charge_below_price: '0',
+  peak_detection: 'manual',
+  peak_duration_slots: '7',
+  solar_skip_enabled: 'false',
+  solar_skip_threshold_kwh: '15',
+  pre_cheapest_suppression: 'false',
+  negative_run_discharge: 'false',
   // Export
   octopus_export_mpan: '',
   octopus_export_meter_serial: '',

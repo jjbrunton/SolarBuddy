@@ -139,7 +139,7 @@ export default function ChargingSettingsView() {
         <SettingsSection
           title="Negative Prices"
         >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field
             label="Charge During Negative Prices"
             description="Always charge the battery when Agile prices go negative, regardless of SOC target or strategy."
@@ -161,6 +161,19 @@ export default function ChargingSettingsView() {
               className={inputClass}
               value={settings.negative_price_pre_discharge}
               onChange={(e) => update('negative_price_pre_discharge', e.target.value)}
+            >
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </Field>
+          <Field
+            label="Discharge During Long Negative Runs"
+            description="When a negative-price run is long enough to fully recharge, discharge first to free capacity, then charge in the remaining negative slots."
+          >
+            <select
+              className={inputClass}
+              value={settings.negative_run_discharge}
+              onChange={(e) => update('negative_run_discharge', e.target.value)}
             >
               <option value="false">Disabled</option>
               <option value="true">Enabled</option>
@@ -234,6 +247,28 @@ export default function ChargingSettingsView() {
               <option value="true">Enabled</option>
             </select>
           </Field>
+          <Field label="Peak Detection" description="Manual uses fixed times below. Auto finds the most expensive contiguous block in the tariff.">
+            <select
+              className={inputClass}
+              value={settings.peak_detection}
+              onChange={(e) => update('peak_detection', e.target.value)}
+            >
+              <option value="manual">Manual</option>
+              <option value="auto">Auto-detect</option>
+            </select>
+          </Field>
+          {settings.peak_detection === 'auto' && (
+            <Field label="Peak Duration (slots)" description="Number of half-hour slots for the auto-detected peak window.">
+              <input
+                className={inputClass}
+                type="number"
+                min="1"
+                max="20"
+                value={settings.peak_duration_slots}
+                onChange={(e) => update('peak_duration_slots', e.target.value)}
+              />
+            </Field>
+          )}
           <Field label="Peak SOC Target (%)" description="Target battery level before peak period starts">
             <input
               className={inputClass}
@@ -244,22 +279,90 @@ export default function ChargingSettingsView() {
               onChange={(e) => update('peak_soc_target', e.target.value)}
             />
           </Field>
-          <Field label="Peak Start" description="Start of the expensive peak period (local time)">
+          {settings.peak_detection !== 'auto' && (
+            <>
+              <Field label="Peak Start" description="Start of the expensive peak period (local time)">
+                <input
+                  className={inputClass}
+                  type="time"
+                  value={settings.peak_period_start}
+                  onChange={(e) => update('peak_period_start', e.target.value)}
+                />
+              </Field>
+              <Field label="Peak End" description="End of the expensive peak period (local time)">
+                <input
+                  className={inputClass}
+                  type="time"
+                  value={settings.peak_period_end}
+                  onChange={(e) => update('peak_period_end', e.target.value)}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+        </SettingsSection>
+      </Card>
+
+      <Card>
+        <SettingsSection
+          title="Advanced Scheduling"
+          description="Extra heuristics for squeezing more value out of Agile tariff pricing. All disabled by default."
+        >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field
+            label="Always Charge Below (p/kWh)"
+            description="Unconditionally charge whenever the slot price is below this threshold. Set to 0 to disable."
+          >
             <input
               className={inputClass}
-              type="time"
-              value={settings.peak_period_start}
-              onChange={(e) => update('peak_period_start', e.target.value)}
+              type="number"
+              step="0.5"
+              min="0"
+              value={settings.always_charge_below_price}
+              onChange={(e) => update('always_charge_below_price', e.target.value)}
             />
           </Field>
-          <Field label="Peak End" description="End of the expensive peak period (local time)">
-            <input
+          <Field
+            label="Pre-Cheapest Suppression"
+            description="Hold the battery in the run-up to the cheapest charge block so it doesn't discharge before cheap slots begin."
+          >
+            <select
               className={inputClass}
-              type="time"
-              value={settings.peak_period_end}
-              onChange={(e) => update('peak_period_end', e.target.value)}
-            />
+              value={settings.pre_cheapest_suppression}
+              onChange={(e) => update('pre_cheapest_suppression', e.target.value)}
+            >
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
           </Field>
+          <Field
+            label="Solar Skip Overnight Charge"
+            description="Skip the overnight charge when tomorrow's PV forecast exceeds the threshold. Requires PV forecast to be enabled. Night Fill only."
+          >
+            <select
+              className={inputClass}
+              value={settings.solar_skip_enabled}
+              onChange={(e) => update('solar_skip_enabled', e.target.value)}
+            >
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </Field>
+          {settings.solar_skip_enabled === 'true' && (
+            <Field
+              label="Solar Skip Threshold (kWh)"
+              description="Minimum forecasted PV generation for the next day to skip the overnight charge."
+            >
+              <input
+                className={inputClass}
+                type="number"
+                step="1"
+                min="1"
+                value={settings.solar_skip_threshold_kwh}
+                onChange={(e) => update('solar_skip_threshold_kwh', e.target.value)}
+              />
+            </Field>
+          )}
         </div>
         </SettingsSection>
       </Card>

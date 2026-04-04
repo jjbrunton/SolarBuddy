@@ -3,7 +3,7 @@ import { AppSettings } from '../config';
 import { type PlanAction } from '../plan-actions';
 import { computeSOCForecast } from '../soc-forecast';
 import { buildSmartDischargePlan } from './discharge';
-import { findNegativePriceSlots, findPreDischargeSlots } from './negative';
+import { findAlwaysCheapSlots, findNegativePriceSlots, findNegativeRunDischargeSlots, findPreDischargeSlots } from './negative';
 import { findPeakPrepSlots } from './peak';
 
 const SCHEDULER_TIME_ZONE = 'Europe/London';
@@ -227,6 +227,20 @@ export function mergeAdjacentSlots(slots: AgileRate[], type?: 'charge' | 'discha
   return windows;
 }
 
+function filterSuppressedWindows(windows: ChargeWindow[], suppressedKeys: Set<string>): ChargeWindow[] {
+  if (suppressedKeys.size === 0) return windows;
+
+  const filtered: ChargeWindow[] = [];
+  for (const w of windows) {
+    const kept = w.slots.filter((s) => !suppressedKeys.has(s.valid_from));
+    if (kept.length > 0) {
+      kept.sort((a, b) => a.valid_from.localeCompare(b.valid_from));
+      filtered.push(...mergeAdjacentSlots(kept, w.type));
+    }
+  }
+  return filtered;
+}
+
 function createWindow(slots: AgileRate[], type?: 'charge' | 'discharge'): ChargeWindow {
   const totalPrice = slots.reduce((sum, s) => sum + s.price_inc_vat, 0);
   return {
@@ -236,6 +250,89 @@ function createWindow(slots: AgileRate[], type?: 'charge' | 'discharge'): Charge
     slots,
     ...(type ? { type } : {}),
   };
+}
+
+// --- Solar forecast overnight charge skip ---
+
+const schedulerDateFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: SCHEDULER_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+export function shouldSkipOvernightCharge(
+  pvForecast: PVForecastSlot[] | undefined,
+  settings: AppSettings,
+  now: Date,
+): boolean {
+  if (settings.solar_skip_enabled !== 'true') return false;
+  if (settings.pv_forecast_enabled !== 'true') return false;
+  if (!pvForecast || pvForecast.length === 0) return false;
+
+  const threshold = parseFloat(settings.solar_skip_threshold_kwh) || 15;
+
+  // Determine tomorrow's date in scheduler timezone
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowParts = schedulerDateFormatter.formatToParts(tomorrow);
+  const tomorrowDay = tomorrowParts.find((p) => p.type === 'day')?.value;
+  const tomorrowMonth = tomorrowParts.find((p) => p.type === 'month')?.value;
+  const tomorrowYear = tomorrowParts.find((p) => p.type === 'year')?.value;
+  const tomorrowDateStr = `${tomorrowYear}-${tomorrowMonth}-${tomorrowDay}`;
+
+  // Sum PV forecast for tomorrow (W * 0.5h = Wh per slot, convert to kWh)
+  let totalKwh = 0;
+  for (const slot of pvForecast) {
+    const slotDate = slot.valid_from.slice(0, 10);
+    if (slotDate === tomorrowDateStr) {
+      totalKwh += (slot.pv_estimate_w * HALF_HOUR_HOURS) / 1000;
+    }
+  }
+
+  return totalKwh >= threshold;
+}
+
+// --- Pre-cheapest charge suppression ---
+
+export function findSuppressedPreCheapestKeys(
+  baseChargeWindows: ChargeWindow[],
+  rates: AgileRate[],
+  settings: AppSettings,
+): Set<string> {
+  if (settings.pre_cheapest_suppression !== 'true') return new Set();
+
+  const slotsForFullCharge = calculateSlotsNeeded(0, 100, settings);
+  if (slotsForFullCharge <= 0) return new Set();
+
+  // Find the earliest charge slot across all base windows
+  const allChargeKeys = new Set<string>();
+  let earliestChargeStart: string | null = null;
+  for (const w of baseChargeWindows) {
+    for (const slot of w.slots) {
+      allChargeKeys.add(slot.valid_from);
+      if (!earliestChargeStart || slot.valid_from < earliestChargeStart) {
+        earliestChargeStart = slot.valid_from;
+      }
+    }
+  }
+
+  if (!earliestChargeStart) return new Set();
+
+  // Walk backward through sorted rates to find the slots before the cheapest block
+  const sorted = [...rates].sort((a, b) => a.valid_from.localeCompare(b.valid_from));
+  const earliestIndex = sorted.findIndex((r) => r.valid_from === earliestChargeStart);
+  if (earliestIndex <= 0) return new Set();
+
+  const suppressed = new Set<string>();
+  const lookback = Math.min(earliestIndex, slotsForFullCharge);
+  for (let i = earliestIndex - lookback; i < earliestIndex; i++) {
+    // Don't suppress slots that are themselves base charge slots
+    if (!allChargeKeys.has(sorted[i].valid_from)) {
+      suppressed.add(sorted[i].valid_from);
+    }
+  }
+
+  return suppressed;
 }
 
 // --- Composable charge plan ---
@@ -254,15 +351,24 @@ export function buildSchedulePlan(
   context: PlanningContext = {},
 ): SchedulePlan {
   const now = context.now ?? new Date();
-  const baseWindows = findCheapestSlots(rates, settings, context);
+  const strategy = getChargingStrategy(settings);
+  const skipOvernight = strategy === 'night_fill' &&
+    shouldSkipOvernightCharge(context.pvForecast, settings, now);
+  const baseWindows = skipOvernight ? [] : findCheapestSlots(rates, settings, context);
   const negativeWindows = findNegativePriceSlots(rates, settings);
+  const alwaysCheapWindows = findAlwaysCheapSlots(rates, settings);
   const preDischargeWindows = findPreDischargeSlots(rates, negativeWindows, settings);
-  const peakPrepWindows = findPeakPrepSlots(rates, settings, context);
+  const negativeRunDischargeWindows = findNegativeRunDischargeSlots(rates, settings);
+  const suppressedKeys = findSuppressedPreCheapestKeys(baseWindows, rates, settings);
+  const peakPrepWindows = filterSuppressedWindows(
+    findPeakPrepSlots(rates, settings, context),
+    suppressedKeys,
+  );
   const smartDischargePlan = buildSmartDischargePlan(
     rates,
     settings,
-    [...baseWindows, ...negativeWindows, ...peakPrepWindows],
-    preDischargeWindows,
+    [...baseWindows, ...negativeWindows, ...alwaysCheapWindows, ...peakPrepWindows],
+    [...preDischargeWindows, ...negativeRunDischargeWindows],
     context,
     context.exportRates,
     context.pvForecast,
@@ -271,10 +377,12 @@ export function buildSchedulePlan(
   const windows = deduplicateAndMerge([
     ...baseWindows,
     ...negativeWindows,
+    ...alwaysCheapWindows,
     ...smartDischargePlan.extraChargeWindows,
     ...peakPrepWindows,
   ], [
     ...preDischargeWindows,
+    ...negativeRunDischargeWindows,
     ...smartDischargePlan.dischargeWindows,
   ]);
 
@@ -286,9 +394,11 @@ export function buildSchedulePlan(
       settings,
       sourceKeys: {
         negativeCharge: flattenWindowSlotKeys(negativeWindows),
+        alwaysCheapCharge: flattenWindowSlotKeys(alwaysCheapWindows),
         peakCharge: flattenWindowSlotKeys(peakPrepWindows),
         extraCharge: flattenWindowSlotKeys(smartDischargePlan.extraChargeWindows),
         preDischarge: flattenWindowSlotKeys(preDischargeWindows),
+        negativeRunDischarge: flattenWindowSlotKeys(negativeRunDischargeWindows),
         smartDischarge: flattenWindowSlotKeys(smartDischargePlan.dischargeWindows),
       },
       exportRates: context.exportRates,
@@ -351,9 +461,11 @@ function buildPlannedSlots(
     settings: AppSettings;
     sourceKeys: {
       negativeCharge: Set<string>;
+      alwaysCheapCharge: Set<string>;
       peakCharge: Set<string>;
       extraCharge: Set<string>;
       preDischarge: Set<string>;
+      negativeRunDischarge: Set<string>;
       smartDischarge: Set<string>;
     };
     exportRates?: AgileRate[];
@@ -517,9 +629,11 @@ function describePlannedAction(
   slotStart: string,
   sourceKeys: {
     negativeCharge: Set<string>;
+    alwaysCheapCharge: Set<string>;
     peakCharge: Set<string>;
     extraCharge: Set<string>;
     preDischarge: Set<string>;
+    negativeRunDischarge: Set<string>;
     smartDischarge: Set<string>;
   },
   strategicHoldKeys: Set<string>,
@@ -527,6 +641,9 @@ function describePlannedAction(
   if (action === 'charge') {
     if (sourceKeys.negativeCharge.has(slotStart)) {
       return 'Negative-price charge slot.';
+    }
+    if (sourceKeys.alwaysCheapCharge.has(slotStart)) {
+      return 'Slot price below always-charge threshold.';
     }
     if (sourceKeys.extraCharge.has(slotStart)) {
       return 'Cheap recharge slot added to keep a later discharge or SOC target feasible.';
@@ -540,6 +657,9 @@ function describePlannedAction(
   if (action === 'discharge') {
     if (sourceKeys.preDischarge.has(slotStart)) {
       return 'Pre-discharge slot reserved before a negative-price charging window.';
+    }
+    if (sourceKeys.negativeRunDischarge.has(slotStart)) {
+      return 'Discharge during extended negative-price run (recharging in later negative slots).';
     }
     if (sourceKeys.smartDischarge.has(slotStart)) {
       return 'Discharge slot selected by the arbitrage planner.';

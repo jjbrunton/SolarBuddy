@@ -30,6 +30,7 @@ const PERIODS = [
 const TABS = [
   { label: 'Cost Savings', value: 'savings' },
   { label: 'Cost & Profit', value: 'accounting' },
+  { label: 'Battery Profit', value: 'profit' },
 ];
 
 interface SavingsDayData {
@@ -67,6 +68,26 @@ interface AccountingSummary {
   total_net_cost: number;
 }
 
+interface BatteryProfitDayData {
+  date: string;
+  charge_cost: number;
+  discharge_revenue: number;
+  net_profit: number;
+  expected_charge_cost: number;
+  expected_discharge_revenue: number;
+  slot_count: number;
+}
+
+interface BatteryProfitSummary {
+  total_charge_cost: number;
+  total_discharge_revenue: number;
+  total_net_profit: number;
+  total_expected_charge_cost: number;
+  total_expected_discharge_revenue: number;
+  variance: number;
+  completed_slot_count: number;
+}
+
 function formatPence(p: number) {
   if (Math.abs(p) >= 100) return `£${(p / 100).toFixed(2)}`;
   return `${p.toFixed(1)}p`;
@@ -84,6 +105,10 @@ export default function SavingsPageView() {
   const [accountingSummary, setAccountingSummary] = useState<AccountingSummary | null>(null);
   const [accountingDaily, setAccountingDaily] = useState<AccountingDayData[]>([]);
   const [accountingLoading, setAccountingLoading] = useState(true);
+
+  const [profitSummary, setProfitSummary] = useState<BatteryProfitSummary | null>(null);
+  const [profitDaily, setProfitDaily] = useState<BatteryProfitDayData[]>([]);
+  const [profitLoading, setProfitLoading] = useState(true);
 
   useEffect(() => {
     setSavingsLoading(true);
@@ -105,6 +130,16 @@ export default function SavingsPageView() {
       })
       .catch(() => {})
       .finally(() => setAccountingLoading(false));
+
+    setProfitLoading(true);
+    fetch(`/api/analytics/battery-profit?period=${period}`)
+      .then((r) => r.json())
+      .then((json) => {
+        setProfitSummary(json.summary);
+        setProfitDaily(json.daily || []);
+      })
+      .catch(() => {})
+      .finally(() => setProfitLoading(false));
   }, [period]);
 
   const netColor =
@@ -244,6 +279,79 @@ export default function SavingsPageView() {
               />
             ) : (
               <AccountingChart data={accountingDaily} />
+            )}
+          </Card>
+        </>
+      )}
+
+      {tab === 'profit' && (
+        <>
+          {profitSummary && (
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatCard
+                label="Charge Cost"
+                value={formatPence(Math.abs(profitSummary.total_charge_cost))}
+                valueColor="text-sb-danger"
+                subtext={`Expected: ${formatPence(Math.abs(profitSummary.total_expected_charge_cost))}`}
+              />
+              <StatCard
+                label="Discharge Revenue"
+                value={formatPence(profitSummary.total_discharge_revenue)}
+                valueColor="text-sb-success"
+                subtext={`Expected: ${formatPence(profitSummary.total_expected_discharge_revenue)}`}
+              />
+              <StatCard
+                label="Net Profit"
+                value={formatPence(Math.abs(profitSummary.total_net_profit))}
+                subtext={profitSummary.total_net_profit >= 0 ? 'Profit' : 'Loss'}
+                valueColor={profitSummary.total_net_profit >= 0 ? 'text-sb-success' : 'text-sb-danger'}
+              />
+              <StatCard
+                label="Variance"
+                value={formatPence(Math.abs(profitSummary.variance))}
+                subtext={profitSummary.variance >= 0 ? 'Better than expected' : 'Worse than expected'}
+                valueColor={profitSummary.variance >= 0 ? 'text-sb-success' : 'text-sb-warning'}
+              />
+            </div>
+          )}
+
+          <Card>
+            <CardHeader title="Daily battery profit" subtitle="Charge costs, discharge revenue, and net profit per day from scheduled battery operations." />
+            {profitLoading && profitDaily.length === 0 ? (
+              <p className="py-12 text-center text-sb-text-muted">Loading battery profit data...</p>
+            ) : profitDaily.length === 0 ? (
+              <EmptyState
+                title="No battery profit data yet"
+                description="Profit tracking begins once scheduled charge and discharge slots complete with telemetry readings available."
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-sb-border text-xs uppercase tracking-[0.16em] text-sb-text-subtle">
+                      <th className="px-3 py-3">Date</th>
+                      <th className="px-3 py-3">Charge Cost</th>
+                      <th className="px-3 py-3">Discharge Rev</th>
+                      <th className="px-3 py-3">Net Profit</th>
+                      <th className="px-3 py-3">Slots</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profitDaily.map((d) => (
+                      <tr key={d.date} className="border-b border-sb-border/50">
+                        <td className="px-3 py-3 text-sb-text">{d.date}</td>
+                        <td className="px-3 py-3 text-sb-danger">{formatPence(Math.abs(d.charge_cost))}</td>
+                        <td className="px-3 py-3 text-sb-success">{formatPence(d.discharge_revenue)}</td>
+                        <td className={`px-3 py-3 font-medium ${d.net_profit >= 0 ? 'text-sb-success' : 'text-sb-danger'}`}>
+                          {formatPence(Math.abs(d.net_profit))}
+                          {d.net_profit < 0 ? ' loss' : ''}
+                        </td>
+                        <td className="px-3 py-3 text-sb-text-muted">{d.slot_count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Card>
         </>

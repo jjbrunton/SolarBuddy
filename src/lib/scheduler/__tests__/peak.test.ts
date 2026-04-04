@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findPeakPrepSlots } from '../peak';
+import { detectPeakPeriod, findPeakPrepSlots } from '../peak';
 import type { AgileRate } from '../../octopus/rates';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../config';
 
@@ -92,5 +92,62 @@ describe('findPeakPrepSlots', () => {
       now: new Date('2026-04-01T10:00:00Z'),
     });
     expect(windows).toHaveLength(0);
+  });
+
+  it('uses auto-detected peak when peak_detection is auto', () => {
+    const windows = findPeakPrepSlots(afternoonRates, {
+      ...baseSettings,
+      peak_detection: 'auto',
+      peak_duration_slots: '3',
+    }, {
+      currentSoc: 50,
+      now: new Date('2026-04-01T10:00:00Z'),
+    });
+    // Auto-detect should find the 3-slot window with highest total cost
+    // That's 15:30-17:00 UTC (45+50+42=137)
+    // Pre-peak slots should be before that window
+    expect(windows.length).toBeGreaterThan(0);
+    const allSlots = windows.flatMap((w) => w.slots);
+    for (const slot of allSlots) {
+      expect(slot.valid_from < '2026-04-01T15:30:00Z').toBe(true);
+    }
+  });
+});
+
+describe('detectPeakPeriod', () => {
+  const now = new Date('2026-04-01T10:00:00Z');
+
+  it('finds the highest-cost contiguous block', () => {
+    const result = detectPeakPeriod(afternoonRates, 3, now);
+    expect(result).not.toBeNull();
+    // The 3-slot window with highest cost: 15:30-17:00 (45+50+42=137)
+    expect(result!.peakStart).toBe('2026-04-01T15:30:00Z');
+    expect(result!.peakEnd).toBe('2026-04-01T17:00:00Z');
+  });
+
+  it('returns null when fewer rates than durationSlots', () => {
+    const shortRates = [
+      rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 10),
+    ];
+    expect(detectPeakPeriod(shortRates, 3, now)).toBeNull();
+  });
+
+  it('handles single-slot duration', () => {
+    const result = detectPeakPeriod(afternoonRates, 1, now);
+    expect(result).not.toBeNull();
+    // Most expensive single slot is 50p at 16:00
+    expect(result!.peakStart).toBe('2026-04-01T16:00:00Z');
+  });
+
+  it('uses earliest window on ties', () => {
+    const tiedRates = [
+      rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 20),
+      rate('2026-04-01T11:30:00Z', '2026-04-01T12:00:00Z', 20),
+      rate('2026-04-01T12:00:00Z', '2026-04-01T12:30:00Z', 20),
+      rate('2026-04-01T12:30:00Z', '2026-04-01T13:00:00Z', 20),
+    ];
+    const result = detectPeakPeriod(tiedRates, 2, now);
+    // All pairs have the same cost, should pick the first
+    expect(result!.peakStart).toBe('2026-04-01T11:00:00Z');
   });
 });

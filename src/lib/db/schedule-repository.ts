@@ -1,5 +1,7 @@
 import { getDb } from '.';
 import type { ChargeWindow, PlannedSlot } from '../scheduler/engine';
+import { expandHalfHourSlotKeys } from '../slot-key';
+import { wattSamplesToKwh } from '../analytics';
 
 export function persistSchedulePlan(windows: ChargeWindow[], plannedSlots: PlannedSlot[]) {
   const db = getDb();
@@ -70,8 +72,85 @@ export function updateScheduleStatus(
          WHERE slot_start >= ? AND slot_end <= ? AND action = ? AND status != ?`,
       ).run(status, now, slotStart, slotEnd, slotAction, 'completed');
     }
+
+    // Calculate actual cost/revenue for completed charge/discharge slots
+    if (status === 'completed' && (slotAction === 'charge' || slotAction === 'discharge')) {
+      const slotKeys = expandHalfHourSlotKeys(slotStart, slotEnd);
+      for (const key of slotKeys) {
+        calculateAndPersistSlotActualValue(key, slotAction);
+      }
+    }
   } catch (err) {
     console.error('[ScheduleRepo] Failed to update schedule status:', err);
+  }
+}
+
+const HALF_HOUR_SECONDS = 1800;
+
+export function calculateAndPersistSlotActualValue(
+  slotStart: string,
+  action: string,
+): number | null {
+  try {
+    const db = getDb();
+    const slotEnd = new Date(new Date(slotStart).getTime() + 30 * 60 * 1000).toISOString();
+
+    const readings = db.prepare(`
+      SELECT
+        SUM(CASE WHEN grid_power > 0 THEN grid_power ELSE 0 END) as import_w_sum,
+        SUM(CASE WHEN grid_power < 0 THEN ABS(grid_power) ELSE 0 END) as export_w_sum,
+        COUNT(*) as sample_count
+      FROM readings
+      WHERE timestamp >= ? AND timestamp < ?
+    `).get(slotStart, slotEnd) as { import_w_sum: number; export_w_sum: number; sample_count: number } | undefined;
+
+    if (!readings || readings.sample_count === 0) return null;
+
+    let energyKwh: number;
+    let price: number;
+
+    if (action === 'charge') {
+      energyKwh = wattSamplesToKwh(readings.import_w_sum, readings.sample_count, HALF_HOUR_SECONDS);
+      const rate = db.prepare('SELECT price_inc_vat FROM rates WHERE valid_from = ?').get(slotStart) as { price_inc_vat: number } | undefined;
+      price = rate?.price_inc_vat ?? 0;
+      const actualValue = Math.round(-energyKwh * price * 100) / 100;
+      db.prepare('UPDATE plan_slots SET actual_value = ? WHERE slot_start = ?').run(actualValue, slotStart);
+      return actualValue;
+    } else if (action === 'discharge') {
+      energyKwh = wattSamplesToKwh(readings.export_w_sum, readings.sample_count, HALF_HOUR_SECONDS);
+      // Try export rate first, fall back to import rate
+      const exportRate = db.prepare('SELECT price_inc_vat FROM export_rates WHERE valid_from = ?').get(slotStart) as { price_inc_vat: number } | undefined;
+      const importRate = db.prepare('SELECT price_inc_vat FROM rates WHERE valid_from = ?').get(slotStart) as { price_inc_vat: number } | undefined;
+      price = exportRate?.price_inc_vat ?? importRate?.price_inc_vat ?? 0;
+      const actualValue = Math.round(energyKwh * price * 100) / 100;
+      db.prepare('UPDATE plan_slots SET actual_value = ? WHERE slot_start = ?').run(actualValue, slotStart);
+      return actualValue;
+    }
+
+    return null;
+  } catch (err) {
+    console.error('[ScheduleRepo] Failed to calculate actual value for slot:', slotStart, err);
+    return null;
+  }
+}
+
+export function backfillActualValues(): number {
+  try {
+    const db = getDb();
+    const slots = db.prepare(`
+      SELECT slot_start, action FROM plan_slots
+      WHERE status = 'completed' AND actual_value IS NULL AND action IN ('charge', 'discharge')
+    `).all() as { slot_start: string; action: string }[];
+
+    let filled = 0;
+    for (const slot of slots) {
+      const result = calculateAndPersistSlotActualValue(slot.slot_start, slot.action);
+      if (result !== null) filled++;
+    }
+    return filled;
+  } catch (err) {
+    console.error('[ScheduleRepo] Failed to backfill actual values:', err);
+    return 0;
   }
 }
 

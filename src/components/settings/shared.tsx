@@ -63,6 +63,14 @@ export interface Settings {
   virtual_mode_enabled: string;
   virtual_scenario_id: string;
   virtual_speed: string;
+  // Advanced scheduling heuristics
+  always_charge_below_price: string;
+  peak_detection: string;
+  peak_duration_slots: string;
+  solar_skip_enabled: string;
+  solar_skip_threshold_kwh: string;
+  pre_cheapest_suppression: string;
+  negative_run_discharge: string;
   // Notifications
   notifications_state_change: string;
   notifications_battery_exhausted: string;

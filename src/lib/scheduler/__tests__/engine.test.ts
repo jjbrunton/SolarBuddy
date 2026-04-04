@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSchedulePlan, findCheapestSlots } from '../engine';
+import { buildSchedulePlan, findCheapestSlots, findSuppressedPreCheapestKeys, shouldSkipOvernightCharge } from '../engine';
 import type { AgileRate } from '../../octopus/rates';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../config';
 
@@ -167,5 +167,130 @@ describe('buildSchedulePlan', () => {
       reason: 'Discharge slot selected by the arbitrage planner.',
     });
     expect(plan.slots.every((slot) => slot.expected_soc_after !== null)).toBe(true);
+  });
+});
+
+describe('findSuppressedPreCheapestKeys', () => {
+  it('returns empty when disabled', () => {
+    const windows = findCheapestSlots([
+      rate('2026-03-30T22:00:00Z', '2026-03-30T22:30:00Z', 2),
+    ], baseSettings);
+    const suppressed = findSuppressedPreCheapestKeys(windows, [], baseSettings);
+    expect(suppressed.size).toBe(0);
+  });
+
+  it('suppresses slots before the cheapest block', () => {
+    const rates = [
+      rate('2026-03-30T20:00:00Z', '2026-03-30T20:30:00Z', 15),
+      rate('2026-03-30T20:30:00Z', '2026-03-30T21:00:00Z', 12),
+      rate('2026-03-30T21:00:00Z', '2026-03-30T21:30:00Z', 10),
+      rate('2026-03-30T21:30:00Z', '2026-03-30T22:00:00Z', 8),
+      // Cheapest block starts here
+      rate('2026-03-30T22:00:00Z', '2026-03-30T22:30:00Z', 1),
+      rate('2026-03-30T22:30:00Z', '2026-03-30T23:00:00Z', 2),
+    ];
+
+    const windows = findCheapestSlots(rates, {
+      ...baseSettings,
+      charge_hours: '2',
+    });
+
+    const suppressed = findSuppressedPreCheapestKeys(windows, rates, {
+      ...baseSettings,
+      pre_cheapest_suppression: 'true',
+      battery_capacity_kwh: '2',
+      max_charge_power_kw: '2',
+      charge_rate: '100',
+    });
+
+    // slotsForFullCharge = ceil(2 / (2*0.5)) = 2
+    // Should suppress 2 slots before 22:00 (21:00 and 21:30)
+    expect(suppressed.has('2026-03-30T21:00:00Z')).toBe(true);
+    expect(suppressed.has('2026-03-30T21:30:00Z')).toBe(true);
+    // Should NOT suppress the charge slots themselves
+    expect(suppressed.has('2026-03-30T22:00:00Z')).toBe(false);
+  });
+
+  it('does not suppress base charge slots', () => {
+    const rates = [
+      rate('2026-03-30T22:00:00Z', '2026-03-30T22:30:00Z', 1),
+      rate('2026-03-30T22:30:00Z', '2026-03-30T23:00:00Z', 2),
+    ];
+
+    const windows = findCheapestSlots(rates, {
+      ...baseSettings,
+      charge_hours: '2',
+    });
+
+    const suppressed = findSuppressedPreCheapestKeys(windows, rates, {
+      ...baseSettings,
+      pre_cheapest_suppression: 'true',
+    });
+
+    // No slots before the first charge slot to suppress
+    expect(suppressed.size).toBe(0);
+  });
+});
+
+describe('shouldSkipOvernightCharge', () => {
+  const now = new Date('2026-04-01T20:00:00Z');
+
+  const highSolarForecast = [
+    // Tomorrow (2026-04-02) has lots of sun
+    { valid_from: '2026-04-02T06:00:00Z', valid_to: '2026-04-02T06:30:00Z', pv_estimate_w: 2000, pv_estimate10_w: 1000, pv_estimate90_w: 3000 },
+    { valid_from: '2026-04-02T06:30:00Z', valid_to: '2026-04-02T07:00:00Z', pv_estimate_w: 3000, pv_estimate10_w: 2000, pv_estimate90_w: 4000 },
+    { valid_from: '2026-04-02T07:00:00Z', valid_to: '2026-04-02T07:30:00Z', pv_estimate_w: 4000, pv_estimate10_w: 3000, pv_estimate90_w: 5000 },
+    { valid_from: '2026-04-02T07:30:00Z', valid_to: '2026-04-02T08:00:00Z', pv_estimate_w: 4000, pv_estimate10_w: 3000, pv_estimate90_w: 5000 },
+    { valid_from: '2026-04-02T08:00:00Z', valid_to: '2026-04-02T08:30:00Z', pv_estimate_w: 4500, pv_estimate10_w: 3500, pv_estimate90_w: 5500 },
+    { valid_from: '2026-04-02T08:30:00Z', valid_to: '2026-04-02T09:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+    { valid_from: '2026-04-02T09:00:00Z', valid_to: '2026-04-02T09:30:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+    { valid_from: '2026-04-02T09:30:00Z', valid_to: '2026-04-02T10:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+    { valid_from: '2026-04-02T10:00:00Z', valid_to: '2026-04-02T10:30:00Z', pv_estimate_w: 4500, pv_estimate10_w: 3500, pv_estimate90_w: 5500 },
+    { valid_from: '2026-04-02T10:30:00Z', valid_to: '2026-04-02T11:00:00Z', pv_estimate_w: 4000, pv_estimate10_w: 3000, pv_estimate90_w: 5000 },
+    { valid_from: '2026-04-02T11:00:00Z', valid_to: '2026-04-02T11:30:00Z', pv_estimate_w: 3000, pv_estimate10_w: 2000, pv_estimate90_w: 4000 },
+    { valid_from: '2026-04-02T11:30:00Z', valid_to: '2026-04-02T12:00:00Z', pv_estimate_w: 2000, pv_estimate10_w: 1000, pv_estimate90_w: 3000 },
+  ];
+  // Total: (2000+3000+4000+4000+4500+5000+5000+5000+4500+4000+3000+2000) * 0.5 / 1000 = 23 kWh
+
+  it('returns false when disabled', () => {
+    expect(shouldSkipOvernightCharge(highSolarForecast, {
+      ...baseSettings,
+      solar_skip_enabled: 'false',
+      pv_forecast_enabled: 'true',
+    }, now)).toBe(false);
+  });
+
+  it('returns false when PV forecast not enabled', () => {
+    expect(shouldSkipOvernightCharge(highSolarForecast, {
+      ...baseSettings,
+      solar_skip_enabled: 'true',
+      pv_forecast_enabled: 'false',
+    }, now)).toBe(false);
+  });
+
+  it('returns false when no forecast data', () => {
+    expect(shouldSkipOvernightCharge([], {
+      ...baseSettings,
+      solar_skip_enabled: 'true',
+      pv_forecast_enabled: 'true',
+    }, now)).toBe(false);
+  });
+
+  it('returns true when next-day total exceeds threshold', () => {
+    expect(shouldSkipOvernightCharge(highSolarForecast, {
+      ...baseSettings,
+      solar_skip_enabled: 'true',
+      pv_forecast_enabled: 'true',
+      solar_skip_threshold_kwh: '15',
+    }, now)).toBe(true);
+  });
+
+  it('returns false when next-day total is below threshold', () => {
+    expect(shouldSkipOvernightCharge(highSolarForecast, {
+      ...baseSettings,
+      solar_skip_enabled: 'true',
+      pv_forecast_enabled: 'true',
+      solar_skip_threshold_kwh: '30',
+    }, now)).toBe(false);
   });
 });

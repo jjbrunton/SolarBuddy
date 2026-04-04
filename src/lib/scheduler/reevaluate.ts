@@ -27,6 +27,13 @@ export const SCHEDULE_RELEVANT_KEYS = new Set([
   'estimated_consumption_w',
   'default_work_mode',
   'auto_schedule',
+  'always_charge_below_price',
+  'peak_detection',
+  'peak_duration_slots',
+  'solar_skip_enabled',
+  'solar_skip_threshold_kwh',
+  'pre_cheapest_suppression',
+  'negative_run_discharge',
 ]);
 
 interface ReplanState {

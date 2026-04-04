@@ -59,6 +59,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | --- | --- | --- |
 | `GET` | `/api/analytics/accounting` | Return accounting-oriented savings and cashflow totals for the selected period. |
 | `GET` | `/api/analytics/savings` | Return savings analytics and comparative cost views. |
+| `GET` | `/api/analytics/battery-profit` | Return battery charge cost, discharge revenue, and net profit for the selected period. |
 
 ## API Design Notes
 

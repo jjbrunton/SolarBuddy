@@ -222,5 +222,8 @@ function initSchema(db: Database.Database) {
     if (!planSlotColNames.has('notes')) {
       db.exec('ALTER TABLE plan_slots ADD COLUMN notes TEXT');
     }
+    if (!planSlotColNames.has('actual_value')) {
+      db.exec('ALTER TABLE plan_slots ADD COLUMN actual_value REAL');
+    }
   }
 }

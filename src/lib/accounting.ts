@@ -1,5 +1,108 @@
 import { getDb } from './db';
+import { backfillActualValues } from './db/schedule-repository';
 import { periodToISO, wattSamplesToKwh } from './analytics';
+
+// --- Battery Profit Tracking ---
+
+export interface BatteryProfitDayData {
+  date: string;
+  charge_cost: number;
+  discharge_revenue: number;
+  net_profit: number;
+  expected_charge_cost: number;
+  expected_discharge_revenue: number;
+  slot_count: number;
+}
+
+export interface BatteryProfitSummary {
+  total_charge_cost: number;
+  total_discharge_revenue: number;
+  total_net_profit: number;
+  total_expected_charge_cost: number;
+  total_expected_discharge_revenue: number;
+  variance: number;
+  completed_slot_count: number;
+}
+
+interface BatteryProfitRow {
+  date: string;
+  charge_actual: number;
+  discharge_actual: number;
+  charge_expected: number;
+  discharge_expected: number;
+  slot_count: number;
+}
+
+export function getBatteryProfitData(period: string) {
+  // Backfill any completed slots that don't yet have actual_value calculated
+  // (e.g. slots completed before the actual_value column was added).
+  // This is a no-op once all rows are filled.
+  backfillActualValues();
+
+  const from = periodToISO(period);
+  const db = getDb();
+
+  const rows = db.prepare(`
+    SELECT
+      date,
+      SUM(CASE WHEN action = 'charge' THEN COALESCE(actual_value, 0) ELSE 0 END) as charge_actual,
+      SUM(CASE WHEN action = 'discharge' THEN COALESCE(actual_value, 0) ELSE 0 END) as discharge_actual,
+      SUM(CASE WHEN action = 'charge' THEN COALESCE(expected_value, 0) ELSE 0 END) as charge_expected,
+      SUM(CASE WHEN action = 'discharge' THEN COALESCE(expected_value, 0) ELSE 0 END) as discharge_expected,
+      COUNT(*) as slot_count
+    FROM plan_slots
+    WHERE status = 'completed' AND date >= ?
+      AND (actual_value IS NOT NULL OR expected_value IS NOT NULL)
+    GROUP BY date
+    ORDER BY date ASC
+  `).all(from) as BatteryProfitRow[];
+
+  let totalChargeCost = 0;
+  let totalDischargeRevenue = 0;
+  let totalExpChargeCost = 0;
+  let totalExpDischargeRevenue = 0;
+  let totalSlots = 0;
+
+  const daily: BatteryProfitDayData[] = rows.map((row) => {
+    const chargeCost = Math.round(row.charge_actual * 100) / 100;
+    const dischargeRevenue = Math.round(row.discharge_actual * 100) / 100;
+    const expCharge = Math.round(row.charge_expected * 100) / 100;
+    const expDischarge = Math.round(row.discharge_expected * 100) / 100;
+
+    totalChargeCost += chargeCost;
+    totalDischargeRevenue += dischargeRevenue;
+    totalExpChargeCost += expCharge;
+    totalExpDischargeRevenue += expDischarge;
+    totalSlots += row.slot_count;
+
+    return {
+      date: row.date,
+      charge_cost: chargeCost,
+      discharge_revenue: dischargeRevenue,
+      net_profit: Math.round((dischargeRevenue + chargeCost) * 100) / 100,
+      expected_charge_cost: expCharge,
+      expected_discharge_revenue: expDischarge,
+      slot_count: row.slot_count,
+    };
+  });
+
+  const actualNet = totalDischargeRevenue + totalChargeCost;
+  const expectedNet = totalExpDischargeRevenue + totalExpChargeCost;
+
+  const summary: BatteryProfitSummary = {
+    total_charge_cost: Math.round(totalChargeCost * 100) / 100,
+    total_discharge_revenue: Math.round(totalDischargeRevenue * 100) / 100,
+    total_net_profit: Math.round(actualNet * 100) / 100,
+    total_expected_charge_cost: Math.round(totalExpChargeCost * 100) / 100,
+    total_expected_discharge_revenue: Math.round(totalExpDischargeRevenue * 100) / 100,
+    variance: Math.round((actualNet - expectedNet) * 100) / 100,
+    completed_slot_count: totalSlots,
+  };
+
+  return { summary, daily };
+}
+
+// --- Daily PnL ---
 
 export interface PnLDayData {
   date: string;
