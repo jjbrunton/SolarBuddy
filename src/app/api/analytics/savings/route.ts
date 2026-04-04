@@ -5,5 +5,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const period = searchParams.get('period') || '7d';
 
-  return NextResponse.json({ period, ...getSavingsData(period) });
+  return NextResponse.json(
+    { period, ...getSavingsData(period) },
+    { headers: { 'Cache-Control': 'private, max-age=60' } },
+  );
 }

@@ -61,6 +61,16 @@ export interface AppSettings {
   virtual_mode_enabled: string;
   virtual_scenario_id: string;
   virtual_speed: string;
+  // Notifications
+  notifications_state_change: string;
+  notifications_battery_exhausted: string;
+  notifications_battery_charged: string;
+  notifications_schedule_updated: string;
+  notifications_discord_enabled: string;
+  notifications_discord_webhook_url: string;
+  notifications_telegram_enabled: string;
+  notifications_telegram_bot_token: string;
+  notifications_telegram_chat_id: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -121,6 +131,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   virtual_mode_enabled: 'false',
   virtual_scenario_id: 'overnight-recovery',
   virtual_speed: '6x',
+  // Notifications
+  notifications_state_change: 'false',
+  notifications_battery_exhausted: 'false',
+  notifications_battery_charged: 'false',
+  notifications_schedule_updated: 'false',
+  notifications_discord_enabled: 'false',
+  notifications_discord_webhook_url: '',
+  notifications_telegram_enabled: 'false',
+  notifications_telegram_bot_token: '',
+  notifications_telegram_chat_id: '',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];

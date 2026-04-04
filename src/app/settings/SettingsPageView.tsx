@@ -10,6 +10,7 @@ import ChargingSettingsView from './charging/ChargingSettingsView';
 import SolarSettingsView from './solar/SolarSettingsView';
 import ScheduledActionsView from './scheduled-actions/ScheduledActionsView';
 import SettingsVirtualInverterView from './SettingsVirtualInverterView';
+import NotificationsSettingsView from './notifications/NotificationsSettingsView';
 
 const TABS = [
   { label: 'General', value: 'general' },
@@ -19,6 +20,7 @@ const TABS = [
   { label: 'Solar Forecast', value: 'solar' },
   { label: 'Virtual Inverter', value: 'virtual' },
   { label: 'Scheduled Actions', value: 'actions' },
+  { label: 'Notifications', value: 'notifications' },
 ];
 
 export default function SettingsPageView() {
@@ -41,6 +43,7 @@ export default function SettingsPageView() {
       {tab === 'solar' && <SolarSettingsView />}
       {tab === 'virtual' && <SettingsVirtualInverterView />}
       {tab === 'actions' && <ScheduledActionsView />}
+      {tab === 'notifications' && <NotificationsSettingsView />}
     </div>
   );
 }

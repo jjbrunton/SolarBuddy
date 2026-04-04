@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSettings, saveSettings, SETTING_KEY_SET, type AppSettings } from '@/lib/config';
 import { syncVirtualInverterSetting } from '@/lib/virtual-inverter/runtime';
+import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function GET() {
   const settings = getSettings();
@@ -15,9 +16,8 @@ export async function POST(request: Request) {
   for (const [key, value] of Object.entries(body)) {
     if (!SETTING_KEY_SET.has(key)) continue;
     if (typeof value !== 'string') {
-      return NextResponse.json(
-        { ok: false, error: `Invalid value for ${key}: must be a string` },
-        { status: 400 },
+      return errorResponse(
+        ApiError.badRequest(`Invalid value for ${key}: must be a string`),
       );
     }
     validated[key] = value;

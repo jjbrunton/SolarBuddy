@@ -1,6 +1,9 @@
-import { getDb } from '../db';
 import { getSettings } from '../config';
 import { generateSyntheticExportRates } from '../tariffs/rate-generator';
+import {
+  storeExportRates as storeExportRatesDb,
+  getStoredExportRates as getStoredExportRatesDb,
+} from '../db/rate-repository';
 import type { AgileRate } from './rates';
 
 export async function fetchExportRates(
@@ -39,46 +42,11 @@ export async function fetchExportRates(
 }
 
 export function storeExportRates(rates: AgileRate[]) {
-  const db = getDb();
-  const upsert = db.prepare(`
-    INSERT INTO export_rates (valid_from, valid_to, price_inc_vat, price_exc_vat, fetched_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(valid_from) DO UPDATE SET
-      price_inc_vat = excluded.price_inc_vat,
-      price_exc_vat = excluded.price_exc_vat,
-      fetched_at = excluded.fetched_at
-  `);
-  const now = new Date().toISOString();
-  const transaction = db.transaction((rates: AgileRate[]) => {
-    for (const rate of rates) {
-      upsert.run(rate.valid_from, rate.valid_to, rate.price_inc_vat, rate.price_exc_vat, now);
-    }
-  });
-  transaction(rates);
-  console.log(`[Octopus] Stored ${rates.length} export rates`);
+  storeExportRatesDb(rates);
 }
 
 export function getStoredExportRates(from?: string, to?: string): AgileRate[] {
-  const db = getDb();
-  let query = 'SELECT valid_from, valid_to, price_inc_vat, price_exc_vat FROM export_rates';
-  const conditions: string[] = [];
-  const params: string[] = [];
-
-  if (from) {
-    conditions.push('valid_from >= ?');
-    params.push(from);
-  }
-  if (to) {
-    conditions.push('valid_to <= ?');
-    params.push(to);
-  }
-
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-  query += ' ORDER BY valid_from ASC';
-
-  return db.prepare(query).all(...params) as AgileRate[];
+  return getStoredExportRatesDb(from, to);
 }
 
 /**

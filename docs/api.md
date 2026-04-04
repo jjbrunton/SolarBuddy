@@ -38,6 +38,12 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `DELETE` | `/api/scheduled-actions` | Delete a scheduled operator action by id. |
 | `POST` | `/api/simulate` | Run the planner and simulator against stored tariff data and return projected slot-by-slot outcomes without sending inverter commands. |
 
+## Notifications
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/notifications/test` | Send a test notification to the specified channel (`discord` or `telegram`) using the current saved settings. Returns `{ ok }` on success or `{ ok, error }` on failure. |
+
 ## Telemetry and Event Streams
 
 | Method | Route | Purpose |

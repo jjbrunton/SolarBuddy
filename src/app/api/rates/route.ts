@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getStoredRates, fetchAndStoreRates } from '@/lib/octopus/rates';
 import { getStoredExportRates } from '@/lib/octopus/export-rates';
 import { getVirtualExportRates, getVirtualNow, getVirtualRates, isVirtualModeEnabled } from '@/lib/virtual-inverter/runtime';
+import { errorResponse } from '@/lib/api-error';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -12,7 +13,10 @@ export async function GET(request: Request) {
   const exportRates = isVirtualModeEnabled()
     ? getVirtualExportRates(from, to)
     : getStoredExportRates(from, to);
-  return NextResponse.json({ rates, exportRates });
+  return NextResponse.json(
+    { rates, exportRates },
+    { headers: { 'Cache-Control': 'private, max-age=60' } },
+  );
 }
 
 export async function POST() {
@@ -34,9 +38,6 @@ export async function POST() {
     const rates = await fetchAndStoreRates(now.toISOString(), tomorrow.toISOString());
     return NextResponse.json({ ok: true, count: rates.length, rates });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : 'Unknown error' },
-      { status: 500 }
-    );
+    return errorResponse(err);
   }
 }

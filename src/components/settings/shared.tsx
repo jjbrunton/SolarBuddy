@@ -63,6 +63,16 @@ export interface Settings {
   virtual_mode_enabled: string;
   virtual_scenario_id: string;
   virtual_speed: string;
+  // Notifications
+  notifications_state_change: string;
+  notifications_battery_exhausted: string;
+  notifications_battery_charged: string;
+  notifications_schedule_updated: string;
+  notifications_discord_enabled: string;
+  notifications_discord_webhook_url: string;
+  notifications_telegram_enabled: string;
+  notifications_telegram_bot_token: string;
+  notifications_telegram_chat_id: string;
 }
 
 const tabs = [
@@ -106,10 +116,10 @@ export function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2.5">
+    <div className="flex flex-col">
       <label className="block text-sm font-medium text-sb-text">{label}</label>
-      {description ? <p className="text-xs leading-5 text-sb-text-muted">{description}</p> : null}
-      {children}
+      {description ? <p className="mt-1.5 text-xs leading-5 text-sb-text-muted">{description}</p> : null}
+      <div className="mt-auto pt-2.5">{children}</div>
     </div>
   );
 }

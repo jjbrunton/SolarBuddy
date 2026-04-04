@@ -54,7 +54,12 @@ export default function UpcomingChargesWidget() {
         setRawRates(ratesJson.rates || []);
 
         const rawScheds: Schedule[] = schedJson.schedules || [];
-        setSchedules(rawScheds.filter((s) => (s.status === 'planned' || s.status === 'active') && (s.type ?? 'charge') === 'charge'));
+        const nowIso = new Date().toISOString();
+        setSchedules(rawScheds.filter((s) =>
+          (s.status === 'planned' || s.status === 'active') &&
+          (s.type ?? 'charge') === 'charge' &&
+          s.slot_end > nowIso,
+        ));
       } catch { /* silent */ }
     }
     load();

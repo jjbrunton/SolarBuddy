@@ -2,6 +2,7 @@ import { getDb } from '../db';
 import { appendEvent } from '../events';
 import { getSettings } from '../config';
 import { resolveOutputSourcePriority } from '../inverter/settings';
+import { notify } from '../notifications/dispatcher';
 import { type PlanAction } from '../plan-actions';
 import { evaluateScheduledActions } from '../scheduled-actions';
 import { getState, onStateChange } from '../state';
@@ -61,6 +62,7 @@ interface WatchdogState {
   pendingReasons: Set<string>;
   lastCommandSignature: string | null;
   lastCommandAt: number;
+  lastBatteryExhaustedAt: number;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -77,6 +79,7 @@ function getWatchdogState(): WatchdogState {
       pendingReasons: new Set(),
       lastCommandSignature: null,
       lastCommandAt: 0,
+      lastBatteryExhaustedAt: 0,
     };
   }
 
@@ -332,6 +335,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         category: 'watchdog',
         message: intent.detail,
       });
+      notify('state_change', 'Charging Started', intent.detail);
       return;
     }
     case 'discharge': {
@@ -353,6 +357,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         category: 'watchdog',
         message: intent.detail,
       });
+      notify('state_change', 'Discharge Started', intent.detail);
       return;
     }
     case 'idle': {
@@ -365,6 +370,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
           category: 'watchdog',
           message: intent.detail,
         });
+        notify('state_change', 'Returned to Idle', intent.detail);
         return;
       }
       if (isForcedChargeActive(state)) {
@@ -376,6 +382,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
           category: 'watchdog',
           message: intent.detail,
         });
+        notify('state_change', 'Returned to Idle', intent.detail);
         return;
       }
       if (state.work_mode !== null && state.work_mode !== defaultMode) {
@@ -385,11 +392,13 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         await ensureStopDischargeAtFloor(state);
         await setWorkMode(defaultMode);
         recordCommand(signature);
+        const msg = `Watchdog restored default work mode (${defaultMode}).`;
         appendEvent({
           level: 'info',
           category: 'watchdog',
-          message: `Watchdog restored default work mode (${defaultMode}).`,
+          message: msg,
         });
+        notify('state_change', 'Work Mode Restored', msg);
         return;
       }
       await ensureStopDischargeAtFloor(state);
@@ -411,6 +420,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         category: 'watchdog',
         message: intent.detail,
       });
+      notify('state_change', 'Battery Hold Active', intent.detail);
       return;
     }
   }
@@ -437,6 +447,19 @@ export async function reconcileInverterState(reason = 'manual trigger') {
 
     const intent = resolveRuntimeIntent(getVirtualNow(), state);
     await applyIntent(intent, state);
+
+    // Battery exhausted detection (30-minute cooldown)
+    const settings = getSettings();
+    const floor = parseInt(settings.discharge_soc_floor, 10) || 20;
+    if (
+      state.battery_soc !== null &&
+      state.battery_soc <= floor &&
+      intent.action !== 'charge' &&
+      Date.now() - runtime.lastBatteryExhaustedAt > 30 * 60 * 1000
+    ) {
+      runtime.lastBatteryExhaustedAt = Date.now();
+      notify('battery_exhausted', 'Battery Exhausted', `Battery SOC has reached the discharge floor of ${floor}% (current: ${state.battery_soc}%).`);
+    }
   } catch (err) {
     appendEvent({
       level: 'error',

@@ -136,7 +136,9 @@ export default function ChargingSettingsView() {
       </Card>
 
       <Card>
-        <h3 className="mb-4 font-medium text-sb-text">Negative Prices</h3>
+        <SettingsSection
+          title="Negative Prices"
+        >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
             label="Charge During Negative Prices"
@@ -165,13 +167,14 @@ export default function ChargingSettingsView() {
             </select>
           </Field>
         </div>
+        </SettingsSection>
       </Card>
 
       <Card>
-        <h3 className="mb-4 font-medium text-sb-text">Automatic Discharge</h3>
-        <p className="mb-4 text-xs text-sb-text-muted">
-          Pick the highest-priced future slots and force a discharge window while keeping a reserve SOC. This uses the current tariff horizon and the inverter&apos;s forced discharge mode.
-        </p>
+        <SettingsSection
+          title="Automatic Discharge"
+          description="Pick the highest-priced future slots and force a discharge window while keeping a reserve SOC. This uses the current tariff horizon and the inverter's forced discharge mode."
+        >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field
             label="Smart Discharge"
@@ -212,13 +215,14 @@ export default function ChargingSettingsView() {
             />
           </Field>
         </div>
+        </SettingsSection>
       </Card>
 
       <Card>
-        <h3 className="mb-4 font-medium text-sb-text">Peak Protection</h3>
-        <p className="mb-4 text-xs text-sb-text-muted">
-          Pre-charge the battery before expensive peak periods to avoid high-cost grid import.
-        </p>
+        <SettingsSection
+          title="Peak Protection"
+          description="Pre-charge the battery before expensive peak periods to avoid high-cost grid import."
+        >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Peak Protection" description="Enable automatic pre-peak charging">
             <select
@@ -257,6 +261,7 @@ export default function ChargingSettingsView() {
             />
           </Field>
         </div>
+        </SettingsSection>
       </Card>
 
       <SaveButton saving={saving} message={message} onSave={save} />
