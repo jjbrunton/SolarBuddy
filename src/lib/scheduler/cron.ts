@@ -12,6 +12,7 @@ import { buildSchedulePlan, getChargingStrategy, type ChargeWindow, type Planned
 import { scheduleExecution } from './executor';
 import { getDb } from '../db';
 import { appendEvent } from '../events';
+import { notify } from '../notifications/dispatcher';
 
 let afternoonJob: cron.ScheduledTask | null = null;
 let eveningJob: cron.ScheduledTask | null = null;
@@ -170,6 +171,7 @@ export async function runScheduleCycle(): Promise<ScheduleCycleResult> {
         : 'Opportunistic Top-up did not find any eligible battery windows. The slot plan has been updated with hold actions only.'
       : `${strategyLabel}: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
     logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
+    notify('schedule_updated', 'Schedule Updated', message);
     return {
       ok: true,
       status: windows.length === 0 ? 'no_windows' : 'scheduled',
@@ -258,6 +260,7 @@ export async function replanFromStoredRates(): Promise<ScheduleCycleResult> {
       ? `${strategyLabel} replan: no eligible battery windows.`
       : `${strategyLabel} replan: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
     logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
+    notify('schedule_updated', 'Schedule Updated', message);
     console.log(`[Replan] Complete — ${windows.length} windows`);
     return { ok: true, status: windows.length === 0 ? 'no_windows' : 'scheduled', message, windowsCount: windows.length };
   } catch (err) {

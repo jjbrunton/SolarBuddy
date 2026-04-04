@@ -1,5 +1,6 @@
 import { getDb } from '../db';
 import { getSettings } from '../config';
+import { notify } from '../notifications/dispatcher';
 import { getState, onStateChange } from '../state';
 import type { InverterState } from '../types';
 import { startGridCharging, stopGridCharging, startGridDischarge, stopGridDischarge } from '../mqtt/commands';
@@ -113,6 +114,7 @@ export function scheduleExecution(windows: ChargeWindow[]) {
 
         if (state.battery_soc !== null && state.battery_soc >= minSoc) {
           console.log(`[Executor] SOC target reached (${state.battery_soc}% >= ${minSoc}%), stopping early`);
+          notify('battery_charged', 'Battery Charged', `Battery reached target SOC of ${minSoc}% (current: ${state.battery_soc}%).`);
           await completeWindow('SOC target reached early');
           return;
         }
