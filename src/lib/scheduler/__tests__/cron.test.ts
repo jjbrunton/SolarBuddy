@@ -2,15 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChargeWindow, PlannedSlot } from '../engine';
 
 const {
-  insertWindowRun,
-  insertSlotRun,
-  deleteRun,
+  persistSchedulePlanMock,
   scheduleExecutionMock,
   appendEventMock,
 } = vi.hoisted(() => ({
-  insertWindowRun: vi.fn(),
-  insertSlotRun: vi.fn(),
-  deleteRun: vi.fn(),
+  persistSchedulePlanMock: vi.fn(),
   scheduleExecutionMock: vi.fn(),
   appendEventMock: vi.fn(),
 }));
@@ -102,25 +98,8 @@ vi.mock('../../events', () => ({
   appendEvent: appendEventMock,
 }));
 
-vi.mock('../../db', () => ({
-  getDb: () => ({
-    prepare: (sql: string) => {
-      if (sql.includes('INSERT INTO schedules')) {
-        return { run: insertWindowRun };
-      }
-
-      if (sql.includes('INTO plan_slots')) {
-        return { run: insertSlotRun };
-      }
-
-      if (sql.includes('DELETE FROM schedules') || sql.includes('DELETE FROM plan_slots')) {
-        return { run: deleteRun };
-      }
-
-      throw new Error(`Unexpected SQL in test: ${sql}`);
-    },
-    transaction: (fn: (windows: ChargeWindow[]) => void) => fn,
-  }),
+vi.mock('../../db/schedule-repository', () => ({
+  persistSchedulePlan: persistSchedulePlanMock,
 }));
 
 import { runScheduleCycle } from '../cron';
@@ -129,14 +108,12 @@ describe('runScheduleCycle', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-01T10:15:00Z'));
-    insertWindowRun.mockClear();
-    insertSlotRun.mockClear();
-    deleteRun.mockClear();
+    persistSchedulePlanMock.mockClear();
     scheduleExecutionMock.mockClear();
     appendEventMock.mockClear();
   });
 
-  it('persists the schedule type for both charge and discharge windows', async () => {
+  it('persists the schedule plan and executes windows', async () => {
     const result = await runScheduleCycle();
 
     expect(result).toMatchObject({
@@ -144,36 +121,7 @@ describe('runScheduleCycle', () => {
       status: 'scheduled',
       windowsCount: 2,
     });
-    expect(deleteRun).toHaveBeenCalledTimes(2);
-    expect(insertWindowRun).toHaveBeenNthCalledWith(
-      1,
-      '2026-04-01',
-      '2026-04-01T12:00:00Z',
-      '2026-04-01T12:30:00Z',
-      8,
-      expect.any(String),
-      'charge',
-    );
-    expect(insertWindowRun).toHaveBeenNthCalledWith(
-      2,
-      '2026-04-01',
-      '2026-04-01T17:00:00Z',
-      '2026-04-01T17:30:00Z',
-      31,
-      expect.any(String),
-      'discharge',
-    );
-    expect(insertSlotRun).toHaveBeenNthCalledWith(
-      1,
-      '2026-04-01',
-      '2026-04-01T11:30:00Z',
-      '2026-04-01T12:00:00Z',
-      'hold',
-      'Hold battery for a better discharge opportunity later in the tariff horizon.',
-      68,
-      null,
-      expect.any(String),
-    );
+    expect(persistSchedulePlanMock).toHaveBeenCalledWith(windows, plannedSlots);
     expect(scheduleExecutionMock).toHaveBeenCalledWith(windows);
     expect(appendEventMock).toHaveBeenCalledWith(expect.objectContaining({
       level: 'success',

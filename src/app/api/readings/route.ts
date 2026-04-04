@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getActualSOCBySlot } from '@/lib/readings/soc-by-slot';
+import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -9,7 +10,7 @@ export async function GET(request: Request) {
   if (period === 'soc-slots') {
     const date = url.searchParams.get('date');
     if (!date) {
-      return NextResponse.json({ error: 'date parameter required' }, { status: 400 });
+      return errorResponse(ApiError.badRequest('date parameter required'));
     }
     return NextResponse.json({ soc_slots: getActualSOCBySlot(date) });
   }
@@ -47,5 +48,8 @@ export async function GET(request: Request) {
       .all();
   }
 
-  return NextResponse.json({ readings, daily });
+  return NextResponse.json(
+    { readings, daily },
+    { headers: { 'Cache-Control': 'private, max-age=60' } },
+  );
 }

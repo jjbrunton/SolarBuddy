@@ -5,6 +5,7 @@ import { getStoredExportRates } from '@/lib/octopus/export-rates';
 import { getStoredPVForecast } from '@/lib/solcast/store';
 import { getState } from '@/lib/state';
 import { runFullSimulation } from '@/lib/simulator';
+import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -26,10 +27,7 @@ export async function POST(req: Request) {
 
   const rates = getStoredRates(now.toISOString(), tomorrow.toISOString());
   if (rates.length === 0) {
-    return NextResponse.json(
-      { ok: false, error: 'No rates available. Fetch rates first.' },
-      { status: 400 },
-    );
+    return errorResponse(ApiError.badRequest('No rates available. Fetch rates first.'));
   }
 
   const exportRates = getStoredExportRates(now.toISOString(), tomorrow.toISOString());

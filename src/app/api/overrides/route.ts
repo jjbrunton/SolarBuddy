@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { type PlanAction, PLAN_ACTIONS } from '@/lib/plan-actions';
 import { reconcileInverterState } from '@/lib/scheduler/watchdog';
+import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function GET() {
   const db = getDb();
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
   };
 
   if (!Array.isArray(slots)) {
-    return NextResponse.json({ error: 'slots must be an array' }, { status: 400 });
+    return errorResponse(ApiError.badRequest('slots must be an array'));
   }
 
   const today = new Date().toISOString().split('T')[0];
@@ -54,7 +55,7 @@ export async function PATCH(request: Request) {
   };
 
   if (!slot_start || !slot_end || !action || !PLAN_ACTIONS.includes(action)) {
-    return NextResponse.json({ error: 'slot_start, slot_end, and valid action required' }, { status: 400 });
+    return errorResponse(ApiError.badRequest('slot_start, slot_end, and valid action required'));
   }
 
   const today = new Date().toISOString().split('T')[0];
