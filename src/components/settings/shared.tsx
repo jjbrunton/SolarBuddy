@@ -102,10 +102,10 @@ export function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2.5">
+    <div className="flex flex-col">
       <label className="block text-sm font-medium text-sb-text">{label}</label>
-      {description ? <p className="text-xs leading-5 text-sb-text-muted">{description}</p> : null}
-      {children}
+      {description ? <p className="mt-1.5 text-xs leading-5 text-sb-text-muted">{description}</p> : null}
+      <div className="mt-auto pt-2.5">{children}</div>
     </div>
   );
 }
