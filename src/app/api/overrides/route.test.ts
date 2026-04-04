@@ -51,7 +51,7 @@ describe('/api/overrides', () => {
     );
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: 'slots must be an array' });
+    expect(await response.json()).toEqual({ ok: false, error: 'slots must be an array' });
   });
 
   it('replaces overrides and defaults invalid actions to charge', async () => {
@@ -84,7 +84,7 @@ describe('/api/overrides', () => {
       }),
     );
     expect(missing.status).toBe(400);
-    expect(await missing.json()).toEqual({ error: 'slot_start, slot_end, and valid action required' });
+    expect(await missing.json()).toEqual({ ok: false, error: 'slot_start, slot_end, and valid action required' });
 
     const success = await PATCH(
       new Request('http://localhost/api/overrides', {

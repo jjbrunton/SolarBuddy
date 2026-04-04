@@ -1,8 +1,8 @@
-import { getDb } from '../db';
 import { getSettings } from '../config';
 import { getState, onStateChange } from '../state';
 import type { InverterState } from '../types';
 import { startGridCharging, stopGridCharging, startGridDischarge, stopGridDischarge } from '../mqtt/commands';
+import { updateScheduleStatus } from '../db/schedule-repository';
 import { ChargeWindow, getChargingStrategy } from './engine';
 
 const activeTimers: NodeJS.Timeout[] = [];
@@ -38,6 +38,26 @@ export function shouldHoldForSolarSurplus(
   return exportingToGrid || batteryChargingWithoutImport || pvAppearsToCoverLoad;
 }
 
+type WindowPhase = 'pending' | 'active' | 'completed' | 'failed';
+
+interface WindowState {
+  phase: WindowPhase;
+  gridChargingActive: boolean;
+  evaluationInFlight: boolean;
+  monitoringTimer: NodeJS.Timeout | null;
+  unsubscribe: (() => void) | null;
+}
+
+function createWindowState(): WindowState {
+  return {
+    phase: 'pending',
+    gridChargingActive: false,
+    evaluationInFlight: false,
+    monitoringTimer: null,
+    unsubscribe: null,
+  };
+}
+
 export function scheduleExecution(windows: ChargeWindow[]) {
   clearScheduledTimers();
   const settings = getSettings();
@@ -56,57 +76,50 @@ export function scheduleExecution(windows: ChargeWindow[]) {
 
     const startDelay = Math.max(0, startTime - now);
     const endDelay = endTime - now;
-    let monitoringTimer: NodeJS.Timeout | null = null;
-    let unsubscribe: (() => void) | null = null;
-    let gridChargingActive = false;
-    let completed = false;
-    let cleaningUp = false;
-    let evaluationInFlight = false;
+    const ws = createWindowState();
 
     const cleanup = () => {
-      if (cleaningUp) return;
-      cleaningUp = true;
-      if (monitoringTimer) {
-        clearInterval(monitoringTimer);
-        monitoringTimer = null;
+      if (ws.phase === 'completed' || ws.phase === 'failed') return;
+      if (ws.monitoringTimer) {
+        clearInterval(ws.monitoringTimer);
+        ws.monitoringTimer = null;
       }
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
+      if (ws.unsubscribe) {
+        ws.unsubscribe();
+        ws.unsubscribe = null;
       }
       activeCleanups.delete(cleanup);
-      cleaningUp = false;
     };
 
     activeCleanups.add(cleanup);
 
     const completeWindow = async (notes?: string) => {
-      if (completed) return;
-      completed = true;
+      if (ws.phase === 'completed' || ws.phase === 'failed') return;
+      ws.phase = 'completed';
       cleanup();
-      if (gridChargingActive) {
+      if (ws.gridChargingActive) {
         if (isDischarge) {
           await stopGridDischarge(defaultMode);
         } else {
           await stopGridCharging(defaultMode);
         }
-        gridChargingActive = false;
+        ws.gridChargingActive = false;
       }
-      updateScheduleStatus(window, 'completed', notes);
+      updateScheduleStatus(window.slot_start, window.slot_end, window.type, 'completed', notes);
     };
 
     const evaluateWindow = async () => {
-      if (completed || evaluationInFlight) return;
-      evaluationInFlight = true;
+      if (ws.phase !== 'active' || ws.evaluationInFlight) return;
+      ws.evaluationInFlight = true;
 
       try {
         const state = getState();
 
         // Discharge windows run unconditionally for their duration
         if (isDischarge) {
-          if (!gridChargingActive) {
+          if (!ws.gridChargingActive) {
             await startGridDischarge();
-            gridChargingActive = true;
+            ws.gridChargingActive = true;
           }
           return;
         }
@@ -118,25 +131,25 @@ export function scheduleExecution(windows: ChargeWindow[]) {
         }
 
         if (strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
-          if (gridChargingActive) {
+          if (ws.gridChargingActive) {
             console.log('[Executor] Solar surplus detected, stopping forced grid charging for opportunistic window');
             await stopGridCharging(defaultMode);
-            gridChargingActive = false;
+            ws.gridChargingActive = false;
           }
           return;
         }
 
-        if (!gridChargingActive) {
+        if (!ws.gridChargingActive) {
           await startGridCharging(chargeRate);
-          gridChargingActive = true;
+          ws.gridChargingActive = true;
         }
       } catch (err) {
         console.error('[Executor] Failed to manage charging window:', err);
-        completed = true;
+        ws.phase = 'failed';
         cleanup();
-        updateScheduleStatus(window, 'failed', String(err));
+        updateScheduleStatus(window.slot_start, window.slot_end, window.type, 'failed', String(err));
       } finally {
-        evaluationInFlight = false;
+        ws.evaluationInFlight = false;
       }
     };
 
@@ -144,18 +157,19 @@ export function scheduleExecution(windows: ChargeWindow[]) {
     const startTimer = setTimeout(async () => {
       console.log(`[Executor] Starting charge window: ${window.slot_start} - ${window.slot_end}`);
       try {
-        updateScheduleStatus(window, 'active');
-        unsubscribe = onStateChange(() => {
+        ws.phase = 'active';
+        updateScheduleStatus(window.slot_start, window.slot_end, window.type, 'active');
+        ws.unsubscribe = onStateChange(() => {
           void evaluateWindow();
         });
-        monitoringTimer = setInterval(() => {
+        ws.monitoringTimer = setInterval(() => {
           void evaluateWindow();
         }, WINDOW_RECHECK_MS);
         await evaluateWindow();
       } catch (err) {
         console.error('[Executor] Failed to start charging:', err);
-        updateScheduleStatus(window, 'failed', String(err));
-        completed = true;
+        ws.phase = 'failed';
+        updateScheduleStatus(window.slot_start, window.slot_end, window.type, 'failed', String(err));
         cleanup();
       }
     }, startDelay);
@@ -165,21 +179,21 @@ export function scheduleExecution(windows: ChargeWindow[]) {
       console.log(`[Executor] Ending charge window: ${window.slot_start} - ${window.slot_end}`);
       cleanup();
 
-      if (completed) {
+      if (ws.phase === 'completed' || ws.phase === 'failed') {
         return;
       }
 
-      completed = true;
+      ws.phase = 'completed';
       try {
-        if (gridChargingActive) {
+        if (ws.gridChargingActive) {
           if (isDischarge) {
             await stopGridDischarge(defaultMode);
           } else {
             await stopGridCharging(defaultMode);
           }
-          gridChargingActive = false;
+          ws.gridChargingActive = false;
         }
-        updateScheduleStatus(window, 'completed');
+        updateScheduleStatus(window.slot_start, window.slot_end, window.type, 'completed');
       } catch (err) {
         console.error('[Executor] Failed to stop charging:', err);
       }
@@ -189,35 +203,4 @@ export function scheduleExecution(windows: ChargeWindow[]) {
   }
 
   console.log(`[Executor] Scheduled ${windows.length} charge windows`);
-}
-
-function updateScheduleStatus(window: ChargeWindow, status: string, notes?: string) {
-  try {
-    const db = getDb();
-    const update = notes
-      ? db.prepare('UPDATE schedules SET status = ?, executed_at = ?, notes = ? WHERE slot_start = ? AND status != ?')
-      : db.prepare('UPDATE schedules SET status = ?, executed_at = ? WHERE slot_start = ? AND status != ?');
-    const slotAction = window.type === 'discharge' ? 'discharge' : 'charge';
-    const updatePlanSlots = notes
-      ? db.prepare(
-          `UPDATE plan_slots
-           SET status = ?, executed_at = ?, notes = ?
-           WHERE slot_start >= ? AND slot_end <= ? AND action = ? AND status != ?`,
-        )
-      : db.prepare(
-          `UPDATE plan_slots
-           SET status = ?, executed_at = ?
-           WHERE slot_start >= ? AND slot_end <= ? AND action = ? AND status != ?`,
-        );
-
-    if (notes) {
-      update.run(status, new Date().toISOString(), notes, window.slot_start, 'completed');
-      updatePlanSlots.run(status, new Date().toISOString(), notes, window.slot_start, window.slot_end, slotAction, 'completed');
-    } else {
-      update.run(status, new Date().toISOString(), window.slot_start, 'completed');
-      updatePlanSlots.run(status, new Date().toISOString(), window.slot_start, window.slot_end, slotAction, 'completed');
-    }
-  } catch (err) {
-    console.error('[Executor] Failed to update schedule status:', err);
-  }
 }
