@@ -50,11 +50,13 @@ describe('/api/system', () => {
   });
 
   it('returns runtime, health, and database stats', async () => {
+    const recentRate = new Date(Date.now() - 60_000).toISOString();
+    const recentSchedule = new Date(Date.now() - 30_000).toISOString();
     getMock
       .mockReturnValueOnce(3)
       .mockReturnValueOnce(4096)
-      .mockReturnValueOnce({ latest: '2026-04-03T09:30:00Z' })
-      .mockReturnValueOnce({ latest: '2026-04-03T09:45:00Z' })
+      .mockReturnValueOnce({ latest: recentRate })
+      .mockReturnValueOnce({ latest: recentSchedule })
       .mockReturnValueOnce({ count: 111 })
       .mockReturnValueOnce({ count: 22 });
 
@@ -64,8 +66,8 @@ describe('/api/system', () => {
     expect(payload.health).toMatchObject({
       mqtt_connected: true,
       rates_fresh: true,
-      last_rate_fetch: '2026-04-03T09:30:00Z',
-      last_schedule: '2026-04-03T09:45:00Z',
+      last_rate_fetch: recentRate,
+      last_schedule: recentSchedule,
       scheduler_configured: true,
       auto_schedule_enabled: true,
       watchdog_enabled: true,
