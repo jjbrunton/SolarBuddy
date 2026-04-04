@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { useChartColors } from '@/hooks/useTheme';
+import { useSSE } from '@/hooks/useSSE';
 import type { PVForecastSlot } from '@/lib/solcast/client';
 import type { PVConfidence } from '@/lib/pv-forecast-utils';
 
@@ -39,9 +40,19 @@ function SolarTooltip({ active, payload, label }: { active?: boolean; payload?: 
 
 export default function SolarForecastWidget() {
   const colors = useChartColors();
+  const { state } = useSSE();
+  const effectiveNow = useMemo(
+    () => (state.runtime_mode === 'virtual' && state.virtual_time ? new Date(state.virtual_time) : new Date()),
+    [state.runtime_mode, state.virtual_time],
+  );
+  const effectiveNowRef = useRef(effectiveNow);
   const [forecasts, setForecasts] = useState<PVForecastSlot[]>([]);
   const [enabled, setEnabled] = useState(false);
   const [confidence, setConfidence] = useState<PVConfidence>('estimate');
+
+  useEffect(() => {
+    effectiveNowRef.current = effectiveNow;
+  }, [effectiveNow]);
 
   useEffect(() => {
     async function load() {
@@ -54,7 +65,7 @@ export default function SolarForecastWidget() {
 
         if (!pvEnabled) return;
 
-        const now = new Date();
+        const now = effectiveNowRef.current;
         const tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
 

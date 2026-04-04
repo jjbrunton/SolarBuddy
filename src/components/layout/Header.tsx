@@ -28,16 +28,23 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
             <Badge kind={connected ? 'success' : 'warning'}>
               {connected ? 'SSE online' : 'SSE reconnecting'}
             </Badge>
-            <Badge kind={state.mqtt_connected ? 'info' : 'warning'}>
-              {state.mqtt_connected ? 'MQTT live' : 'MQTT waiting'}
+            <Badge kind={state.runtime_mode === 'virtual' ? 'warning' : state.mqtt_connected ? 'info' : 'warning'}>
+              {state.runtime_mode === 'virtual'
+                ? `Virtual ${state.virtual_playback_state ?? 'ready'}`
+                : state.mqtt_connected
+                  ? 'MQTT live'
+                  : 'MQTT waiting'}
             </Badge>
           </div>
         </div>
 
         <div className="hidden items-center gap-2 rounded-2xl border border-sb-border bg-sb-card px-3 py-2 text-xs text-sb-text-muted sm:flex">
           <Activity size={14} className="text-sb-accent" />
-          <span>{state.device_mode || 'Awaiting inverter mode'}</span>
-          <Radio size={14} className={state.mqtt_connected ? 'text-sb-success' : 'text-sb-warning'} />
+          <span>{state.runtime_mode === 'virtual' ? 'Virtual runtime' : state.device_mode || 'Awaiting inverter mode'}</span>
+          <Radio
+            size={14}
+            className={state.runtime_mode === 'virtual' || state.mqtt_connected ? 'text-sb-success' : 'text-sb-warning'}
+          />
         </div>
 
         <button

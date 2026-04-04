@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSettings } from '../../config';
+import { DEFAULT_SETTINGS, type AppSettings } from '../../config';
 import {
   fetchExportRates,
   getStoredExportRates,
@@ -51,55 +51,12 @@ vi.mock('../../tariffs/rate-generator', () => ({
 
 function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
-    mqtt_host: '',
-    mqtt_port: '1883',
-    mqtt_username: '',
-    mqtt_password: '',
+    ...DEFAULT_SETTINGS,
     octopus_region: 'H',
-    octopus_product_code: 'AGILE-24-10-01',
-    octopus_api_key: '',
-    octopus_account: '',
-    octopus_mpan: '',
-    octopus_meter_serial: '',
-    charging_strategy: 'night_fill',
-    charge_hours: '4',
-    price_threshold: '0',
-    min_soc_target: '80',
-    charge_window_start: '23:00',
-    charge_window_end: '07:00',
-    default_work_mode: 'Battery first',
-    charge_rate: '100',
-    auto_schedule: 'true',
-    watchdog_enabled: 'true',
-    battery_capacity_kwh: '5.12',
-    max_charge_power_kw: '3.6',
-    estimated_consumption_w: '500',
-    tariff_type: 'agile',
-    tariff_offpeak_rate: '7.5',
-    tariff_peak_rate: '35',
-    tariff_standard_rate: '24.5',
-    negative_price_charging: 'true',
-    negative_price_pre_discharge: 'false',
-    smart_discharge: 'false',
-    discharge_price_threshold: '0',
-    discharge_soc_floor: '20',
-    peak_protection: 'false',
-    peak_period_start: '16:00',
-    peak_period_end: '19:00',
-    peak_soc_target: '90',
     octopus_export_mpan: '200000000001',
     octopus_export_meter_serial: 'E123',
     octopus_export_product_code: 'OUTGOING-25-01-01',
     export_rate: '8.5',
-    pv_forecast_enabled: 'false',
-    pv_forecast_confidence: 'estimate',
-    pv_latitude: '',
-    pv_longitude: '',
-    pv_declination: '35',
-    pv_azimuth: '0',
-    pv_kwp: '',
-    time_sync_enabled: 'false',
-    tariff_monitor_enabled: 'true',
     ...overrides,
   };
 }
@@ -207,11 +164,11 @@ describe('octopus export rates', () => {
 
     prepareMock.mockImplementationOnce((query: string) => ({
       run: runMock,
-      all: (...params: string[]) => {
+      all: vi.fn((...params: string[]) => {
         capturedQuery = query;
         capturedParams = params;
         return rows;
-      },
+      }),
     }));
 
     const result = getStoredExportRates('2026-04-03T00:00:00Z', '2026-04-03T01:00:00Z');

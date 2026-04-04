@@ -81,7 +81,16 @@ function RateTooltip({ active, payload, label }: { active?: boolean; payload?: {
 export default function RatesView() {
   const colors = useChartColors();
   const { state } = useSSE();
+  const effectiveNow = useMemo(
+    () => (state.runtime_mode === 'virtual' && state.virtual_time ? new Date(state.virtual_time) : new Date()),
+    [state.runtime_mode, state.virtual_time],
+  );
+  const effectiveNowRef = useRef(effectiveNow);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    effectiveNowRef.current = effectiveNow;
+  }, [effectiveNow]);
   const [data, setData] = useState<ChartData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +146,7 @@ export default function RatesView() {
       const schedules: Schedule[] = scheduleJson.schedules || [];
       const plannedSlots: PlannedSlotRow[] = scheduleJson.plan_slots || [];
       const overrides: Override[] = overridesJson.overrides || [];
-      const now = new Date();
+      const now = effectiveNowRef.current;
 
       const plannedActionMap = new Map<string, PlanAction>();
       for (const slot of plannedSlots) {

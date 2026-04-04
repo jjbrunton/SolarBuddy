@@ -16,8 +16,9 @@ const INSERT_SQL = `
 function snapshot() {
   const state = getState();
 
-  // Don't record if MQTT isn't connected (stale data)
-  if (!state.mqtt_connected) return;
+  // Don't record if MQTT isn't connected (stale data) or when the runtime
+  // is in virtual mode, because virtual telemetry is intentionally ephemeral.
+  if (!state.mqtt_connected || state.runtime_mode === 'virtual') return;
 
   try {
     const db = getDb();

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSettings } from '@/lib/config';
 import { fetchPVForecast } from '@/lib/solcast/client';
 import { storePVForecast, getStoredPVForecast, getLatestForecastAge } from '@/lib/solcast/store';
+import { getVirtualForecast, isVirtualModeEnabled } from '@/lib/virtual-inverter/runtime';
 import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function GET(request: Request) {
@@ -9,8 +10,8 @@ export async function GET(request: Request) {
   const from = searchParams.get('from') ?? undefined;
   const to = searchParams.get('to') ?? undefined;
 
-  const forecasts = getStoredPVForecast(from, to);
-  const ageMinutes = getLatestForecastAge();
+  const forecasts = isVirtualModeEnabled() ? getVirtualForecast(from, to) : getStoredPVForecast(from, to);
+  const ageMinutes = isVirtualModeEnabled() ? 0 : getLatestForecastAge();
   return NextResponse.json(
     { forecasts, ageMinutes: Math.round(ageMinutes) },
     { headers: { 'Cache-Control': 'private, max-age=120' } },
@@ -18,6 +19,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (isVirtualModeEnabled()) {
+    return NextResponse.json({ ok: true, count: getVirtualForecast().length });
+  }
+
   const { searchParams } = new URL(request.url);
   const force = searchParams.get('force') === 'true';
   const settings = getSettings();

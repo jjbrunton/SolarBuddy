@@ -57,6 +57,7 @@ Changes in these areas should add or update tests in the same pull request:
 - SQLite-backed storage and additive migrations
 - API request validation and error handling
 - Simulator logic and operator planning views
+- Virtual inverter runtime behavior, scenario playback, and mode-aware API fallbacks
 
 ## Release Expectations
 

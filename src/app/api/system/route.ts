@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getSettings } from '@/lib/config';
 import { getState } from '@/lib/state';
+import { getVirtualInverterStatus, isVirtualModeEnabled } from '@/lib/virtual-inverter/runtime';
 
 const startTime = Date.now();
 
@@ -9,6 +10,7 @@ export async function GET() {
   const db = getDb();
   const settings = getSettings();
   const state = getState();
+  const virtualStatus = getVirtualInverterStatus();
 
   const pageCount = db.prepare('PRAGMA page_count').pluck().get() as number;
   const pageSize = db.prepare('PRAGMA page_size').pluck().get() as number;
@@ -42,6 +44,9 @@ export async function GET() {
   return NextResponse.json({
     health: {
       mqtt_connected: state.mqtt_connected,
+      runtime_mode: state.runtime_mode,
+      virtual_mode_active: isVirtualModeEnabled(),
+      virtual_scenario_name: virtualStatus.scenarioName,
       rates_fresh: latestRate?.latest
         ? Date.now() - new Date(latestRate.latest).getTime() < 24 * 60 * 60 * 1000
         : false,

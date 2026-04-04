@@ -5,6 +5,13 @@ import { getStoredExportRates } from '@/lib/octopus/export-rates';
 import { getStoredPVForecast } from '@/lib/solcast/store';
 import { getState } from '@/lib/state';
 import { runFullSimulation } from '@/lib/simulator';
+import {
+  getVirtualExportRates,
+  getVirtualForecast,
+  getVirtualNow,
+  getVirtualRates,
+  isVirtualModeEnabled,
+} from '@/lib/virtual-inverter/runtime';
 import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function POST(req: Request) {
@@ -20,19 +27,25 @@ export async function POST(req: Request) {
     : settings;
 
   // Get rates for next 24 hours
-  const now = new Date();
+  const now = getVirtualNow();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(23, 59, 0, 0);
 
-  const rates = getStoredRates(now.toISOString(), tomorrow.toISOString());
+  const rates = isVirtualModeEnabled()
+    ? getVirtualRates(now.toISOString(), tomorrow.toISOString())
+    : getStoredRates(now.toISOString(), tomorrow.toISOString());
   if (rates.length === 0) {
     return errorResponse(ApiError.badRequest('No rates available. Fetch rates first.'));
   }
 
-  const exportRates = getStoredExportRates(now.toISOString(), tomorrow.toISOString());
+  const exportRates = isVirtualModeEnabled()
+    ? getVirtualExportRates(now.toISOString(), tomorrow.toISOString())
+    : getStoredExportRates(now.toISOString(), tomorrow.toISOString());
   const pvForecast = effectiveSettings.pv_forecast_enabled === 'true'
-    ? getStoredPVForecast(now.toISOString(), tomorrow.toISOString())
+    ? isVirtualModeEnabled()
+      ? getVirtualForecast(now.toISOString(), tomorrow.toISOString())
+      : getStoredPVForecast(now.toISOString(), tomorrow.toISOString())
     : [];
 
   const result = runFullSimulation({

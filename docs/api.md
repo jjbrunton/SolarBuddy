@@ -13,6 +13,9 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `GET` | `/api/system` | Return health, stats, runtime metadata, and database information, including whether Auto Schedule and the inverter watchdog are enabled. |
 | `POST` | `/api/system/time-sync` | Trigger an inverter clock synchronization and return the outcome. |
 | `POST` | `/api/system/tariff-check` | Trigger a tariff-change check against the configured Octopus account and return the result. |
+| `GET` | `/api/virtual-inverter` | Return the current virtual runtime status, selected scenario, playback state, and available controls. |
+| `POST` | `/api/virtual-inverter` | Enable, start, pause, reset, or disable the virtual inverter runtime. |
+| `GET` | `/api/virtual-inverter/scenarios` | Return the catalog of built-in virtual inverter scenarios. |
 
 ## Tariffs, Scheduling, and Overrides
 
@@ -65,6 +68,8 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 - `/api/events` and `/api/system/mqtt-log` are streaming endpoints. The rest return JSON responses.
 - `/api/health` is the deployment-oriented liveness/readiness probe. It should stay cheap and should not depend on MQTT or Octopus API freshness.
 - `/api/overrides` now doubles as an actuator trigger for the live slot: after override writes complete, the scheduler watchdog recalculates the desired inverter state and sends MQTT commands when the inverter is not already compliant.
+- When Virtual Inverter mode is enabled, `/api/status`, `/api/events`, `/api/rates`, `/api/forecast`, `/api/schedule`, `/api/simulate`, and `/api/system` become mode-aware and return scenario-backed data while keeping their response shapes compatible with live mode.
+- `POST /api/rates` and `POST /api/forecast` do not call external services in virtual mode; they return the active scenario fixtures instead.
 
 ## `/api/schedule` Response Notes
 
@@ -72,6 +77,13 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 - `plan_slots` is the canonical planner output for each future half-hour slot and includes the planned `action`, planner `reason`, `expected_soc_after`, and `expected_value`. Normal future planner output should now be `charge`, `discharge`, or `hold`, where `hold` means the runtime should actively prevent battery discharge in that slot.
 - `schedules` is the derived charge/discharge window view used for execution history and timer scheduling. Discharge windows are marked with `type = 'discharge'`.
 - `POST /api/schedule` returns the same `schedules` and `plan_slots` collections plus the schedule-cycle result metadata (`ok`, `status`, and any operator-facing message).
+- In virtual mode, the route does not persist sandbox plan rows into SQLite. It derives the same response shape from the in-memory scenario and current virtual SOC.
+
+## `/api/virtual-inverter` Notes
+
+- `GET /api/virtual-inverter` returns the current runtime status plus `mode`, `enabled`, `scenarioId`, `scenarioName`, `playbackState`, `speed`, `virtualTime`, `startSoc`, `loadMultiplier`, and `availableControls`.
+- `POST /api/virtual-inverter` accepts an `action` of `enable`, `start`, `pause`, `reset`, or `disable`. `start`, `enable`, and `reset` may also include `scenarioId`, `speed`, `startSoc`, and `loadMultiplier`.
+- `GET /api/virtual-inverter/scenarios` returns the preset metadata used by the Settings UI.
 
 ## Change Management
 

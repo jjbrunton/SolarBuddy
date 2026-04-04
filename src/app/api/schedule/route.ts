@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getRecentPlanData } from '@/lib/db/schedule-repository';
+import { getRecentPlanData as getStoredRecentPlanData } from '@/lib/db/schedule-repository';
 import { runScheduleCycle } from '@/lib/scheduler/cron';
+import { getVirtualNow, getVirtualScheduleData, isVirtualModeEnabled } from '@/lib/virtual-inverter/runtime';
 
+function getRecentPlanData() {
+  if (isVirtualModeEnabled()) {
+    return getVirtualScheduleData(getVirtualNow());
+  }
+
+  return getStoredRecentPlanData();
+}
 export async function GET() {
   const { schedules, plan_slots } = getRecentPlanData();
   return NextResponse.json(

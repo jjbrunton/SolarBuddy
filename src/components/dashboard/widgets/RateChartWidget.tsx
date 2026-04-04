@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ComposedChart, Bar, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -40,6 +40,11 @@ export default function RateChartWidget() {
   const router = useRouter();
   const colors = useChartColors();
   const { state } = useSSE();
+  const effectiveNow = useMemo(
+    () => (state.runtime_mode === 'virtual' && state.virtual_time ? new Date(state.virtual_time) : new Date()),
+    [state.runtime_mode, state.virtual_time],
+  );
+  const effectiveNowRef = useRef(effectiveNow);
   const [rates, setRates] = useState<RatePoint[]>([]);
   const [currentSlotIndex, setCurrentSlotIndex] = useState(0);
   const [settings, setSettings] = useState<{
@@ -51,6 +56,10 @@ export default function RateChartWidget() {
   const [pvForecasts, setPvForecasts] = useState<PVForecastSlot[]>([]);
   const [pvEnabled, setPvEnabled] = useState(false);
   const [pvConfidence, setPvConfidence] = useState<PVConfidence>('estimate');
+
+  useEffect(() => {
+    effectiveNowRef.current = effectiveNow;
+  }, [effectiveNow]);
 
   useEffect(() => {
     async function load() {
@@ -72,7 +81,7 @@ export default function RateChartWidget() {
         const rawRates = ratesJson.rates || [];
         const rawScheds = schedJson.schedules || [];
         const rawPlanSlots: PlannedSlotRow[] = schedJson.plan_slots || [];
-        const now = new Date();
+        const now = effectiveNowRef.current;
 
         const plannedActionMap = new Map<string, PlanAction>();
         for (const slot of rawPlanSlots) {

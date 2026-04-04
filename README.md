@@ -31,6 +31,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 - [Deployment](docs/deployment.md)
 - [Testing Strategy](docs/testing-strategy.md)
 - [AI-Assisted Workflow](docs/ai-workflow.md)
+- [Virtual Inverter](docs/virtual-inverter.md)
 - [Release Process](docs/release-process.md)
 - [Design System](docs/design-system.md)
 - [Contributing](CONTRIBUTING.md)
@@ -39,6 +40,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 ## Features
 
 - Real-time inverter monitoring via Solar Assistant (MQTT)
+- Optional Virtual Inverter mode with preset sandbox scenarios for safe end-to-end testing without touching live hardware
 - Browser-side fallback for live telemetry: the UI restores the last known inverter state after a reload and shows a global status banner while waiting for fresh MQTT data
 - Live MQTT traffic log on the System Logs page for broker troubleshooting
 - Dashboard current-rate card with live Agile slot, next-slot preview, and loaded rate benchmarks
@@ -102,6 +104,7 @@ All settings are managed through the web UI under **Settings**:
 2. **Octopus Energy** — API key and account number (region and tariff are auto-detected)
 3. **Charging** — Strategy, max slots, price thresholds, charge/discharge SOC targets, night window, work mode
 4. **General** — Background automation toggles such as Auto Schedule and the inverter watchdog
+5. **Virtual Inverter** — Optional sandbox mode with preset scenarios, playback controls, and live-command blocking
 
 ### Dashboard Highlights
 
@@ -155,6 +158,9 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 | GET | `/api/events-log` | Historical event log |
 | GET | `/api/system` | System health info |
 | GET | `/api/system/mqtt-log` | SSE stream of recent MQTT connection and topic activity |
+| GET | `/api/virtual-inverter` | Current virtual runtime status |
+| POST | `/api/virtual-inverter` | Enable, start, pause, reset, or disable the virtual runtime |
+| GET | `/api/virtual-inverter/scenarios` | List the available virtual inverter presets |
 
 ## Testing
 

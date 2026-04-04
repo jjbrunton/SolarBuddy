@@ -81,15 +81,15 @@ export function SSEProvider({ children }: { children: ReactNode }) {
         const incoming = { ...INITIAL_STATE, ...data } as InverterState;
         const merged = mergeIncomingTelemetryState(stateRef.current, incoming);
 
-        if (!merged.showingCachedTelemetry && hasTelemetryData(incoming)) {
+        if (incoming.runtime_mode !== 'virtual' && !merged.showingCachedTelemetry && hasTelemetryData(incoming)) {
           const savedAt = writeCachedTelemetry(incoming);
           setCachedTelemetryAt(savedAt);
         }
 
         commitState(merged.state);
-        setShowingCachedTelemetry(merged.showingCachedTelemetry);
+        setShowingCachedTelemetry(incoming.runtime_mode === 'virtual' ? false : merged.showingCachedTelemetry);
 
-        if (!merged.showingCachedTelemetry && !hasTelemetryData(incoming)) {
+        if ((incoming.runtime_mode === 'virtual' || !merged.showingCachedTelemetry) && !hasTelemetryData(incoming)) {
           setCachedTelemetryAt(null);
         }
       } catch {

@@ -1,5 +1,6 @@
-import { syncDateTime } from '../mqtt/commands';
+import { syncDateTime } from './commands';
 import { appendEvent } from '../events';
+import { getVirtualNow } from '../virtual-inverter/runtime';
 
 /**
  * Sync the inverter clock to the current system time via MQTT.
@@ -7,7 +8,7 @@ import { appendEvent } from '../events';
  */
 export async function syncInverterTime(): Promise<{ synced: boolean; message: string }> {
   try {
-    const now = new Date();
+    const now = getVirtualNow();
     const formatted = [
       now.getFullYear(),
       String(now.getMonth() + 1).padStart(2, '0'),

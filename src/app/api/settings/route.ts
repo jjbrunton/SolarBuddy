@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSettings, saveSettings, SETTING_KEY_SET, type AppSettings } from '@/lib/config';
+import { syncVirtualInverterSetting } from '@/lib/virtual-inverter/runtime';
 import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function GET() {
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
   if (validated.watchdog_enabled !== undefined) {
     const { syncInverterWatchdogSetting } = await import('@/lib/scheduler/watchdog');
     syncInverterWatchdogSetting();
+  }
+
+  if (
+    validated.virtual_mode_enabled !== undefined ||
+    validated.virtual_scenario_id !== undefined ||
+    validated.virtual_speed !== undefined
+  ) {
+    await syncVirtualInverterSetting();
   }
 
   // Trigger schedule replan if any schedule-relevant setting changed

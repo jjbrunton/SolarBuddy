@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { type PlanAction, PLAN_ACTIONS } from '@/lib/plan-actions';
 import { reconcileInverterState } from '@/lib/scheduler/watchdog';
+import { getVirtualNow } from '@/lib/virtual-inverter/runtime';
 import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function GET() {
   const db = getDb();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getVirtualNow().toISOString().split('T')[0];
   const overrides = db
     .prepare('SELECT slot_start, slot_end, action FROM manual_overrides WHERE date = ? ORDER BY slot_start')
     .all(today);
@@ -23,8 +24,8 @@ export async function POST(request: Request) {
     return errorResponse(ApiError.badRequest('slots must be an array'));
   }
 
-  const today = new Date().toISOString().split('T')[0];
-  const now = new Date().toISOString();
+  const today = getVirtualNow().toISOString().split('T')[0];
+  const now = getVirtualNow().toISOString();
 
   const transaction = db.transaction(() => {
     db.prepare('DELETE FROM manual_overrides WHERE date = ?').run(today);
@@ -58,8 +59,8 @@ export async function PATCH(request: Request) {
     return errorResponse(ApiError.badRequest('slot_start, slot_end, and valid action required'));
   }
 
-  const today = new Date().toISOString().split('T')[0];
-  const now = new Date().toISOString();
+  const today = getVirtualNow().toISOString().split('T')[0];
+  const now = getVirtualNow().toISOString();
 
   const transaction = db.transaction(() => {
     db.prepare('DELETE FROM manual_overrides WHERE date = ? AND slot_start = ?').run(today, slot_start);
@@ -77,7 +78,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   const db = getDb();
-  const today = new Date().toISOString().split('T')[0];
+  const today = getVirtualNow().toISOString().split('T')[0];
 
   // Support deleting a single slot via query params
   const url = new URL(request.url);

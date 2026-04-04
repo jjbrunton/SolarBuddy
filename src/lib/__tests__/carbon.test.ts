@@ -98,11 +98,11 @@ describe('carbon helpers', () => {
     prepareMock.mockImplementationOnce((query: string) => ({
       run: runMock,
       get: getMock,
-      all: (...params: string[]) => {
+      all: vi.fn((...params: string[]) => {
         capturedQuery = query;
         capturedParams = params;
         return [{ period_from: 'a' }];
-      },
+      }),
     }));
 
     expect(getStoredCarbonIntensity('from', 'to')).toEqual([{ period_from: 'a' }]);

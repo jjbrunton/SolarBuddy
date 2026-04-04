@@ -2,7 +2,7 @@ import { getSettings } from '../config';
 import { notify } from '../notifications/dispatcher';
 import { getState, onStateChange } from '../state';
 import type { InverterState } from '../types';
-import { startGridCharging, stopGridCharging, startGridDischarge, stopGridDischarge } from '../mqtt/commands';
+import { startGridCharging, stopGridCharging, startGridDischarge, stopGridDischarge } from '../inverter/commands';
 import { updateScheduleStatus } from '../db/schedule-repository';
 import { ChargeWindow, getChargingStrategy } from './engine';
 

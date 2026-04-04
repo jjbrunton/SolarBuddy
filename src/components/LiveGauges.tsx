@@ -10,6 +10,8 @@ import { StatusIndicator } from '@/components/ui/StatusIndicator';
 interface Props {
   state: InverterState;
   connected: boolean;
+  targetSoc?: number | null;
+  capacityWh?: number | null;
 }
 
 function GaugeCard({
@@ -45,7 +47,28 @@ function GaugeCard({
   );
 }
 
-function BatteryGauge({ soc, voltage }: { soc: number | null; voltage: number | null }) {
+function formatEta(hours: number): string {
+  if (hours < 1 / 60) return '<1m';
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function BatteryGauge({
+  soc,
+  voltage,
+  batteryPower,
+  targetSoc,
+  capacityWh,
+}: {
+  soc: number | null;
+  voltage: number | null;
+  batteryPower: number | null;
+  targetSoc: number | null | undefined;
+  capacityWh: number | null | undefined;
+}) {
   const pct = soc ?? 0;
   const color =
     pct >= 80 ? 'text-sb-success' : pct >= 40 ? 'text-sb-accent' : pct >= 20 ? 'text-sb-warning' : 'text-sb-danger';
@@ -76,6 +99,16 @@ function BatteryGauge({ soc, voltage }: { soc: number | null; voltage: number | 
           />
         </div>
       )}
+      {soc !== null &&
+        targetSoc != null &&
+        capacityWh != null &&
+        batteryPower != null &&
+        batteryPower > 0 &&
+        soc < targetSoc && (
+          <p className="mt-1.5 text-xs text-sb-text-muted">
+            ~{formatEta(((targetSoc - soc) / 100 * capacityWh) / batteryPower)} to {targetSoc}%
+          </p>
+        )}
     </div>
   );
 }
@@ -91,7 +124,7 @@ function TempBadge({ label, value, warnAt = 45 }: { label: string; value: number
   );
 }
 
-export default function LiveGauges({ state, connected }: Props) {
+export default function LiveGauges({ state, connected, targetSoc, capacityWh }: Props) {
   return (
     <div>
       {/* Connection + status bar */}
@@ -112,7 +145,13 @@ export default function LiveGauges({ state, connected }: Props) {
 
       {/* Primary gauge grid */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <BatteryGauge soc={state.battery_soc} voltage={state.battery_voltage} />
+        <BatteryGauge
+          soc={state.battery_soc}
+          voltage={state.battery_voltage}
+          batteryPower={state.battery_power}
+          targetSoc={targetSoc}
+          capacityWh={capacityWh}
+        />
         <GaugeCard label="Solar" value={state.pv_power} unit="W" Icon={Sun} accent="text-yellow-400" />
         <GaugeCard label="Grid" value={state.grid_power} unit="W" Icon={Zap} accent="text-sb-accent"
           subtitle={state.grid_voltage != null ? `${state.grid_voltage}V` : undefined} />
