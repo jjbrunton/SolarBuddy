@@ -5,10 +5,12 @@ const {
   persistSchedulePlanMock,
   scheduleExecutionMock,
   appendEventMock,
+  notifyMock,
 } = vi.hoisted(() => ({
   persistSchedulePlanMock: vi.fn(),
   scheduleExecutionMock: vi.fn(),
   appendEventMock: vi.fn(),
+  notifyMock: vi.fn(),
 }));
 
 const windows: ChargeWindow[] = [
@@ -102,7 +104,11 @@ vi.mock('../../db/schedule-repository', () => ({
   persistSchedulePlan: persistSchedulePlanMock,
 }));
 
-import { runScheduleCycle } from '../cron';
+vi.mock('../../notifications/dispatcher', () => ({
+  notify: notifyMock,
+}));
+
+import { runScheduleCycle, _resetCronStateForTests } from '../cron';
 
 describe('runScheduleCycle', () => {
   beforeEach(() => {
@@ -111,6 +117,8 @@ describe('runScheduleCycle', () => {
     persistSchedulePlanMock.mockClear();
     scheduleExecutionMock.mockClear();
     appendEventMock.mockClear();
+    notifyMock.mockClear();
+    _resetCronStateForTests();
   });
 
   it('persists the schedule plan and executes windows', async () => {
@@ -127,5 +135,14 @@ describe('runScheduleCycle', () => {
       level: 'success',
       category: 'scheduler',
     }));
+  });
+
+  it('does not send duplicate notifications for the same plan', async () => {
+    await runScheduleCycle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+
+    notifyMock.mockClear();
+    await runScheduleCycle();
+    expect(notifyMock).not.toHaveBeenCalled();
   });
 });

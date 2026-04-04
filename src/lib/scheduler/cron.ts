@@ -56,7 +56,20 @@ function formatWindowSummary(windows: ChargeWindow[]): string {
   return '\n' + lines.join('\n');
 }
 
-let lastPlanFingerprint = '';
+interface CronPersistentState {
+  lastPlanFingerprint: string;
+}
+
+const g = globalThis as typeof globalThis & {
+  __solarbuddy_cron?: CronPersistentState;
+};
+
+function getCronState(): CronPersistentState {
+  if (!g.__solarbuddy_cron) {
+    g.__solarbuddy_cron = { lastPlanFingerprint: '' };
+  }
+  return g.__solarbuddy_cron;
+}
 
 function buildPlanFingerprint(windows: ChargeWindow[]): string {
   return windows
@@ -127,8 +140,9 @@ function buildAndPersistPlan(input: PlanInput, label: string): ScheduleCycleResu
   logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
 
   const fingerprint = buildPlanFingerprint(windows);
-  if (fingerprint !== lastPlanFingerprint) {
-    lastPlanFingerprint = fingerprint;
+  const cronState = getCronState();
+  if (fingerprint !== cronState.lastPlanFingerprint) {
+    cronState.lastPlanFingerprint = fingerprint;
     notify('schedule_updated', 'Schedule Updated', message + formatWindowSummary(windows));
   }
 
@@ -371,4 +385,9 @@ export function stopCronJobs() {
     replanJob.stop();
     replanJob = null;
   }
+}
+
+/** Reset persistent cron state — for tests only. */
+export function _resetCronStateForTests() {
+  g.__solarbuddy_cron = undefined;
 }
