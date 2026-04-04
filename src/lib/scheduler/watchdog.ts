@@ -63,6 +63,7 @@ interface WatchdogState {
   lastCommandSignature: string | null;
   lastCommandAt: number;
   lastBatteryExhaustedAt: number;
+  lastNotifiedAction: RuntimeAction | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -80,6 +81,7 @@ function getWatchdogState(): WatchdogState {
       lastCommandSignature: null,
       lastCommandAt: 0,
       lastBatteryExhaustedAt: 0,
+      lastNotifiedAction: null,
     };
   }
 
@@ -309,6 +311,13 @@ async function ensureStopDischargeAtFloor(state: InverterState): Promise<void> {
   await setLoadFirstStopDischarge(value);
 }
 
+function notifyIfActionChanged(action: RuntimeAction, title: string, body: string) {
+  const runtime = getWatchdogState();
+  if (runtime.lastNotifiedAction === action) return;
+  runtime.lastNotifiedAction = action;
+  notify('state_change', title, body);
+}
+
 async function applyIntent(intent: RuntimeIntent, state: InverterState) {
   const settings = getSettings();
   const chargeRate = parseInt(settings.charge_rate, 10) || 100;
@@ -335,7 +344,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         category: 'watchdog',
         message: intent.detail,
       });
-      notify('state_change', 'Charging Started', intent.detail);
+      notifyIfActionChanged('charge', 'Charging Started', intent.detail);
       return;
     }
     case 'discharge': {
@@ -357,7 +366,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         category: 'watchdog',
         message: intent.detail,
       });
-      notify('state_change', 'Discharge Started', intent.detail);
+      notifyIfActionChanged('discharge', 'Discharge Started', intent.detail);
       return;
     }
     case 'idle': {
@@ -370,7 +379,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
           category: 'watchdog',
           message: intent.detail,
         });
-        notify('state_change', 'Returned to Idle', intent.detail);
+        notifyIfActionChanged('idle', 'Returned to Idle', intent.detail);
         return;
       }
       if (isForcedChargeActive(state)) {
@@ -382,7 +391,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
           category: 'watchdog',
           message: intent.detail,
         });
-        notify('state_change', 'Returned to Idle', intent.detail);
+        notifyIfActionChanged('idle', 'Returned to Idle', intent.detail);
         return;
       }
       if (state.work_mode !== null && state.work_mode !== defaultMode) {
@@ -398,7 +407,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
           category: 'watchdog',
           message: msg,
         });
-        notify('state_change', 'Work Mode Restored', msg);
+        notifyIfActionChanged('idle', 'Work Mode Restored', msg);
         return;
       }
       await ensureStopDischargeAtFloor(state);
@@ -420,7 +429,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
         category: 'watchdog',
         message: intent.detail,
       });
-      notify('state_change', 'Battery Hold Active', intent.detail);
+      notifyIfActionChanged('hold', 'Battery Hold Active', intent.detail);
       return;
     }
   }
