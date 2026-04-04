@@ -8,7 +8,7 @@ import { storePVForecast, getStoredPVForecast, getLatestForecastAge } from '../s
 import { syncInverterTime } from '../inverter/time-sync';
 import { checkForTariffChange } from '../octopus/tariff-monitor';
 import { getState } from '../state';
-import { buildSchedulePlan, getChargingStrategy } from './engine';
+import { buildSchedulePlan, getChargingStrategy, type ChargeWindow } from './engine';
 import { scheduleExecution } from './executor';
 import { persistSchedulePlan } from '../db/schedule-repository';
 import { appendEvent } from '../events';
@@ -21,6 +21,48 @@ import {
   isVirtualModeEnabled,
 } from '../virtual-inverter/runtime';
 import { notify } from '../notifications/dispatcher';
+
+const SCHEDULER_TIME_ZONE = 'Europe/London';
+const windowTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: SCHEDULER_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function formatWindowSummary(windows: ChargeWindow[]): string {
+  if (windows.length === 0) return '';
+
+  const charge = windows.filter((w) => w.type !== 'discharge');
+  const discharge = windows.filter((w) => w.type === 'discharge');
+
+  const lines: string[] = [];
+
+  const formatWindow = (w: ChargeWindow) => {
+    const start = windowTimeFormatter.format(new Date(w.slot_start));
+    const end = windowTimeFormatter.format(new Date(w.slot_end));
+    return `  ${start}–${end} (${w.avg_price.toFixed(1)}p/kWh)`;
+  };
+
+  if (charge.length > 0) {
+    lines.push(`Charge:`);
+    charge.forEach((w) => lines.push(formatWindow(w)));
+  }
+  if (discharge.length > 0) {
+    lines.push(`Discharge:`);
+    discharge.forEach((w) => lines.push(formatWindow(w)));
+  }
+
+  return '\n' + lines.join('\n');
+}
+
+let lastPlanFingerprint = '';
+
+function buildPlanFingerprint(windows: ChargeWindow[]): string {
+  return windows
+    .map((w) => `${w.type ?? 'charge'}:${w.slot_start}:${w.slot_end}`)
+    .join('|');
+}
 
 let afternoonJob: cron.ScheduledTask | null = null;
 let eveningJob: cron.ScheduledTask | null = null;
@@ -83,7 +125,12 @@ function buildAndPersistPlan(input: PlanInput, label: string): ScheduleCycleResu
     ? `${strategyLabel}${label === 'Replan' ? ' replan' : ''}: no eligible battery windows.`
     : `${strategyLabel}${label === 'Replan' ? ' replan' : ''}: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
   logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
-  notify('schedule_updated', 'Schedule Updated', message);
+
+  const fingerprint = buildPlanFingerprint(windows);
+  if (fingerprint !== lastPlanFingerprint) {
+    lastPlanFingerprint = fingerprint;
+    notify('schedule_updated', 'Schedule Updated', message + formatWindowSummary(windows));
+  }
 
   return {
     ok: true,
