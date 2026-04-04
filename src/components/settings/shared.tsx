@@ -59,6 +59,16 @@ export interface Settings {
   time_sync_enabled: string;
   // Tariff monitor
   tariff_monitor_enabled: string;
+  // Notifications
+  notifications_state_change: string;
+  notifications_battery_exhausted: string;
+  notifications_battery_charged: string;
+  notifications_schedule_updated: string;
+  notifications_discord_enabled: string;
+  notifications_discord_webhook_url: string;
+  notifications_telegram_enabled: string;
+  notifications_telegram_bot_token: string;
+  notifications_telegram_chat_id: string;
 }
 
 const tabs = [

@@ -12,6 +12,7 @@ import { buildSchedulePlan, getChargingStrategy } from './engine';
 import { scheduleExecution } from './executor';
 import { persistSchedulePlan } from '../db/schedule-repository';
 import { appendEvent } from '../events';
+import { notify } from '../notifications/dispatcher';
 import type { AgileRate } from '../octopus/rates';
 
 let afternoonJob: cron.ScheduledTask | null = null;
@@ -75,6 +76,7 @@ function buildAndPersistPlan(input: PlanInput, label: string): ScheduleCycleResu
     ? `${strategyLabel}${label === 'Replan' ? ' replan' : ''}: no eligible battery windows.`
     : `${strategyLabel}${label === 'Replan' ? ' replan' : ''}: scheduled ${windows.length} battery window${windows.length === 1 ? '' : 's'}.`;
   logScheduleEvent(windows.length === 0 ? 'warning' : 'success', message);
+  notify('schedule_updated', 'Schedule Updated', message);
 
   return {
     ok: true,
