@@ -487,7 +487,7 @@ export default function ScheduleView() {
               {state.battery_soc !== null ? (
                 <Line
                   yAxisId="soc"
-                  type="monotone"
+                  type="linear"
                   dataKey="forecastSOC"
                   stroke={colors.muted}
                   strokeWidth={2}
@@ -498,7 +498,7 @@ export default function ScheduleView() {
               ) : null}
               <Line
                 yAxisId="soc"
-                type="monotone"
+                type="linear"
                 dataKey="actualSOC"
                 stroke={colors.accent}
                 strokeWidth={2}

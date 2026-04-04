@@ -489,7 +489,7 @@ export default function RatesView() {
                 {state.battery_soc !== null && (
                   <Line
                     yAxisId="soc"
-                    type="monotone"
+                    type="linear"
                     dataKey="forecastSOC"
                     stroke={colors.muted}
                     strokeWidth={2}

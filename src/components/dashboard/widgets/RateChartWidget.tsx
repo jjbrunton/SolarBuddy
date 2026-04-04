@@ -218,7 +218,7 @@ export default function RateChartWidget() {
             ))}
           </Bar>
           {state.battery_soc !== null && (
-            <Line yAxisId="soc" type="monotone" dataKey="forecastSOC" stroke={colors.muted} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls />
+            <Line yAxisId="soc" type="linear" dataKey="forecastSOC" stroke={colors.muted} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls />
           )}
         </ComposedChart>
       </ResponsiveContainer>
