@@ -7,6 +7,7 @@ describe('dashboard widget registry', () => {
 
     expect(ids).toEqual([
       'live-gauges',
+      'current-mode',
       'energy-flow',
       'current-rate',
       'rate-chart',

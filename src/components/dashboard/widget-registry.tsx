@@ -1,4 +1,5 @@
 import LiveGaugesWidget from '@/components/dashboard/widgets/LiveGaugesWidget';
+import CurrentModeWidget from '@/components/dashboard/widgets/CurrentModeWidget';
 import EnergyFlowWidget from '@/components/dashboard/widgets/EnergyFlowWidget';
 import CurrentRateWidget from '@/components/dashboard/widgets/CurrentRateWidget';
 import RateChartWidget from '@/components/dashboard/widgets/RateChartWidget';
@@ -13,6 +14,7 @@ export interface WidgetDefinition {
 
 export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   { id: 'live-gauges', label: 'Live Gauges', component: LiveGaugesWidget },
+  { id: 'current-mode', label: 'Current Mode', component: CurrentModeWidget },
   { id: 'energy-flow', label: 'Energy Flow', component: EnergyFlowWidget },
   { id: 'current-rate', label: 'Current Rate', component: CurrentRateWidget },
   { id: 'rate-chart', label: 'Rate Chart', component: RateChartWidget },
