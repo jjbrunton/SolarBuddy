@@ -533,7 +533,13 @@ export default function ScheduleView() {
                 tickFormatter={(value: number) => `${value}%`}
                 width={45}
               />
-              <YAxis yAxisId="pv" orientation="right" domain={[0, 'dataMax']} hide />
+              <YAxis
+                yAxisId="pv"
+                orientation="right"
+                domain={[0, 'dataMax']}
+                hide
+                width={0}
+              />
               <Tooltip content={<SlotTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
               <ReferenceLine yAxisId="price" y={0} stroke={colors.border} />
               {pvEnabled && visibleSlots.some((s) => s.pvGenerationKw != null) ? (
