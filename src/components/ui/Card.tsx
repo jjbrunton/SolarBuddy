@@ -3,13 +3,15 @@ import type { ReactNode } from 'react';
 type CardTone = 'default' | 'subtle' | 'highlight';
 type CardPadding = 'sm' | 'md' | 'lg';
 
+/*
+ * Editorial surfaces — depth comes from hairline borders and a small
+ * amount of background tint, never from drop shadows. The highlight
+ * tone gets a 1px ember focus ring to mark the current selection.
+ */
 const toneClasses: Record<CardTone, string> = {
-  default:
-    'border-sb-border bg-sb-card shadow-[var(--shadow-sb-sm)]',
-  subtle:
-    'border-sb-border/70 bg-sb-surface-muted shadow-none',
-  highlight:
-    'border-sb-border-strong bg-sb-card shadow-[var(--shadow-sb-glow)]',
+  default: 'border-sb-border bg-sb-card',
+  subtle: 'border-sb-border/70 bg-sb-surface-muted',
+  highlight: 'border-sb-ember/50 bg-sb-card shadow-[0_0_0_1px_var(--color-sb-ember)]',
 };
 
 const paddingClasses: Record<CardPadding, string> = {
@@ -35,7 +37,7 @@ export function Card({
 }: CardProps) {
   return (
     <div
-      className={`rounded-[1.25rem] border ${toneClasses[tone]} ${paddingClasses[padding]} ${className}`}
+      className={`rounded-[0.75rem] border ${toneClasses[tone]} ${paddingClasses[padding]} ${className}`}
       onClick={onClick}
     >
       {children}
@@ -43,6 +45,10 @@ export function Card({
   );
 }
 
+/*
+ * CardHeader — the title uses Fraunces at a modest size for editorial
+ * consistency with PageHeader without competing with it.
+ */
 export function CardHeader({
   title,
   subtitle,
@@ -53,9 +59,9 @@ export function CardHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-sb-rule pb-4">
       <div className="space-y-1">
-        <h2 className="text-base font-semibold tracking-[-0.01em] text-sb-text">{title}</h2>
+        <h2 className="sb-display text-xl text-sb-text">{title}</h2>
         {subtitle ? <p className="text-sm text-sb-text-muted">{subtitle}</p> : null}
       </div>
       {children}

@@ -29,9 +29,12 @@ interface PlannedSlotRow {
 function RateTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
-      <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
-      <p className="text-sm font-semibold text-sb-text">{payload[0].value}p/kWh</p>
+    <div className="rounded-[0.5rem] border border-sb-rule-strong bg-sb-card/95 px-4 py-3 backdrop-blur-sm">
+      <p className="sb-eyebrow">{label ? formatSlotTooltipLabel(label) : ''}</p>
+      <p className="sb-display mt-1 text-xl leading-none text-sb-ember">
+        {payload[0].value}
+        <span className="ml-1 text-[0.6rem] uppercase tracking-[0.18em] text-sb-text-muted">p/kWh</span>
+      </p>
     </div>
   );
 }
@@ -173,20 +176,17 @@ export default function RateChartWidget() {
       onClick={() => router.push('/rates')}
     >
       <CardHeader title="Today's Rates">
-        <span className="text-xs text-sb-text-muted">View all &rarr;</span>
+        <span className="sb-eyebrow">View all &rarr;</span>
       </CardHeader>
-      <div className="flex gap-4 text-xs text-sb-text-muted mb-2">
+      <div className="mb-3 flex flex-wrap gap-4 text-[0.72rem] text-sb-text-muted">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded bg-sb-accent" /> Rate
+          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: ACTION_COLORS.charge }} /> Charge
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS.charge }} /> Charge
+          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: ACTION_COLORS.discharge }} /> Discharge
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS.hold }} /> Hold
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS.discharge }} /> Discharge
+          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: ACTION_COLORS.hold }} /> Hold
         </span>
       </div>
       <ResponsiveContainer width="100%" height={200}>
@@ -218,8 +218,8 @@ export default function RateChartWidget() {
             {ratesWithSOC.map((entry, i) => (
               <Cell
                 key={i}
-                fill={entry.price < 0 && entry.plannedAction === 'hold' ? colors.warning : ACTION_COLORS[entry.plannedAction]}
-                stroke={entry.isCurrent ? '#facc15' : 'none'}
+                fill={entry.price < 0 && entry.plannedAction === 'hold' ? colors.ember : ACTION_COLORS[entry.plannedAction]}
+                stroke={entry.isCurrent ? colors.ember : 'none'}
                 strokeWidth={entry.isCurrent ? 2 : 0}
               />
             ))}

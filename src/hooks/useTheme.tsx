@@ -47,43 +47,71 @@ export function useTheme() {
   return useContext(ThemeContext);
 }
 
-/** Returns resolved hex values from CSS variables for use in Recharts */
+/**
+ * Returns resolved hex values from CSS variables for Recharts.
+ *
+ * The palette is organised around the Agile Almanac ember/frost duality:
+ * - ember = solar, charge, stored energy
+ * - frost = grid, import, cold side
+ * - ink / muted / subtle = editorial text scale
+ * - rule / border = hairline dividers
+ *
+ * Legacy keys (accent, success, warning, danger, solar, grid, load) are
+ * preserved so existing chart code keeps working.
+ */
 export function useChartColors() {
   const { theme } = useTheme();
 
   return useMemo(() => {
     if (typeof window === 'undefined') {
-      // SSR fallback — return dark theme defaults
+      // SSR fallback — dark-theme almanac defaults
       return {
-        text: '#f2f7fb',
-        muted: '#9db1bf',
-        accent: '#44b0c9',
-        success: '#54c27a',
-        warning: '#f2b056',
-        danger: '#f07a71',
-        border: 'rgba(114, 145, 165, 0.16)',
-        card: 'rgba(13, 25, 32, 0.82)',
-        cardBorder: 'rgba(157, 189, 205, 0.28)',
-        solar: '#ffbe55',
-        grid: '#78c1ff',
-        load: '#b89dff',
+        text: '#efe7d4',
+        ink: '#efe7d4',
+        muted: '#b6a98c',
+        subtle: '#7f745d',
+        accent: '#ffb547',
+        ember: '#ffb547',
+        emberDeep: '#e07a2a',
+        frost: '#7fb3ff',
+        frostDeep: '#3e6bd6',
+        success: '#6bb87a',
+        warning: '#e8a046',
+        danger: '#d95545',
+        info: '#7fb3ff',
+        border: 'rgba(239, 231, 212, 0.1)',
+        rule: 'rgba(239, 231, 212, 0.14)',
+        card: 'rgba(24, 18, 12, 0.78)',
+        cardBorder: 'rgba(239, 231, 212, 0.22)',
+        solar: '#ffb547',
+        grid: '#7fb3ff',
+        load: '#d8a8ff',
       };
     }
     const style = getComputedStyle(document.documentElement);
-    const get = (name: string) => style.getPropertyValue(name).trim();
+    const get = (name: string, fallback: string) =>
+      style.getPropertyValue(name).trim() || fallback;
     return {
-      text: get('--color-sb-text') || '#e1e2e3',
-      muted: get('--color-sb-text-muted') || '#999999',
-      accent: get('--color-sb-accent') || '#5d9cec',
-      success: get('--color-sb-success') || '#27c24c',
-      warning: get('--color-sb-warning') || '#ff902b',
-      danger: get('--color-sb-danger') || '#f05050',
-      border: get('--color-sb-border') || '#333333',
-      card: get('--color-sb-card') || '#2a2a2a',
-      cardBorder: get('--color-sb-border') || '#333333',
-      solar: get('--color-sb-solar') || '#ffbe55',
-      grid: get('--color-sb-grid') || '#78c1ff',
-      load: get('--color-sb-load') || '#b89dff',
+      text: get('--color-sb-text', '#efe7d4'),
+      ink: get('--color-sb-ink', '#efe7d4'),
+      muted: get('--color-sb-text-muted', '#b6a98c'),
+      subtle: get('--color-sb-text-subtle', '#7f745d'),
+      accent: get('--color-sb-accent', '#ffb547'),
+      ember: get('--color-sb-ember', '#ffb547'),
+      emberDeep: get('--color-sb-ember-deep', '#e07a2a'),
+      frost: get('--color-sb-frost', '#7fb3ff'),
+      frostDeep: get('--color-sb-frost-deep', '#3e6bd6'),
+      success: get('--color-sb-success', '#6bb87a'),
+      warning: get('--color-sb-warning', '#e8a046'),
+      danger: get('--color-sb-danger', '#d95545'),
+      info: get('--color-sb-info', '#7fb3ff'),
+      border: get('--color-sb-border', 'rgba(239,231,212,0.1)'),
+      rule: get('--color-sb-rule', 'rgba(239,231,212,0.14)'),
+      card: get('--color-sb-card', 'rgba(24,18,12,0.78)'),
+      cardBorder: get('--color-sb-border-strong', 'rgba(239,231,212,0.22)'),
+      solar: get('--color-sb-solar', '#ffb547'),
+      grid: get('--color-sb-grid', '#7fb3ff'),
+      load: get('--color-sb-load', '#d8a8ff'),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);

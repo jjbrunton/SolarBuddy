@@ -25,10 +25,10 @@ export function WidgetWrapper({
   children,
 }: WidgetWrapperProps) {
   return (
-    <div className={`relative ${editing ? 'rounded-[1.25rem] ring-1 ring-dashed ring-sb-border-strong' : ''}`}>
+    <div className={`relative ${editing ? 'rounded-[0.75rem] ring-1 ring-dashed ring-sb-ember/40' : ''}`}>
       {editing && (
-        <div className="flex items-center justify-between rounded-t-[1.25rem] border-b border-sb-border bg-sb-card/90 px-4 py-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">{title}</span>
+        <div className="flex items-center justify-between rounded-t-[0.75rem] border-b border-sb-rule bg-sb-card/90 px-4 py-2">
+          <span className="sb-eyebrow">{title}</span>
           <div className="flex items-center gap-1">
             <button
               onClick={onMoveUp}

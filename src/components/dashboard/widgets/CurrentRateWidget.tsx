@@ -27,27 +27,27 @@ function getStatusStyles(status: CurrentRateStatus) {
   switch (status) {
     case 'negative':
       return {
-        badge: 'border-sb-success/30 bg-sb-success/15 text-sb-success',
+        badge: 'border-sb-success/40 bg-sb-success/12 text-sb-success',
         accent: 'text-sb-success',
       };
     case 'best':
       return {
-        badge: 'border-sb-accent/30 bg-sb-accent/15 text-sb-accent',
-        accent: 'text-sb-accent',
+        badge: 'border-sb-ember/40 bg-sb-ember/12 text-sb-ember',
+        accent: 'text-sb-ember',
       };
     case 'cheap':
       return {
-        badge: 'border-sb-info/30 bg-sb-info/15 text-sb-info',
-        accent: 'text-sb-info',
+        badge: 'border-sb-frost/40 bg-sb-frost/12 text-sb-frost',
+        accent: 'text-sb-frost',
       };
     case 'expensive':
       return {
-        badge: 'border-sb-warning/30 bg-sb-warning/15 text-sb-warning',
+        badge: 'border-sb-warning/40 bg-sb-warning/12 text-sb-warning',
         accent: 'text-sb-warning',
       };
     default:
       return {
-        badge: 'border-sb-border bg-sb-bg text-sb-text-muted',
+        badge: 'border-sb-rule bg-sb-surface-muted text-sb-text-muted',
         accent: 'text-sb-text',
       };
   }
@@ -147,14 +147,16 @@ export default function CurrentRateWidget() {
         <span className="text-xs text-sb-text-muted">{formatTimeRange(summary.current.valid_from, summary.current.valid_to)}</span>
       </CardHeader>
 
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className={`text-4xl font-bold ${styles.accent}`}>
-              {formatPrice(summary.current.price_inc_vat)}
-              <span className="ml-1 text-base font-medium text-sb-text-muted">p/kWh</span>
-            </p>
-            <p className="mt-2 text-sm text-sb-text-muted">
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div key={summary.current.valid_from} className="animate-value-pop">
+            <div className={`sb-display flex items-baseline gap-2 text-[4rem] leading-none sm:text-[5rem] ${styles.accent}`}>
+              <span>{formatPrice(summary.current.price_inc_vat)}</span>
+              <span className="text-[0.22em] font-medium tracking-[0.18em] text-sb-text-muted uppercase">
+                p/kWh
+              </span>
+            </div>
+            <p className="mt-3 max-w-md text-sm text-sb-text-muted">
               {getStatusCopy(summary.status, summary.current.price_inc_vat, summary.averagePrice)}
             </p>
           </div>
@@ -163,35 +165,37 @@ export default function CurrentRateWidget() {
             <Badge kind={currentAction ? ACTION_BADGE_KIND[currentAction] : 'default'}>
               {currentAction ? ACTION_LABELS[currentAction] : 'No Plan'}
             </Badge>
-            <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${styles.badge}`}>
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-[0.2rem] text-[0.66rem] font-semibold uppercase tracking-[0.18em] ${styles.badge}`}
+            >
               {getStatusLabel(summary.status)}
             </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-md bg-sb-bg px-3 py-2">
-            <p className="text-xs text-sb-text-muted">Next Slot</p>
-            <p className="mt-1 text-sm font-semibold text-sb-text">
-              {summary.next ? `${formatPrice(summary.next.price_inc_vat)}p` : 'No later slot'}
+        <div className="grid grid-cols-1 gap-0 border-t border-sb-rule sm:grid-cols-3 sm:gap-0">
+          <div className="border-b border-sb-rule px-4 py-4 sm:border-b-0 sm:border-r sm:border-sb-rule">
+            <p className="sb-eyebrow">Next Slot</p>
+            <p className="sb-display mt-2 text-2xl text-sb-text">
+              {summary.next ? `${formatPrice(summary.next.price_inc_vat)}p` : '—'}
             </p>
-            <p className="text-xs text-sb-text-muted">
+            <p className="mt-1 text-[0.7rem] text-sb-text-muted">
               {summary.next
                 ? `${formatTimeRange(summary.next.valid_from, summary.next.valid_to)}${nextDirection ? ` (${nextDirection})` : ''}`
                 : 'Latest loaded rate'}
             </p>
           </div>
 
-          <div className="rounded-md bg-sb-bg px-3 py-2">
-            <p className="text-xs text-sb-text-muted">Loaded Low</p>
-            <p className="mt-1 text-sm font-semibold text-sb-text">{formatPrice(summary.minPrice)}p</p>
-            <p className="text-xs text-sb-text-muted">Best available slot</p>
+          <div className="border-b border-sb-rule px-4 py-4 sm:border-b-0 sm:border-r sm:border-sb-rule">
+            <p className="sb-eyebrow">Loaded Low</p>
+            <p className="sb-display mt-2 text-2xl text-sb-ember">{formatPrice(summary.minPrice)}p</p>
+            <p className="mt-1 text-[0.7rem] text-sb-text-muted">Best available slot</p>
           </div>
 
-          <div className="rounded-md bg-sb-bg px-3 py-2">
-            <p className="text-xs text-sb-text-muted">Loaded Average</p>
-            <p className="mt-1 text-sm font-semibold text-sb-text">{formatPrice(summary.averagePrice)}p</p>
-            <p className="text-xs text-sb-text-muted">Across fetched rates</p>
+          <div className="px-4 py-4">
+            <p className="sb-eyebrow">Loaded Average</p>
+            <p className="sb-display mt-2 text-2xl text-sb-text">{formatPrice(summary.averagePrice)}p</p>
+            <p className="mt-1 text-[0.7rem] text-sb-text-muted">Across fetched rates</p>
           </div>
         </div>
       </div>

@@ -5,7 +5,7 @@ import LiveGauges from '@/components/LiveGauges';
 import { useSSE } from '@/hooks/useSSE';
 
 export default function LiveGaugesWidget() {
-  const { state, connected } = useSSE();
+  const { state } = useSSE();
   const [settings, setSettings] = useState<{
     min_soc_target: string;
     battery_capacity_kwh: string;
@@ -32,7 +32,6 @@ export default function LiveGaugesWidget() {
   return (
     <LiveGauges
       state={state}
-      connected={connected}
       targetSoc={targetSoc}
       capacityWh={capacityWh}
     />

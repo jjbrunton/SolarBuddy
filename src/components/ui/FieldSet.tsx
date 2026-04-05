@@ -6,10 +6,8 @@ interface FieldSetProps {
 
 export function FieldSet({ legend, children, className = '' }: FieldSetProps) {
   return (
-    <fieldset className={`rounded-[1.25rem] border border-sb-border bg-sb-surface-muted/60 p-5 ${className}`}>
-      <legend className="px-2 text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">
-        {legend}
-      </legend>
+    <fieldset className={`rounded-[0.75rem] border border-sb-rule bg-sb-surface-muted/60 p-5 ${className}`}>
+      <legend className="sb-eyebrow px-2">{legend}</legend>
       {children}
     </fieldset>
   );

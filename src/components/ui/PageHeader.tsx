@@ -7,6 +7,11 @@ interface PageHeaderProps {
   actions?: ReactNode;
 }
 
+/*
+ * Editorial page header — eyebrow, Fraunces display title, hairline rule.
+ * Replaces the previous rounded-card header so route pages read like an
+ * almanac front page rather than a dashboard full of nested boxes.
+ */
 export function PageHeader({
   title,
   description,
@@ -14,17 +19,24 @@ export function PageHeader({
   actions,
 }: PageHeaderProps) {
   return (
-    <div className="flex flex-col gap-4 rounded-[1.75rem] border border-sb-border bg-sb-card/70 px-5 py-5 shadow-[var(--shadow-sb-sm)] sm:px-6 lg:flex-row lg:items-end lg:justify-between">
-      <div className="max-w-3xl">
-        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-sb-text-subtle">
-          {eyebrow}
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-sb-text sm:text-[2rem]">
-          {title}
-        </h1>
-        {description ? <p className="mt-2 text-sm leading-6 text-sb-text-muted sm:text-[0.95rem]">{description}</p> : null}
+    <header className="sb-contour relative flex flex-col gap-5 pt-2 pb-6">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-3xl">
+          <p className="sb-eyebrow">{eyebrow}</p>
+          <h1 className="sb-display mt-3 text-4xl leading-[1.02] text-sb-text sm:text-[3.2rem]">
+            {title}
+          </h1>
+          {description ? (
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-sb-text-muted sm:text-[0.95rem]">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        {actions ? (
+          <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">{actions}</div>
+        ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-    </div>
+      <div className="sb-rule" />
+    </header>
   );
 }
