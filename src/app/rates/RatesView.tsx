@@ -180,7 +180,7 @@ export default function RatesView() {
         const isCurrent = now >= dt && now < new Date(rate.valid_to);
         if (isCurrent) curSlotIdx = i;
         const slotKey = toSlotKey(rate.valid_from);
-        const plannedAction = plannedActionMap.get(slotKey) ?? 'do_nothing';
+        const plannedAction: PlanAction = plannedActionMap.get(slotKey) ?? 'hold';
         const isOverride = overrideTimes.has(slotKey);
         if (isOverride) overrideIndices.add(i);
 
@@ -239,9 +239,7 @@ export default function RatesView() {
   const allSlotActions = useMemo(() => {
     const actions = new Map<number, PlanAction>();
     data.forEach((entry, index) => {
-      if (entry.plannedAction !== 'do_nothing') {
-        actions.set(index, entry.plannedAction);
-      }
+      actions.set(index, entry.plannedAction);
     });
     for (const idx of selectedIndices) actions.set(idx, 'charge');
     return actions;
@@ -345,9 +343,8 @@ export default function RatesView() {
     const isSelected = selectedIndices.has(index);
     if (isInDragRange) return TEAL + 'aa';
     if (isSelected) return TEAL;
-    if (entry.plannedAction !== 'do_nothing') return ACTION_COLORS[entry.plannedAction];
-    if (entry.price < 0) return colors.warning;
-    return colors.accent;
+    if (entry.price < 0 && entry.plannedAction === 'hold') return colors.warning;
+    return ACTION_COLORS[entry.plannedAction];
   };
 
   const selectedCount = selectedIndices.size;

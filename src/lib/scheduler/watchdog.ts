@@ -9,7 +9,6 @@ import { getState, onStateChange } from '../state';
 import { type InverterState } from '../types';
 import {
   setLoadFirstStopDischarge,
-  setWorkMode,
   startGridCharging,
   startGridDischarge,
   startBatteryHold,
@@ -24,7 +23,7 @@ const WATCHDOG_INTERVAL_MS = 30_000;
 const WATCHDOG_DEBOUNCE_MS = 1_000;
 const COMMAND_COOLDOWN_MS = 120_000;
 
-type RuntimeAction = 'charge' | 'discharge' | 'hold' | 'idle';
+type RuntimeAction = PlanAction;
 type RuntimeReason =
   | 'manual_override'
   | 'scheduled_action'
@@ -156,7 +155,7 @@ export function resolveRuntimeIntent(
   const override = getCurrentOverride(nowIso);
   if (override) {
     return {
-      action: toRuntimeAction(override.action),
+      action: override.action,
       reason: 'manual_override',
       detail: `Manual override ${override.action} is active for the current slot.`,
       slotStart: override.slot_start,
@@ -168,7 +167,7 @@ export function resolveRuntimeIntent(
   const scheduled = evaluateScheduledActions(now, state.battery_soc);
   if (scheduled) {
     return {
-      action: toRuntimeAction(scheduled.action),
+      action: scheduled.action,
       reason: 'scheduled_action',
       detail: scheduled.reason,
     };
@@ -177,22 +176,22 @@ export function resolveRuntimeIntent(
   const plannedSlot = getCurrentPlanSlot(nowIso);
   if (!plannedSlot) {
     return {
-      action: 'idle',
+      action: 'hold',
       reason: 'default_mode',
-      detail: 'No active override or schedule window applies right now.',
+      detail: 'No active override or schedule window applies right now. Holding battery at current SOC.',
     };
   }
 
-  const scheduleAction = toRuntimeAction(plannedSlot.action);
+  const scheduleAction = plannedSlot.action;
   if (scheduleAction === 'charge') {
     const settings = getSettings();
     const minSoc = parseInt(settings.min_soc_target, 10) || 80;
 
     if (state.battery_soc !== null && state.battery_soc >= minSoc) {
       return {
-        action: 'idle',
+        action: 'hold',
         reason: 'target_soc_reached',
-        detail: `Scheduled charge window is active, but battery SOC is already at or above ${minSoc}%.`,
+        detail: `Scheduled charge window is active, but battery SOC is already at or above ${minSoc}%. Holding.`,
         slotStart: plannedSlot.slot_start,
         slotEnd: plannedSlot.slot_end,
       };
@@ -202,9 +201,9 @@ export function resolveRuntimeIntent(
     const strategy = getChargingStrategy(settings);
     if (!isNegativePriceSlot && strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
       return {
-        action: 'idle',
+        action: 'hold',
         reason: 'solar_surplus',
-        detail: 'Scheduled opportunistic top-up window is active, but solar surplus is already charging the battery.',
+        detail: 'Scheduled opportunistic top-up window is active, but solar surplus is already charging the battery. Holding.',
         slotStart: plannedSlot.slot_start,
         slotEnd: plannedSlot.slot_end,
       };
@@ -218,14 +217,6 @@ export function resolveRuntimeIntent(
     slotStart: plannedSlot.slot_start,
     slotEnd: plannedSlot.slot_end,
   };
-}
-
-function toRuntimeAction(action: PlanAction): RuntimeAction {
-  if (action === 'charge' || action === 'discharge' || action === 'hold') {
-    return action;
-  }
-
-  return 'idle';
 }
 
 function isChargeStateSatisfied(state: InverterState, chargeRate: number): boolean {
@@ -244,6 +235,10 @@ function isDischargeStateSatisfied(state: InverterState, floor: number): boolean
 }
 
 function isHoldStateSatisfied(state: InverterState): boolean {
+  if (isForcedChargeActive(state) || isForcedDischargeActive(state)) {
+    return false;
+  }
+
   const stopDischargeMatchesSoc =
     state.load_first_stop_discharge !== null &&
     state.battery_soc !== null &&
@@ -369,51 +364,6 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       notifyIfActionChanged('discharge', 'Discharge Started', intent.detail);
       return;
     }
-    case 'idle': {
-      if (isForcedDischargeActive(state)) {
-        await ensureStopDischargeAtFloor(state);
-        await stopGridDischarge(defaultMode);
-        recordCommand(signature);
-        appendEvent({
-          level: 'info',
-          category: 'watchdog',
-          message: intent.detail,
-        });
-        notifyIfActionChanged('idle', 'Returned to Idle', intent.detail);
-        return;
-      }
-      if (isForcedChargeActive(state)) {
-        await ensureStopDischargeAtFloor(state);
-        await stopGridCharging(defaultMode);
-        recordCommand(signature);
-        appendEvent({
-          level: 'info',
-          category: 'watchdog',
-          message: intent.detail,
-        });
-        notifyIfActionChanged('idle', 'Returned to Idle', intent.detail);
-        return;
-      }
-      if (state.work_mode !== null && state.work_mode !== defaultMode) {
-        if (shouldRespectCooldown(signature)) {
-          return;
-        }
-        await ensureStopDischargeAtFloor(state);
-        await setWorkMode(defaultMode);
-        recordCommand(signature);
-        const msg = `Watchdog restored default work mode (${defaultMode}).`;
-        appendEvent({
-          level: 'info',
-          category: 'watchdog',
-          message: msg,
-        });
-        notifyIfActionChanged('idle', 'Work Mode Restored', msg);
-        return;
-      }
-      await ensureStopDischargeAtFloor(state);
-      clearCommandCooldown();
-      return;
-    }
     case 'hold': {
       if (isHoldStateSatisfied(state)) {
         clearCommandCooldown();
@@ -421,6 +371,13 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       }
       if (shouldRespectCooldown(signature)) {
         return;
+      }
+      // Clear any forced state first so the hold lands cleanly on Load first + pinned SOC.
+      if (isForcedDischargeActive(state)) {
+        await stopGridDischarge(defaultMode);
+      }
+      if (isForcedChargeActive(state)) {
+        await stopGridCharging(defaultMode);
       }
       await startBatteryHold(state.battery_soc ?? 50);
       recordCommand(signature);

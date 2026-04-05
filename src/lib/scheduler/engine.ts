@@ -511,25 +511,14 @@ function buildPlannedSlots(
   const actions: PlanAction[] = futureRates.map((rate) => {
     if (chargeKeys.has(rate.valid_from)) return 'charge' as const;
     if (dischargeKeys.has(rate.valid_from)) return 'discharge' as const;
-    return 'do_nothing' as const;
+    return 'hold' as const;
   });
 
-  const holdIndices = deriveHoldIndices(futureRates, actions);
-  const strategicHoldKeys = new Set<string>(
-    [...holdIndices].map((index) => futureRates[index]?.valid_from).filter((value): value is string => Boolean(value)),
-  );
-
-  for (let index = 0; index < actions.length; index += 1) {
-    if (actions[index] === 'do_nothing' && holdIndices.has(index)) {
-      actions[index] = 'hold';
-    }
-  }
+  const strategicHoldKeys = deriveStrategicHoldKeys(futureRates, actions);
 
   const slotActions = new Map<number, PlanAction>();
   actions.forEach((action, index) => {
-    if (action !== 'do_nothing') {
-      slotActions.set(index, action);
-    }
+    slotActions.set(index, action);
   });
 
   // Build PV generation map aligned to rate slot indices
@@ -611,8 +600,8 @@ function flattenWindowSlotKeys(windows: ChargeWindow[]): Set<string> {
   return keys;
 }
 
-function deriveHoldIndices(rates: AgileRate[], actions: PlanAction[]): Set<number> {
-  const holdIndices = new Set<number>();
+function deriveStrategicHoldKeys(rates: AgileRate[], actions: PlanAction[]): Set<string> {
+  const strategicHoldKeys = new Set<string>();
   const chargeIndices = new Set<number>();
   const dischargeIndices: number[] = [];
 
@@ -625,7 +614,7 @@ function deriveHoldIndices(rates: AgileRate[], actions: PlanAction[]): Set<numbe
   });
 
   for (let index = 0; index < actions.length; index += 1) {
-    if (actions[index] !== 'do_nothing') continue;
+    if (actions[index] !== 'hold') continue;
 
     const nextDischarge = dischargeIndices.find((candidateIndex) => candidateIndex > index);
     if (nextDischarge === undefined) continue;
@@ -636,11 +625,14 @@ function deriveHoldIndices(rates: AgileRate[], actions: PlanAction[]): Set<numbe
     if (hasChargeBeforeNextDischarge) continue;
 
     if (rates[index].price_inc_vat < rates[nextDischarge].price_inc_vat) {
-      holdIndices.add(index);
+      const key = rates[index]?.valid_from;
+      if (key) {
+        strategicHoldKeys.add(key);
+      }
     }
   }
 
-  return holdIndices;
+  return strategicHoldKeys;
 }
 
 function describePlannedAction(
@@ -686,13 +678,9 @@ function describePlannedAction(
     return 'Discharge slot selected by the planner.';
   }
 
-  if (action === 'hold') {
-    if (strategicHoldKeys.has(slotStart)) {
-      return 'Hold battery for a better discharge opportunity later in the tariff horizon.';
-    }
-
-    return 'Hold battery and prevent discharge in this slot.';
+  if (strategicHoldKeys.has(slotStart)) {
+    return 'Hold battery for a better discharge opportunity later in the tariff horizon.';
   }
 
-  return 'No forced battery action planned for this slot.';
+  return 'Hold battery and prevent discharge in this slot.';
 }

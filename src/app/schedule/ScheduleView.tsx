@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { RefreshCw, Play, Trash2, Zap, BatteryLow, Pause, Circle, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, Play, Trash2, Zap, BatteryLow, Pause, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { computeSOCForecast } from '@/lib/soc-forecast';
@@ -63,7 +63,6 @@ const ACTION_ICON: Record<PlanAction, typeof Zap> = {
   charge: Zap,
   discharge: BatteryLow,
   hold: Pause,
-  do_nothing: Circle,
 };
 
 function SlotTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number; dataKey: string }[]; label?: string }) {
@@ -191,9 +190,7 @@ export default function ScheduleView() {
     const currentIndex = slots.findIndex((slot) => slot.isCurrent);
     const slotActions = new Map<number, PlanAction>();
     slots.forEach((slot, index) => {
-      if (slot.effectiveAction !== 'do_nothing') {
-        slotActions.set(index, slot.effectiveAction);
-      }
+      slotActions.set(index, slot.effectiveAction);
     });
 
     // Use earliest actual SOC to model from the start of the day

@@ -251,15 +251,17 @@ describe('reconcileInverterState', () => {
     expect(startGridDischarge).not.toHaveBeenCalled();
   });
 
-  it('restores the default mode when no active window should be forcing charge', async () => {
+  it('stops any forced charge and pins hold to current SOC when no active window applies', async () => {
     currentSettings = buildSettings({ default_work_mode: 'Load first' });
     currentState = buildState({
+      battery_soc: 40,
       work_mode: 'Battery first',
     });
 
     await reconcileInverterState('watchdog interval');
 
     expect(stopGridCharging).toHaveBeenCalledWith('Load first');
+    expect(startBatteryHold).toHaveBeenCalledWith(40);
   });
 
   it('stops lingering grid charging before starting a discharge slot when charge read-back is unavailable', async () => {
@@ -294,6 +296,7 @@ describe('reconcileInverterState', () => {
       reason: 'Charge slot selected by the planner.',
     };
     currentState = buildState({
+      battery_soc: 72,
       work_mode: 'Battery first',
       pv_power: 1800,
       load_power: 400,
@@ -305,6 +308,7 @@ describe('reconcileInverterState', () => {
 
     expect(stopGridCharging).toHaveBeenCalledWith('Load first');
     expect(startGridCharging).not.toHaveBeenCalled();
+    expect(startBatteryHold).toHaveBeenCalledWith(72);
   });
 
   it('does not start the background watchdog loop when disabled in settings', async () => {
@@ -400,7 +404,7 @@ describe('reconcileInverterState', () => {
     expect(startGridCharging).toHaveBeenCalledWith(100);
   });
 
-  it('sets load_first_stop_discharge to floor when transitioning from hold to idle', async () => {
+  it('treats a slot gap as a hold at current SOC (no idle fallback)', async () => {
     currentSettings = buildSettings({ discharge_soc_floor: '25' });
     currentState = buildState({ battery_soc: 40 });
     planSlotRow = {
@@ -410,10 +414,13 @@ describe('reconcileInverterState', () => {
       reason: 'Hold battery.',
     };
     await reconcileInverterState('enter hold');
+    expect(startBatteryHold).toHaveBeenCalledWith(40);
 
-    setLoadFirstStopDischarge.mockClear();
+    startBatteryHold.mockClear();
 
-    // Simulate hold state, then transition to idle (no plan slot)
+    // Hold state is already satisfied (stop_discharge pinned to SOC).
+    // When the plan slot ends and there's no next slot, the intent should still be
+    // hold, and because the state already matches, no new commands should fire.
     currentState = buildState({
       battery_soc: 40,
       work_mode: 'Load first',
@@ -422,9 +429,11 @@ describe('reconcileInverterState', () => {
       load_first_stop_discharge: 40,
     });
     planSlotRow = null;
-    await reconcileInverterState('transition to idle');
+    await reconcileInverterState('plan gap');
 
-    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(25);
+    expect(startBatteryHold).not.toHaveBeenCalled();
+    expect(startGridCharging).not.toHaveBeenCalled();
+    expect(startGridDischarge).not.toHaveBeenCalled();
   });
 
   it('sets load_first_stop_discharge to floor when transitioning from hold to discharge', async () => {
@@ -459,7 +468,7 @@ describe('reconcileInverterState', () => {
     expect(startGridDischarge).toHaveBeenCalled();
   });
 
-  it('uses discharge_soc_floor even without a prior hold phase', async () => {
+  it('re-pins stop-discharge to current SOC on startup when no plan is active and state is stale', async () => {
     currentSettings = buildSettings({ discharge_soc_floor: '25' });
     currentState = buildState({
       battery_soc: 40,
@@ -467,10 +476,10 @@ describe('reconcileInverterState', () => {
       load_first_stop_discharge: 84,
     });
 
-    // No hold phase — go straight to idle with a stale stop-discharge value
+    // No plan slot — new model treats this as hold at current SOC, not fallback to floor.
     planSlotRow = null;
     await reconcileInverterState('watchdog startup');
 
-    expect(setLoadFirstStopDischarge).toHaveBeenCalledWith(25);
+    expect(startBatteryHold).toHaveBeenCalledWith(40);
   });
 });
