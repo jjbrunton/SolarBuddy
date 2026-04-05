@@ -47,7 +47,7 @@ export async function startGridCharging(chargeRate: number) {
 export async function stopGridCharging(defaultMode: 'Battery first' | 'Load first' = 'Battery first') {
   if (isVirtualModeEnabled()) {
     handleVirtualCommand(`Virtual grid charging stopped. Restoring ${defaultMode}.`, {
-      action: 'idle',
+      action: 'hold',
       workMode: defaultMode,
     });
     return;
@@ -70,7 +70,7 @@ export async function startGridDischarge(defaultMode: 'Battery first' | 'Load fi
 export async function stopGridDischarge(defaultMode: 'Battery first' | 'Load first' = 'Battery first') {
   if (isVirtualModeEnabled()) {
     handleVirtualCommand(`Virtual grid discharge stopped. Restoring ${defaultMode}.`, {
-      action: 'idle',
+      action: 'hold',
       workMode: defaultMode,
       outputSourcePriority: 'USB',
     });

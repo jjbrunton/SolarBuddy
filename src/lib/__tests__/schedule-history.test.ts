@@ -71,7 +71,7 @@ describe('schedule-history', () => {
       isPast: true,
     });
     expect(slots[1]).toMatchObject({
-      plannedAction: 'do_nothing',
+      plannedAction: 'hold',
       overrideAction: 'hold',
       effectiveAction: 'hold',
     });

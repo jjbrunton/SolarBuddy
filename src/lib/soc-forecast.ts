@@ -3,7 +3,7 @@ import type { PlanAction } from './plan-actions';
 export interface SOCForecastParams {
   currentSOC: number;
   currentSlotIndex: number;
-  /** Map from slot index to action. Slots not in the map default to 'do_nothing'. */
+  /** Map from slot index to action. Slots not in the map default to 'hold'. */
   slotActions: Map<number, PlanAction>;
   totalSlots: number;
   chargeRatePercent: number;
@@ -21,8 +21,8 @@ export interface SOCForecastParams {
  * Compute a predicted SOC curve across all rate slots.
  * - charge: SOC increases based on charge power
  * - discharge: SOC decreases at charge power rate + consumption
- * - hold: SOC stays flat because the inverter is actively preventing discharge
- * - do_nothing: legacy idle state, decreases based on estimated consumption
+ * - hold: SOC stays flat because the inverter is actively preventing discharge;
+ *   PV surplus (above home consumption) can still charge the battery
  * Returns an array of SOC values (0-100) aligned to each bar index.
  */
 export function computeSOCForecast(params: SOCForecastParams): number[] {
@@ -58,7 +58,7 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
 
   let soc = fillSOC;
   for (let i = modelStart; i < totalSlots; i++) {
-    const action = slotActions.get(i) ?? 'do_nothing';
+    const action: PlanAction = slotActions.get(i) ?? 'hold';
     const pvWh = (perSlotPVGenerationW?.get(i) ?? 0) * 0.5;
 
     switch (action) {
@@ -84,23 +84,10 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
         break;
       }
       case 'hold': {
-        // Hold prevents grid discharge; PV surplus still charges battery
+        // Hold prevents battery discharge (home load comes from grid);
+        // PV surplus (after covering consumption) still charges battery.
         if (pvWh > drainPerSlotWh) {
           const surplusWh = pvWh - drainPerSlotWh;
-          const addPercent = (surplusWh / batteryCapacityWh) * 100;
-          soc = Math.min(100, soc + addPercent);
-        }
-        break;
-      }
-      case 'do_nothing':
-      default: {
-        // PV offsets consumption; surplus charges battery
-        const netDrainWh = drainPerSlotWh - pvWh;
-        if (netDrainWh > 0) {
-          const drainPercent = (netDrainWh / batteryCapacityWh) * 100;
-          soc = Math.max(0, soc - drainPercent);
-        } else {
-          const surplusWh = -netDrainWh;
           const addPercent = (surplusWh / batteryCapacityWh) * 100;
           soc = Math.min(100, soc + addPercent);
         }

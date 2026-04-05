@@ -129,7 +129,7 @@ export function buildSchedulePlanSlots(
     const validTo = new Date(rate.valid_to);
     const slotKey = toSlotKey(rate.valid_from);
     const plannedSlot = plannedSlotMap.get(slotKey);
-    const plannedAction = plannedSlot?.action ?? scheduledActions.get(slotKey) ?? 'do_nothing';
+    const plannedAction: PlanAction = plannedSlot?.action ?? scheduledActions.get(slotKey) ?? 'hold';
     const overrideAction = overrideMap.get(slotKey) ?? null;
 
     return {
@@ -156,8 +156,6 @@ function getDefaultReason(action: PlanAction): string {
       return 'This slot is part of a planned battery discharge window.';
     case 'hold':
       return 'SolarBuddy is actively holding the battery to prevent discharge in this slot.';
-    default:
-      return 'No forced battery action planned for this slot.';
   }
 }
 

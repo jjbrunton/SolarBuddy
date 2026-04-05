@@ -226,4 +226,15 @@ function initSchema(db: Database.Database) {
       db.exec('ALTER TABLE plan_slots ADD COLUMN actual_value REAL');
     }
   }
+
+  // Migrate: collapse legacy 'do_nothing' action to 'hold' across all action-bearing tables.
+  // SolarBuddy now uses exactly three actions: charge, discharge, hold.
+  db.exec("UPDATE plan_slots SET action = 'hold' WHERE action = 'do_nothing'");
+  db.exec("UPDATE manual_overrides SET action = 'hold' WHERE action = 'do_nothing'");
+  const scheduledActionsTable = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='scheduled_actions'")
+    .get();
+  if (scheduledActionsTable) {
+    db.exec("UPDATE scheduled_actions SET action = 'hold' WHERE action = 'do_nothing'");
+  }
 }

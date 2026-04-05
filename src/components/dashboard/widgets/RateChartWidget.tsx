@@ -107,7 +107,7 @@ export default function RateChartWidget() {
             validFrom: r.valid_from,
             price: Math.round(r.price_inc_vat * 100) / 100,
             isCurrent,
-            plannedAction: plannedActionMap.get(toSlotKey(r.valid_from)) ?? 'do_nothing',
+            plannedAction: plannedActionMap.get(toSlotKey(r.valid_from)) ?? 'hold',
           };
         });
 
@@ -145,9 +145,7 @@ export default function RateChartWidget() {
     if (rates.length === 0 || state.battery_soc === null || !settings) return rates;
     const slotActions = new Map<number, PlanAction>();
     rates.forEach((rate, index) => {
-      if (rate.plannedAction !== 'do_nothing') {
-        slotActions.set(index, rate.plannedAction);
-      }
+      slotActions.set(index, rate.plannedAction);
     });
     const forecast = computeSOCForecast({
       currentSOC: state.battery_soc,
@@ -220,7 +218,7 @@ export default function RateChartWidget() {
             {ratesWithSOC.map((entry, i) => (
               <Cell
                 key={i}
-                fill={entry.plannedAction !== 'do_nothing' ? ACTION_COLORS[entry.plannedAction] : entry.price < 0 ? colors.warning : colors.accent}
+                fill={entry.price < 0 && entry.plannedAction === 'hold' ? colors.warning : ACTION_COLORS[entry.plannedAction]}
                 stroke={entry.isCurrent ? '#facc15' : 'none'}
                 strokeWidth={entry.isCurrent ? 2 : 0}
               />

@@ -80,7 +80,7 @@ export default function RateChart() {
 
         return {
           price: Math.round(rate.price_inc_vat * 100) / 100,
-          plannedAction: plannedActionMap.get(toSlotKey(rate.valid_from)) ?? 'do_nothing',
+          plannedAction: plannedActionMap.get(toSlotKey(rate.valid_from)) ?? 'hold',
           isCurrent,
           fullTime: rate.valid_from,
         };
@@ -195,7 +195,7 @@ export default function RateChart() {
                 {data.map((entry, index) => (
                   <Cell
                     key={index}
-                    fill={entry.plannedAction !== 'do_nothing' ? ACTION_COLORS[entry.plannedAction] : entry.price < 0 ? '#f59e0b' : '#3b82f6'}
+                    fill={entry.price < 0 && entry.plannedAction === 'hold' ? '#f59e0b' : ACTION_COLORS[entry.plannedAction]}
                     stroke={entry.isCurrent ? '#facc15' : 'none'}
                     strokeWidth={entry.isCurrent ? 2 : 0}
                   />

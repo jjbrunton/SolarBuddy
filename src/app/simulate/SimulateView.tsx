@@ -641,7 +641,7 @@ export default function SimulateView() {
               subtitle="Import rate per slot coloured by planned action, with SOC forecast overlaid."
             />
             <div className="mb-3 flex flex-wrap gap-4 text-xs text-sb-text-muted">
-              {PLAN_ACTIONS.filter((a) => a !== 'do_nothing').map((action) => (
+              {PLAN_ACTIONS.map((action) => (
                 <span key={action} className="flex items-center gap-1">
                   <span
                     className="inline-block h-2.5 w-2.5 rounded"
@@ -650,13 +650,6 @@ export default function SimulateView() {
                   {ACTION_LABELS[action]}
                 </span>
               ))}
-              <span className="flex items-center gap-1">
-                <span
-                  className="inline-block h-2.5 w-2.5 rounded"
-                  style={{ backgroundColor: ACTION_COLORS.do_nothing }}
-                />
-                {ACTION_LABELS.do_nothing}
-              </span>
               <span className="flex items-center gap-1">
                 <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-sb-text-muted" />
                 SOC

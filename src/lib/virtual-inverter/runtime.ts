@@ -22,7 +22,7 @@ export interface VirtualInverterStatus {
 }
 
 interface VirtualCommandState {
-  action: 'idle' | 'charge' | 'discharge' | 'hold';
+  action: 'charge' | 'discharge' | 'hold';
   workMode: 'Grid first' | 'Battery first' | 'Load first';
   outputSourcePriority: string;
   batteryFirstChargeRate: number;
@@ -65,7 +65,7 @@ function getStore(): VirtualRuntimeStore {
       startSoc: 50,
       loadMultiplier: 1,
       command: {
-        action: 'idle',
+        action: 'hold',
         workMode: 'Battery first',
         outputSourcePriority: 'USB',
         batteryFirstChargeRate: 100,
@@ -277,7 +277,7 @@ function applyScenarioState() {
 
   store.virtualTime = firstSlot.valid_from;
   store.command = {
-    action: 'idle',
+    action: 'hold',
     workMode: (store.scenarioData.initialState.work_mode as VirtualCommandState['workMode']) ?? 'Battery first',
     outputSourcePriority: store.scenarioData.initialState.output_source_priority ?? 'USB',
     batteryFirstChargeRate: store.scenarioData.initialState.battery_first_charge_rate ?? 100,
@@ -534,7 +534,7 @@ export function resetVirtualInverterForTests() {
   store.loadMultiplier = 1;
   store.scenarioData = null;
   store.command = {
-    action: 'idle',
+    action: 'hold',
     workMode: 'Battery first',
     outputSourcePriority: 'USB',
     batteryFirstChargeRate: 100,
