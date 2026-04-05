@@ -84,11 +84,14 @@ vi.mock('../../state', () => ({
   getState: () => ({ battery_soc: 70 }),
 }));
 
+let currentPlanWindows: ChargeWindow[] = windows;
+let currentPlanSlots: PlannedSlot[] = plannedSlots;
+
 vi.mock('../engine', () => ({
   getChargingStrategy: () => 'opportunistic_topup',
   buildSchedulePlan: () => ({
-    windows,
-    slots: plannedSlots,
+    windows: currentPlanWindows,
+    slots: currentPlanSlots,
   }),
 }));
 
@@ -118,6 +121,8 @@ describe('runScheduleCycle', () => {
     scheduleExecutionMock.mockClear();
     appendEventMock.mockClear();
     notifyMock.mockClear();
+    currentPlanWindows = windows;
+    currentPlanSlots = plannedSlots;
     _resetCronStateForTests();
   });
 
@@ -144,5 +149,87 @@ describe('runScheduleCycle', () => {
     notifyMock.mockClear();
     await runScheduleCycle();
     expect(notifyMock).not.toHaveBeenCalled();
+  });
+
+  it('does not re-notify when only slot_start rolls forward (time passes)', async () => {
+    await runScheduleCycle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    notifyMock.mockClear();
+
+    // Simulate a replan 30 min later: the past slot gets filtered out, so the
+    // charge window's start advances even though the plan's end shape is
+    // unchanged.
+    currentPlanWindows = [
+      { ...windows[0], slot_start: '2026-04-01T12:30:00Z' },
+      windows[1],
+    ];
+    await runScheduleCycle();
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
+  it('does not re-notify when only avg_price changes', async () => {
+    await runScheduleCycle();
+    notifyMock.mockClear();
+
+    currentPlanWindows = [
+      { ...windows[0], avg_price: -9.4 },
+      { ...windows[1], avg_price: 15.9 },
+    ];
+    await runScheduleCycle();
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
+  it('does not re-notify when slot_end jitters by less than 30 min', async () => {
+    await runScheduleCycle();
+    notifyMock.mockClear();
+
+    // Same half-hour slot end, different sub-minute precision.
+    currentPlanWindows = [
+      { ...windows[0], slot_end: '2026-04-01T12:30:00.500Z' },
+      windows[1],
+    ];
+    await runScheduleCycle();
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
+  it('notifies when a new window is added', async () => {
+    await runScheduleCycle();
+    notifyMock.mockClear();
+
+    currentPlanWindows = [
+      ...windows,
+      {
+        slot_start: '2026-04-01T20:00:00Z',
+        slot_end: '2026-04-01T20:30:00Z',
+        avg_price: 9,
+        slots: [],
+      },
+    ];
+    await runScheduleCycle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies when a window end time shifts by 30 min', async () => {
+    await runScheduleCycle();
+    notifyMock.mockClear();
+
+    currentPlanWindows = [
+      { ...windows[0], slot_end: '2026-04-01T13:00:00Z' },
+      windows[1],
+    ];
+    await runScheduleCycle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies when a window type flips', async () => {
+    await runScheduleCycle();
+    notifyMock.mockClear();
+
+    currentPlanWindows = [
+      { ...windows[0], type: 'discharge' },
+      windows[1],
+    ];
+    await runScheduleCycle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
   });
 });

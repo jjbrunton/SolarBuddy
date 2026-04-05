@@ -71,9 +71,36 @@ function getCronState(): CronPersistentState {
   return g.__solarbuddy_cron;
 }
 
+/**
+ * Build a semantic fingerprint of a plan so we only notify when the plan's
+ * *shape* changes — not when it rolls forward as time passes or when prices
+ * drift.
+ *
+ * The fingerprint intentionally ignores:
+ *   - `slot_start` — as past slots are filtered out each replan, the first
+ *     window's start advances even though the plan is conceptually unchanged.
+ *   - `avg_price` — rate revisions of a few tenths of a p/kWh don't change
+ *     what the user cares about (what action ends when).
+ *   - Sub-30min jitter on `slot_end` — end times are floored to the nearest
+ *     half-hour boundary to absorb ms/tz variations and marginal re-optimisation.
+ *
+ * It captures: window type, the date in the scheduler's timezone, and the
+ * floored half-hour end time. A new window, a removed window, a type flip,
+ * or a ≥30min end-time shift will all produce a new fingerprint and notify.
+ */
 function buildPlanFingerprint(windows: ChargeWindow[]): string {
   return windows
-    .map((w) => `${w.type ?? 'charge'}:${w.slot_start}:${w.slot_end}`)
+    .map((w) => {
+      const end = new Date(w.slot_end);
+      // Floor to the nearest 30-min boundary (in UTC — half-hour boundaries
+      // align across timezones, so this is safe regardless of SCHEDULER_TIME_ZONE).
+      end.setUTCSeconds(0, 0);
+      end.setUTCMinutes(end.getUTCMinutes() < 30 ? 0 : 30);
+      const date = end.toLocaleDateString('en-CA', { timeZone: SCHEDULER_TIME_ZONE });
+      const hhmm = windowTimeFormatter.format(end);
+      return `${w.type ?? 'charge'}@${date}T${hhmm}`;
+    })
+    .sort()
     .join('|');
 }
 
