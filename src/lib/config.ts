@@ -47,15 +47,25 @@ export interface AppSettings {
   export_rate: string;
   // Advanced scheduling heuristics
   always_charge_below_price: string;
+  always_charge_below_soc: string;
   peak_detection: string;
   peak_duration_slots: string;
   solar_skip_enabled: string;
   solar_skip_threshold_kwh: string;
   pre_cheapest_suppression: string;
+  pre_cheapest_lookback_slots: string;
   negative_run_discharge: string;
+  // Usage pattern learning
+  usage_learning_enabled: string;
+  usage_learning_window_days: string;
+  usage_baseload_percentile: string;
+  usage_high_period_multiplier: string;
+  usage_high_period_min_slots: string;
+  usage_min_samples_per_bucket: string;
   // PV Forecast (forecast.solar)
   pv_forecast_enabled: string;
   pv_forecast_confidence: string;
+  pv_forecast_damp_factor: string;
   pv_latitude: string;
   pv_longitude: string;
   pv_declination: string;
@@ -120,12 +130,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
   peak_soc_target: '90',
   // Advanced scheduling heuristics
   always_charge_below_price: '0',
+  always_charge_below_soc: '',
   peak_detection: 'manual',
   peak_duration_slots: '7',
   solar_skip_enabled: 'false',
   solar_skip_threshold_kwh: '15',
   pre_cheapest_suppression: 'false',
+  pre_cheapest_lookback_slots: '3',
   negative_run_discharge: 'false',
+  // Usage pattern learning
+  usage_learning_enabled: 'true',
+  usage_learning_window_days: '14',
+  usage_baseload_percentile: '10',
+  usage_high_period_multiplier: '1.5',
+  usage_high_period_min_slots: '2',
+  usage_min_samples_per_bucket: '5',
   // Export
   octopus_export_mpan: '',
   octopus_export_meter_serial: '',
@@ -134,6 +153,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // PV Forecast (forecast.solar)
   pv_forecast_enabled: 'false',
   pv_forecast_confidence: 'estimate',
+  pv_forecast_damp_factor: '1.0',
   pv_latitude: '',
   pv_longitude: '',
   pv_declination: '35',

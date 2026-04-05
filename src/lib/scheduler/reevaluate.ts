@@ -28,12 +28,21 @@ export const SCHEDULE_RELEVANT_KEYS = new Set([
   'default_work_mode',
   'auto_schedule',
   'always_charge_below_price',
+  'always_charge_below_soc',
   'peak_detection',
   'peak_duration_slots',
   'solar_skip_enabled',
   'solar_skip_threshold_kwh',
   'pre_cheapest_suppression',
+  'pre_cheapest_lookback_slots',
   'negative_run_discharge',
+  'pv_forecast_damp_factor',
+  'usage_learning_enabled',
+  'usage_learning_window_days',
+  'usage_baseload_percentile',
+  'usage_high_period_multiplier',
+  'usage_high_period_min_slots',
+  'usage_min_samples_per_bucket',
 ]);
 
 interface ReplanState {

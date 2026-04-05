@@ -14,6 +14,7 @@ This document defines the automated verification layers for SolarBuddy as an ope
 npm run docs:check
 npm run lint
 npm test
+npm run test:integration
 npm run build
 npm run test:smoke
 npm run test:e2e
@@ -36,12 +37,21 @@ npm run verify
 - It verifies that the production server boots and serves key routes such as `/api/health`, `/`, `/simulate`, and `/api/status`.
 - This catches packaging or startup regressions that unit tests can miss.
 
-### 3. Documentation inventory check
+### 3. Integration tests
+
+- Integration suites live alongside source under `src/**` and use the `*.integration.test.ts` suffix.
+- These tests exercise cross-module behavior with fixed fixtures and in-memory SQLite, while avoiding live network dependencies.
+- Current integration coverage targets:
+  - Schedule lifecycle across API route + SQLite persistence (`plan -> persist -> execute status -> read back`)
+  - Scheduler orchestration against real repository writes using fixed tariff fixtures
+  - SSE event/log pipelines for state changes and MQTT log streaming
+
+### 4. Documentation inventory check
 
 - `scripts/check-api-docs.mjs` compares `src/app/api/**/route.ts` against [`api.md`](api.md).
 - Pull requests should not merge if API behavior has drifted from the published route inventory.
 
-### 4. Browser E2E tests
+### 5. Browser E2E tests
 
 - Playwright tests live under `e2e/`.
 - The E2E suite runs against the production server started from the built app, not against `next dev`.

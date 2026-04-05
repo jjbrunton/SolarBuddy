@@ -23,6 +23,15 @@ export async function POST(request: Request) {
     validated[key] = value;
   }
 
+  // Snapshot the usage_learning_enabled flag BEFORE saving so we can detect a
+  // false → true transition and trigger an on-demand profile refresh. Only
+  // fetched when the caller is actually touching that setting, to avoid
+  // an extra getSettings() call on every unrelated settings update.
+  const previousLearningEnabled =
+    validated.usage_learning_enabled !== undefined
+      ? getSettings().usage_learning_enabled
+      : undefined;
+
   saveSettings(validated as Partial<AppSettings>);
 
   // If MQTT settings changed, reconnect
@@ -48,6 +57,29 @@ export async function POST(request: Request) {
   const { SCHEDULE_RELEVANT_KEYS, requestReplan } = await import('@/lib/scheduler/reevaluate');
   if (Object.keys(validated).some((key) => SCHEDULE_RELEVANT_KEYS.has(key))) {
     requestReplan('settings changed');
+  }
+
+  // On-demand usage profile refresh: fire (fire-and-forget) when learning is
+  // freshly enabled or when a parameter that shapes the aggregation changes.
+  // The compute call will also invalidate the in-process cache on success.
+  const learningJustEnabled =
+    previousLearningEnabled !== undefined &&
+    previousLearningEnabled !== 'true' &&
+    validated.usage_learning_enabled === 'true';
+  const aggregationParamsChanged =
+    validated.usage_learning_window_days !== undefined ||
+    validated.usage_baseload_percentile !== undefined ||
+    validated.usage_high_period_multiplier !== undefined ||
+    validated.usage_high_period_min_slots !== undefined;
+  if (learningJustEnabled || aggregationParamsChanged) {
+    void (async () => {
+      try {
+        const { computeUsageProfile } = await import('@/lib/usage');
+        await computeUsageProfile();
+      } catch (err) {
+        console.error('[Settings] On-demand usage profile refresh failed:', err);
+      }
+    })();
   }
 
   return NextResponse.json({ ok: true, settings: getSettings() });

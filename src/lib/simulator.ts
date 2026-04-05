@@ -1,6 +1,7 @@
 import type { AgileRate } from './octopus/rates';
 import type { AppSettings } from './config';
 import { buildSchedulePlan, type PlanningContext, type PVForecastSlot, type PlannedSlot, type SchedulePlan } from './scheduler/engine';
+import { getForecastedConsumptionW } from './usage';
 
 export interface SimulatedSlot {
   slot_start: string;
@@ -88,10 +89,14 @@ export function runFullSimulation(params: {
   const maxChargePowerW = (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000;
   const chargeRate = parseFloat(settings.charge_rate) || 100;
   const effectiveChargePowerW = maxChargePowerW * (chargeRate / 100);
-  const consumptionW = parseFloat(settings.estimated_consumption_w) || 500;
+  const fallbackConsumptionW = parseFloat(settings.estimated_consumption_w) || 500;
 
   const chargePerSlotWh = effectiveChargePowerW * 0.5;
-  const drainPerSlotWh = consumptionW * 0.5;
+  // Per-slot drain lookup: usage-profile aware when available, flat fallback otherwise.
+  const drainWhForSlotStart = (startISO: string): number => {
+    const forecastW = getForecastedConsumptionW(new Date(startISO), fallbackConsumptionW);
+    return forecastW * 0.5;
+  };
 
   let soc = startSoc;
   let maxSoc = soc;
@@ -104,8 +109,9 @@ export function runFullSimulation(params: {
   let dischargeCount = 0;
   let holdCount = 0;
 
-  // Track discharge slots for savings range calculation
-  const dischargeSlotInputs: { importRate: number; pvWh: number }[] = [];
+  // Track discharge slots for savings range calculation. Drain is captured
+  // per slot so the 50–150% range honours the usage profile shape.
+  const dischargeSlotInputs: { importRate: number; pvWh: number; drainWh: number }[] = [];
 
   const simSlots: SimulatedSlot[] = [];
 
@@ -117,6 +123,8 @@ export function runFullSimulation(params: {
     const pvWh = pvW * 0.5;
     const pvKwh = pvWh / 1000;
     totalPvKwh += pvKwh;
+
+    const drainPerSlotWh = drainWhForSlotStart(rate.valid_from);
 
     const socBefore = soc;
     let importKwh = 0;
@@ -141,7 +149,7 @@ export function runFullSimulation(params: {
         soc = Math.max(0, soc - (totalDrainWh / batteryCapacityWh) * 100);
         exportKwh = gridExportWh / 1000;
         savingsKwh = selfConsumedWh / 1000;
-        dischargeSlotInputs.push({ importRate: rate.price_inc_vat, pvWh });
+        dischargeSlotInputs.push({ importRate: rate.price_inc_vat, pvWh, drainWh: drainPerSlotWh });
         dischargeCount++;
         break;
       }
@@ -194,12 +202,14 @@ export function runFullSimulation(params: {
     });
   }
 
-  // Compute savings range at 50% and 150% of estimated consumption
+  // Compute savings range at 50% and 150% of expected consumption.
+  // Each discharge slot uses its own drain (profile-aware), scaled to form the
+  // low/high bounds of the uncertainty band.
   let savingsRangeLow = 0;
   let savingsRangeHigh = 0;
-  for (const { importRate, pvWh } of dischargeSlotInputs) {
-    const drainLow = drainPerSlotWh * 0.5;
-    const drainHigh = drainPerSlotWh * 1.5;
+  for (const { importRate, pvWh, drainWh } of dischargeSlotInputs) {
+    const drainLow = drainWh * 0.5;
+    const drainHigh = drainWh * 1.5;
     savingsRangeLow += Math.min(chargePerSlotWh, Math.max(0, drainLow - pvWh)) / 1000 * importRate;
     savingsRangeHigh += Math.min(chargePerSlotWh, Math.max(0, drainHigh - pvWh)) / 1000 * importRate;
   }

@@ -12,6 +12,7 @@ import { buildSchedulePlan, getChargingStrategy, type ChargeWindow } from './eng
 import { scheduleExecution } from './executor';
 import { persistSchedulePlan } from '../db/schedule-repository';
 import { appendEvent } from '../events';
+import { computeUsageProfile } from '../usage';
 import {
   getVirtualExportRates,
   getVirtualForecast,
@@ -21,6 +22,8 @@ import {
   isVirtualModeEnabled,
 } from '../virtual-inverter/runtime';
 import { notify } from '../notifications/dispatcher';
+import { evaluateAutoOverrides } from './auto-override';
+import { reconcileInverterState } from './watchdog';
 
 const SCHEDULER_TIME_ZONE = 'Europe/London';
 const windowTimeFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -109,6 +112,8 @@ let eveningJob: cron.ScheduledTask | null = null;
 let timeSyncJob: cron.ScheduledTask | null = null;
 let tariffCheckJob: cron.ScheduledTask | null = null;
 let replanJob: cron.ScheduledTask | null = null;
+let usageProfileJob: cron.ScheduledTask | null = null;
+let autoOverrideJob: cron.ScheduledTask | null = null;
 
 export type ScheduleCycleStatus = 'scheduled' | 'no_rates' | 'no_windows' | 'missing_config' | 'error';
 
@@ -369,8 +374,8 @@ export function startCronJobs() {
     }
   });
 
-  // Daily tariff change check at 06:00
-  tariffCheckJob = cron.schedule('0 6 * * *', async () => {
+  // Tariff change check every 4 hours at :03
+  tariffCheckJob = cron.schedule('3 */4 * * *', async () => {
     const settings = getSettings();
     if (settings.tariff_monitor_enabled === 'true' && settings.octopus_api_key) {
       const result = await checkForTariffChange();
@@ -386,9 +391,73 @@ export function startCronJobs() {
     replanFromStoredRates();
   });
 
+  // Nightly usage-profile refresh at 03:17 local time. Runs after the time-sync
+  // job at 03:00 (to avoid clock jumps mid-query) and off-axis from the replan
+  // cadence at :02/:32. Skipped when usage learning is disabled in settings.
+  usageProfileJob = cron.schedule('17 3 * * *', async () => {
+    const settings = getSettings();
+    if (settings.usage_learning_enabled !== 'true') return;
+    try {
+      const result = await computeUsageProfile();
+      const msg = result.ok
+        ? `Usage profile refresh: ok (${result.stats.total_samples} samples, ${result.stats.dropped_days} days dropped)`
+        : `Usage profile refresh skipped: ${result.reason ?? 'unknown reason'}`;
+      appendEvent({ level: result.ok ? 'info' : 'warning', category: 'scheduler', message: msg });
+    } catch (err) {
+      appendEvent({
+        level: 'error',
+        category: 'scheduler',
+        message: `Usage profile refresh failed: ${(err as Error).message}`,
+      });
+    }
+  });
+
+  // Auto-override evaluation every 5 minutes — reacts to SOC excursions
+  // without rebuilding the plan. Writes a short-lived override into
+  // auto_overrides that the resolver picks up between manual_overrides and
+  // scheduled_actions. Any exception is caught and logged so this tick
+  // cannot crash the app.
+  autoOverrideJob = cron.schedule('*/5 * * * *', async () => {
+    try {
+      const state = getState();
+      const settings = getSettings();
+      const decision = evaluateAutoOverrides(new Date(), state, settings);
+      if (decision.applied && decision.override) {
+        appendEvent({
+          level: 'info',
+          category: 'auto-override',
+          message: `Auto override applied: ${decision.override.source} → ${decision.override.action} (${decision.override.reason})`,
+        });
+        // Nudge the watchdog so the command flips without waiting for the
+        // next 30s tick.
+        try {
+          await reconcileInverterState('auto-override tick');
+        } catch (err) {
+          appendEvent({
+            level: 'error',
+            category: 'auto-override',
+            message: `Auto-override reconcile failed: ${(err as Error).message}`,
+          });
+        }
+      }
+    } catch (err) {
+      try {
+        appendEvent({
+          level: 'error',
+          category: 'auto-override',
+          message: `Auto-override tick failed: ${(err as Error).message}`,
+        });
+      } catch {
+        // swallow — cron must never throw
+      }
+    }
+  });
+
   console.log('[Cron] Scheduled rate fetch: afternoon (4:05pm-8pm) + evening (11:05pm-00:05am)');
   console.log('[Cron] Scheduled replan: every 30 minutes at :02 and :32');
-  console.log('[Cron] Scheduled time sync: daily at 03:00, tariff check: daily at 06:00');
+  console.log('[Cron] Scheduled time sync: daily at 03:00, tariff check: every 4h at :03');
+  console.log('[Cron] Scheduled usage profile refresh: daily at 03:17');
+  console.log('[Cron] Scheduled auto-override evaluation: every 5 minutes');
 }
 
 export function stopCronJobs() {
@@ -411,6 +480,14 @@ export function stopCronJobs() {
   if (replanJob) {
     replanJob.stop();
     replanJob = null;
+  }
+  if (usageProfileJob) {
+    usageProfileJob.stop();
+    usageProfileJob = null;
+  }
+  if (autoOverrideJob) {
+    autoOverrideJob.stop();
+    autoOverrideJob = null;
   }
 }
 

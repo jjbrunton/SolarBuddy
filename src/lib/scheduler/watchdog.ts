@@ -1,10 +1,14 @@
-import { getDb } from '../db';
 import { appendEvent } from '../events';
 import { getSettings } from '../config';
+import {
+  getLatestExecutionForSlot,
+  recordSlotExecution,
+  updateSlotExecutionActuals,
+  type OverrideSource,
+} from '../db/schedule-repository';
 import { resolveOutputSourcePriority } from '../inverter/settings';
 import { notify } from '../notifications/dispatcher';
 import { type PlanAction } from '../plan-actions';
-import { evaluateScheduledActions } from '../scheduled-actions';
 import { getState, onStateChange } from '../state';
 import { type InverterState } from '../types';
 import {
@@ -15,17 +19,24 @@ import {
   stopGridCharging,
   stopGridDischarge,
 } from '../inverter/commands';
-import { getChargingStrategy } from './engine';
-import { shouldHoldForSolarSurplus } from './executor';
-import { getVirtualCurrentPlanSlot, getVirtualNow, isVirtualModeEnabled } from '../virtual-inverter/runtime';
+import { getVirtualNow } from '../virtual-inverter/runtime';
+import {
+  resolveSlotAction,
+  resolveSlotActionRange,
+  type ResolvedSlotAction,
+  type ResolvedSlotRange,
+  type SlotActionSource,
+} from './resolve';
 
 const WATCHDOG_INTERVAL_MS = 30_000;
 const WATCHDOG_DEBOUNCE_MS = 1_000;
 const COMMAND_COOLDOWN_MS = 120_000;
+const STATE_FRESHNESS_MS = 60_000;
 
 type RuntimeAction = PlanAction;
 type RuntimeReason =
   | 'manual_override'
+  | 'auto_override'
   | 'scheduled_action'
   | 'scheduled_slot'
   | 'target_soc_reached'
@@ -38,19 +49,15 @@ interface RuntimeIntent {
   detail: string;
   slotStart?: string;
   slotEnd?: string;
-}
-
-interface OverrideRow {
-  slot_start: string;
-  slot_end: string;
-  action: PlanAction;
-}
-
-interface PlanSlotRow {
-  slot_start: string;
-  slot_end: string;
-  action: PlanAction;
-  reason: string | null;
+  rangeStart?: string;
+  rangeEnd?: string;
+  slotsInRange?: number;
+  /**
+   * The resolver source that produced this intent. Preserved so the watchdog
+   * can attribute the `plan_slot_executions` row to the correct override tier
+   * without having to re-resolve.
+   */
+  source?: SlotActionSource;
 }
 
 interface WatchdogState {
@@ -63,6 +70,12 @@ interface WatchdogState {
   lastCommandAt: number;
   lastBatteryExhaustedAt: number;
   lastNotifiedAction: RuntimeAction | null;
+  /**
+   * `rangeStart` of the previous tick's resolved slot range. Used by the
+   * slot-end backfill to detect when the watchdog has crossed a slot/run
+   * boundary and update the prior execution row's `soc_at_end`.
+   */
+  lastResolvedRangeStart: string | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -81,10 +94,31 @@ function getWatchdogState(): WatchdogState {
       lastCommandAt: 0,
       lastBatteryExhaustedAt: 0,
       lastNotifiedAction: null,
+      lastResolvedRangeStart: null,
     };
   }
 
   return g.__solarbuddy_watchdog;
+}
+
+/**
+ * Maps the resolver's `SlotActionSource` to the `OverrideSource` enum used by
+ * the `plan_slot_executions` table. The two types currently share identical
+ * members, but they live in different modules; this helper keeps the mapping
+ * explicit so any future divergence is caught at compile time.
+ */
+const SOURCE_TO_OVERRIDE_SOURCE: Record<SlotActionSource, OverrideSource> = {
+  manual: 'manual',
+  auto: 'auto',
+  scheduled: 'scheduled',
+  plan: 'plan',
+  target_soc: 'target_soc',
+  solar_surplus: 'solar_surplus',
+  default: 'default',
+};
+
+function mapSourceToOverrideSource(source: SlotActionSource): OverrideSource {
+  return SOURCE_TO_OVERRIDE_SOURCE[source];
 }
 
 function parseEnabledState(value: string | null): boolean | null {
@@ -113,109 +147,78 @@ export function isWatchdogEnabled(): boolean {
   return parsed ?? true;
 }
 
-function getCurrentOverride(nowIso: string): OverrideRow | null {
-  const db = getDb();
-  return (
-    (db
-      .prepare(
-        `SELECT slot_start, slot_end, action
-         FROM manual_overrides
-         WHERE slot_start <= ? AND slot_end > ?
-         ORDER BY created_at DESC, id DESC
-         LIMIT 1`,
-      )
-      .get(nowIso, nowIso) as OverrideRow | undefined) ?? null
-  );
+const SOURCE_TO_REASON: Record<ResolvedSlotAction['source'], RuntimeReason> = {
+  manual: 'manual_override',
+  auto: 'auto_override',
+  scheduled: 'scheduled_action',
+  target_soc: 'target_soc_reached',
+  solar_surplus: 'solar_surplus',
+  plan: 'scheduled_slot',
+  default: 'default_mode',
+};
+
+/**
+ * Returns the resolved slot action in its canonical shape. Prefer this for
+ * new callers (UI, notifications, diagnostics) so the watchdog and the UI
+ * cannot disagree about what the scheduler is currently doing.
+ */
+export function getResolvedSlotAction(
+  now: Date = new Date(),
+  state: Pick<InverterState, 'battery_soc' | 'pv_power' | 'grid_power' | 'load_power' | 'battery_power'> = getState(),
+): ResolvedSlotAction {
+  return resolveSlotAction(now, state, getSettings());
 }
 
-function getCurrentPlanSlot(nowIso: string): PlanSlotRow | null {
-  if (isVirtualModeEnabled()) {
-    return getVirtualCurrentPlanSlot(nowIso);
-  }
-
-  const db = getDb();
-  return (
-    (db
-      .prepare(
-        `SELECT slot_start, slot_end, action, reason
-         FROM plan_slots
-         WHERE slot_start <= ? AND slot_end > ?
-         ORDER BY created_at DESC, id DESC
-         LIMIT 1`,
-      )
-      .get(nowIso, nowIso) as PlanSlotRow | undefined) ?? null
-  );
+/**
+ * Returns the resolved slot action conflated across any contiguous same-action
+ * plan slots. The returned range lets the watchdog issue a single command at
+ * the start of a multi-slot run instead of reissuing it every tick.
+ */
+export function getResolvedSlotActionRange(
+  now: Date = new Date(),
+  state: Pick<InverterState, 'battery_soc' | 'pv_power' | 'grid_power' | 'load_power' | 'battery_power'> = getState(),
+): ResolvedSlotRange {
+  return resolveSlotActionRange(now, state, getSettings());
 }
 
+/**
+ * @deprecated Prefer getResolvedSlotAction for new code. This adapter is kept
+ * so the watchdog's legacy consumers and tests continue to work unchanged.
+ */
 export function resolveRuntimeIntent(
   now: Date = new Date(),
   state: Pick<InverterState, 'battery_soc' | 'pv_power' | 'grid_power' | 'load_power' | 'battery_power'> = getState(),
 ): RuntimeIntent {
-  const nowIso = now.toISOString();
-  const override = getCurrentOverride(nowIso);
-  if (override) {
-    return {
-      action: override.action,
-      reason: 'manual_override',
-      detail: `Manual override ${override.action} is active for the current slot.`,
-      slotStart: override.slot_start,
-      slotEnd: override.slot_end,
-    };
-  }
-
-  // Scheduled actions (user-defined time + SOC rules) take priority over plan slots
-  const scheduled = evaluateScheduledActions(now, state.battery_soc);
-  if (scheduled) {
-    return {
-      action: scheduled.action,
-      reason: 'scheduled_action',
-      detail: scheduled.reason,
-    };
-  }
-
-  const plannedSlot = getCurrentPlanSlot(nowIso);
-  if (!plannedSlot) {
-    return {
-      action: 'hold',
-      reason: 'default_mode',
-      detail: 'No active override or schedule window applies right now. Holding battery at current SOC.',
-    };
-  }
-
-  const scheduleAction = plannedSlot.action;
-  if (scheduleAction === 'charge') {
-    const settings = getSettings();
-    const minSoc = parseInt(settings.min_soc_target, 10) || 80;
-
-    if (state.battery_soc !== null && state.battery_soc >= minSoc) {
-      return {
-        action: 'hold',
-        reason: 'target_soc_reached',
-        detail: `Scheduled charge window is active, but battery SOC is already at or above ${minSoc}%. Holding.`,
-        slotStart: plannedSlot.slot_start,
-        slotEnd: plannedSlot.slot_end,
-      };
-    }
-
-    const isNegativePriceSlot = plannedSlot.reason?.toLowerCase().includes('negative-price') ?? false;
-    const strategy = getChargingStrategy(settings);
-    if (!isNegativePriceSlot && strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
-      return {
-        action: 'hold',
-        reason: 'solar_surplus',
-        detail: 'Scheduled opportunistic top-up window is active, but solar surplus is already charging the battery. Holding.',
-        slotStart: plannedSlot.slot_start,
-        slotEnd: plannedSlot.slot_end,
-      };
-    }
-  }
-
+  const resolved = getResolvedSlotAction(now, state);
   return {
-    action: scheduleAction,
-    reason: 'scheduled_slot',
-    detail: plannedSlot.reason || `Planned ${plannedSlot.action} action is active for the current slot.`,
-    slotStart: plannedSlot.slot_start,
-    slotEnd: plannedSlot.slot_end,
+    action: resolved.action,
+    reason: SOURCE_TO_REASON[resolved.source],
+    detail: resolved.detail,
+    slotStart: resolved.slotStart,
+    slotEnd: resolved.slotEnd,
+  };
+}
+
+/**
+ * Resolves the current intent and conflates contiguous same-action plan slots
+ * into a single range. Used internally by the watchdog so the cooldown
+ * signature stays stable across every tick of a multi-slot run.
+ */
+export function resolveRuntimeIntentRange(
+  now: Date = new Date(),
+  state: Pick<InverterState, 'battery_soc' | 'pv_power' | 'grid_power' | 'load_power' | 'battery_power'> = getState(),
+): RuntimeIntent {
+  const resolved = getResolvedSlotActionRange(now, state);
+  return {
+    action: resolved.action,
+    reason: SOURCE_TO_REASON[resolved.source],
+    detail: resolved.detail,
+    slotStart: resolved.slotStart,
+    slotEnd: resolved.slotEnd,
+    rangeStart: resolved.rangeStart,
+    rangeEnd: resolved.rangeEnd,
+    slotsInRange: resolved.slotsInRange,
+    source: resolved.source,
   };
 }
 
@@ -273,8 +276,27 @@ function isForcedDischargeActive(state: InverterState): boolean {
   return resolveOutputSourcePriority(state) === 'SBU';
 }
 
-function buildCommandSignature(action: RuntimeAction, slotStart: string | undefined, chargeRate: number, defaultMode: string) {
-  return `${action}:${slotStart ?? 'none'}:${chargeRate}:${defaultMode}`;
+function buildCommandSignature(
+  action: RuntimeAction,
+  rangeStart: string | undefined,
+  rangeEnd: string | undefined,
+  chargeRate: number,
+  defaultMode: string,
+) {
+  return `${action}:${rangeStart ?? 'none'}:${rangeEnd ?? 'none'}:${chargeRate}:${defaultMode}`;
+}
+
+/**
+ * State is considered fresh enough to trust for the satisfaction check only
+ * if we have a recent `last_updated` timestamp from the inverter. Stale or
+ * missing telemetry forces the watchdog to issue the write so we don't rely
+ * on outdated readings.
+ */
+function isStateFresh(state: InverterState): boolean {
+  if (!state.last_updated) return false;
+  const ageMs = Date.now() - new Date(state.last_updated).getTime();
+  if (!Number.isFinite(ageMs)) return false;
+  return ageMs >= 0 && ageMs <= STATE_FRESHNESS_MS;
 }
 
 function shouldRespectCooldown(signature: string): boolean {
@@ -294,6 +316,92 @@ function clearCommandCooldown() {
   runtime.lastCommandAt = 0;
 }
 
+const DEFAULT_EXECUTION_SLOT_MS = 30 * 60 * 1000;
+
+/**
+ * Appends a row to `plan_slot_executions` describing the command the watchdog
+ * just issued. Only called on the success path of an actual inverter write —
+ * the state-satisfied and cooldown-blocked paths must not log here, otherwise
+ * the execution log would stop reflecting "commands actually sent".
+ */
+function logSlotExecution(intent: RuntimeIntent, state: InverterState, signature: string) {
+  try {
+    const nowIso = new Date().toISOString();
+    const slotStart = intent.rangeStart ?? intent.slotStart ?? nowIso;
+    const slotEnd =
+      intent.rangeEnd ??
+      intent.slotEnd ??
+      new Date(new Date(slotStart).getTime() + DEFAULT_EXECUTION_SLOT_MS).toISOString();
+
+    recordSlotExecution({
+      slot_start: slotStart,
+      slot_end: slotEnd,
+      action: intent.action,
+      reason: intent.reason ?? null,
+      override_source: mapSourceToOverrideSource(intent.source ?? 'default'),
+      soc_at_start: state.battery_soc,
+      soc_at_end: null,
+      command_signature: signature,
+      command_issued_at: nowIso,
+      actual_import_wh: null,
+      actual_export_wh: null,
+      notes: null,
+    });
+  } catch (err) {
+    // Never let an instrumentation failure break the watchdog command path.
+    appendEvent({
+      level: 'warning',
+      category: 'watchdog',
+      message:
+        err instanceof Error
+          ? `Failed to record plan slot execution: ${err.message}`
+          : 'Failed to record plan slot execution.',
+    });
+  }
+}
+
+/**
+ * Simpler `soc_at_end` backfill strategy: on every tick, compare the newly
+ * resolved range start to the previous tick's range start. When they differ,
+ * the previous run just ended, so update its latest execution row with the
+ * current SOC as `soc_at_end`.
+ *
+ * Limitations:
+ *   - No tick ever fires *after* the final slot of a plan (e.g. process shut
+ *     down during the last run), so that final row will be left with
+ *     `soc_at_end = NULL`. Accepted as a known edge case — downstream analytics
+ *     should tolerate NULLs here.
+ *   - If the watchdog crashes between ticks, the boundary is missed.
+ *   - The first tick after process start has no previous range stored, so it
+ *     is treated as the beginning of a new run (no backfill).
+ */
+function backfillPreviousSlotSocAtEnd(
+  previousRangeStart: string | null,
+  currentRangeStart: string | null,
+  state: InverterState,
+) {
+  if (!previousRangeStart) return;
+  if (!currentRangeStart) return;
+  if (previousRangeStart === currentRangeStart) return;
+  if (state.battery_soc === null) return;
+
+  try {
+    const previous = getLatestExecutionForSlot(previousRangeStart);
+    if (!previous) return;
+    if (previous.soc_at_end !== null && previous.soc_at_end !== undefined) return;
+    updateSlotExecutionActuals(previous.id, { soc_at_end: state.battery_soc });
+  } catch (err) {
+    appendEvent({
+      level: 'warning',
+      category: 'watchdog',
+      message:
+        err instanceof Error
+          ? `Failed to backfill soc_at_end on slot boundary: ${err.message}`
+          : 'Failed to backfill soc_at_end on slot boundary.',
+    });
+  }
+}
+
 async function ensureStopDischargeAtFloor(state: InverterState): Promise<void> {
   const settings = getSettings();
   const floor = parseInt(settings.discharge_soc_floor, 10);
@@ -311,29 +419,79 @@ function notifyIfActionChanged(action: RuntimeAction, title: string, body: strin
   notify('state_change', title, body);
 }
 
+function logStateSatisfied(action: RuntimeAction) {
+  appendEvent({
+    level: 'info',
+    category: 'watchdog',
+    message: `[Watchdog] State already satisfied for ${action} — suppressing write.`,
+  });
+}
+
+/**
+ * Returns true when the desired inverter state already matches the reported
+ * state AND the telemetry is fresh enough to trust. This is the primary gate
+ * for write suppression — if it returns true, we skip the command entirely.
+ * Stale telemetry falls through so the watchdog re-asserts the command.
+ */
+function isIntentAlreadySatisfied(
+  intent: RuntimeIntent,
+  state: InverterState,
+  chargeRate: number,
+  floor: number,
+): boolean {
+  if (!isStateFresh(state)) return false;
+
+  switch (intent.action) {
+    case 'charge':
+      return isChargeStateSatisfied(state, chargeRate);
+    case 'discharge':
+      return isDischargeStateSatisfied(state, floor);
+    case 'hold':
+      return isHoldStateSatisfied(state);
+    default:
+      return false;
+  }
+}
+
 async function applyIntent(intent: RuntimeIntent, state: InverterState) {
   const settings = getSettings();
   const chargeRate = parseInt(settings.charge_rate, 10) || 100;
   const defaultMode = settings.default_work_mode as 'Battery first' | 'Load first';
   const floorRaw = parseInt(settings.discharge_soc_floor, 10);
   const floor = Number.isFinite(floorRaw) ? floorRaw : 20;
-  const signature = buildCommandSignature(intent.action, intent.slotStart, chargeRate, defaultMode);
+  const signature = buildCommandSignature(
+    intent.action,
+    intent.rangeStart ?? intent.slotStart,
+    intent.rangeEnd ?? intent.slotEnd,
+    chargeRate,
+    defaultMode,
+  );
+
+  // Primary gate: if the inverter already reports the desired state and the
+  // telemetry is fresh, skip the write entirely. We deliberately do NOT touch
+  // the cooldown timers here — a subsequent drift should still be able to
+  // re-issue the command immediately without waiting for the 120s cooldown.
+  if (isIntentAlreadySatisfied(intent, state, chargeRate, floor)) {
+    logStateSatisfied(intent.action);
+    return;
+  }
+
+  // Secondary safety net: time-based dedup. Only blocks when the signature
+  // matches a recent write, i.e. we already asked the inverter for this and
+  // it hasn't had a chance to respond yet.
+  if (shouldRespectCooldown(signature)) {
+    return;
+  }
 
   switch (intent.action) {
     case 'charge': {
-      if (isChargeStateSatisfied(state, chargeRate)) {
-        clearCommandCooldown();
-        return;
-      }
-      if (shouldRespectCooldown(signature)) {
-        return;
-      }
       if (isForcedDischargeActive(state)) {
         await stopGridDischarge(defaultMode);
       }
       await ensureStopDischargeAtFloor(state);
       await startGridCharging(chargeRate);
       recordCommand(signature);
+      logSlotExecution(intent, state, signature);
       appendEvent({
         level: 'info',
         category: 'watchdog',
@@ -343,19 +501,13 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       return;
     }
     case 'discharge': {
-      if (isDischargeStateSatisfied(state, floor)) {
-        clearCommandCooldown();
-        return;
-      }
-      if (shouldRespectCooldown(signature)) {
-        return;
-      }
       if (isForcedChargeActive(state)) {
         await stopGridCharging(defaultMode);
       }
       await ensureStopDischargeAtFloor(state);
       await startGridDischarge(defaultMode);
       recordCommand(signature);
+      logSlotExecution(intent, state, signature);
       appendEvent({
         level: 'info',
         category: 'watchdog',
@@ -365,13 +517,6 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       return;
     }
     case 'hold': {
-      if (isHoldStateSatisfied(state)) {
-        clearCommandCooldown();
-        return;
-      }
-      if (shouldRespectCooldown(signature)) {
-        return;
-      }
       // Clear any forced state first so the hold lands cleanly on Load first + pinned SOC.
       if (isForcedDischargeActive(state)) {
         await stopGridDischarge(defaultMode);
@@ -381,6 +526,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       }
       await startBatteryHold(state.battery_soc ?? 50);
       recordCommand(signature);
+      logSlotExecution(intent, state, signature);
       appendEvent({
         level: 'info',
         category: 'watchdog',
@@ -411,7 +557,17 @@ export async function reconcileInverterState(reason = 'manual trigger') {
       return;
     }
 
-    const intent = resolveRuntimeIntent(getVirtualNow(), state);
+    const intent = resolveRuntimeIntentRange(getVirtualNow(), state);
+
+    // Slot-end backfill: if we've crossed a slot/run boundary since the last
+    // tick, stamp `soc_at_end` onto the previous run's latest execution row
+    // before we apply and log the new run's intent. Runs on every tick, not
+    // only when a new command fires, so it still catches boundary crossings
+    // where the new run is state-satisfied.
+    const currentRangeStart = intent.rangeStart ?? intent.slotStart ?? null;
+    backfillPreviousSlotSocAtEnd(runtime.lastResolvedRangeStart, currentRangeStart, state);
+    runtime.lastResolvedRangeStart = currentRangeStart;
+
     await applyIntent(intent, state);
 
     // Battery exhausted detection (30-minute cooldown)
@@ -504,5 +660,6 @@ export function stopInverterWatchdog() {
   }
   runtime.pendingReasons.clear();
   runtime.running = false;
+  runtime.lastResolvedRangeStart = null;
   clearCommandCooldown();
 }

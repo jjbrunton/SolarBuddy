@@ -95,7 +95,11 @@ export default function CurrentRateWidget() {
     [state.runtime_mode, state.virtual_time],
   );
   const [rates, setRates] = useState<AgileRate[]>([]);
-  const [planSlots, setPlanSlots] = useState<{ slot_start: string; slot_end: string; action: PlanAction }[]>([]);
+  // Server-resolved current action: walks the same priority cascade as the
+  // watchdog (manual override > scheduled action > plan slot > target-SOC /
+  // solar-surplus holds > default hold). Computing this client-side from
+  // plan_slots alone would drift from what the watchdog is actually doing.
+  const [currentAction, setCurrentAction] = useState<PlanAction | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -108,7 +112,7 @@ export default function CurrentRateWidget() {
         setRates(ratesJson.rates || []);
 
         const schedJson = await schedRes.json();
-        setPlanSlots(schedJson.plan_slots || []);
+        setCurrentAction(schedJson.current_action?.action ?? null);
       } catch {
         // Silent: the dashboard should remain usable without rate data.
       }
@@ -120,13 +124,6 @@ export default function CurrentRateWidget() {
   }, []);
 
   const summary = useMemo(() => summarizeCurrentRate(rates, effectiveNow), [effectiveNow, rates]);
-  const currentAction = useMemo(() => {
-    const now = effectiveNow.getTime();
-    return (
-      planSlots.find((slot) => now >= new Date(slot.slot_start).getTime() && now < new Date(slot.slot_end).getTime())
-        ?.action ?? null
-    );
-  }, [effectiveNow, planSlots]);
 
   if (!summary) return null;
 

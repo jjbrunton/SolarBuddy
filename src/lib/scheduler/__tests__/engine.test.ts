@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildSchedulePlan, findCheapestSlots, findSuppressedPreCheapestKeys, shouldSkipOvernightCharge } from '../engine';
+import {
+  buildSchedulePlan,
+  findCheapestSlots,
+  findDroppingChargeKeys,
+  findSuppressedPreCheapestKeys,
+  shouldSkipOvernightCharge,
+} from '../engine';
 import type { AgileRate } from '../../octopus/rates';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../config';
 
@@ -416,5 +422,140 @@ describe('shouldSkipOvernightCharge', () => {
       pv_forecast_enabled: 'true',
       solar_skip_threshold_kwh: '30',
     }, now)).toBe(false);
+  });
+
+  it('applies pv_forecast_damp_factor to the summed forecast before comparing to threshold', () => {
+    // Build a forecast that sums to ~30 kWh for tomorrow.
+    // 30 kWh * 2 slots/hour * 1000 = 60,000 W-slot total; per slot average = 5000 W across 12 slots
+    const forecast = [
+      { valid_from: '2026-04-02T06:00:00Z', valid_to: '2026-04-02T06:30:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T06:30:00Z', valid_to: '2026-04-02T07:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T07:00:00Z', valid_to: '2026-04-02T07:30:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T07:30:00Z', valid_to: '2026-04-02T08:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T08:00:00Z', valid_to: '2026-04-02T08:30:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T08:30:00Z', valid_to: '2026-04-02T09:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T09:00:00Z', valid_to: '2026-04-02T09:30:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T09:30:00Z', valid_to: '2026-04-02T10:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T10:00:00Z', valid_to: '2026-04-02T10:30:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T10:30:00Z', valid_to: '2026-04-02T11:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T11:00:00Z', valid_to: '2026-04-02T11:30:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+      { valid_from: '2026-04-02T11:30:00Z', valid_to: '2026-04-02T12:00:00Z', pv_estimate_w: 5000, pv_estimate10_w: 4000, pv_estimate90_w: 6000 },
+    ];
+    // raw total = 12 slots * 5000 W * 0.5h / 1000 = 30 kWh
+
+    const base = {
+      ...baseSettings,
+      solar_skip_enabled: 'true',
+      pv_forecast_enabled: 'true',
+      solar_skip_threshold_kwh: '20',
+    };
+
+    // Undamped: 30 kWh > 20 threshold → skip
+    expect(shouldSkipOvernightCharge(forecast, { ...base, pv_forecast_damp_factor: '1.0' }, now)).toBe(true);
+
+    // Damped to 50%: 15 kWh < 20 threshold → don't skip
+    expect(shouldSkipOvernightCharge(forecast, { ...base, pv_forecast_damp_factor: '0.5' }, now)).toBe(false);
+  });
+});
+
+describe('findDroppingChargeKeys', () => {
+  const droppingNow = new Date('2026-04-01T09:55:00Z');
+  const droppingRates = [
+    rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 15),
+    rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 14),
+    rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 25),
+    rate('2026-04-01T11:30:00Z', '2026-04-01T12:00:00Z', 30),
+    rate('2026-04-01T12:00:00Z', '2026-04-01T12:30:00Z', 5),
+    rate('2026-04-01T12:30:00Z', '2026-04-01T13:00:00Z', 6),
+  ];
+  // Unlimited budget + no threshold → mean-below-avg: mean≈15.83, so
+  // selected slots are 15, 14, 5, 6 (four base-charge slots).
+
+  const droppingSettings: AppSettings = {
+    ...baseSettings,
+    charging_strategy: 'opportunistic_topup',
+    charge_hours: '0',
+    price_threshold: '0',
+    pre_cheapest_lookback_slots: '3',
+  };
+
+  it('no-op when there is no below-average cluster before the cheapest window', () => {
+    // Single contiguous cheapest block — nothing to drop.
+    const rates = [
+      rate('2026-04-01T12:00:00Z', '2026-04-01T12:30:00Z', 5),
+      rate('2026-04-01T12:30:00Z', '2026-04-01T13:00:00Z', 6),
+      rate('2026-04-01T13:00:00Z', '2026-04-01T13:30:00Z', 7),
+    ];
+    const windows = findCheapestSlots(rates, droppingSettings, { now: droppingNow });
+    const dropped = findDroppingChargeKeys(windows, rates, droppingSettings);
+    expect(dropped.size).toBe(0);
+  });
+
+  it('downgrades a single dropping slot inside the lookback window', () => {
+    const windows = findCheapestSlots(droppingRates, droppingSettings, { now: droppingNow });
+    const dropped = findDroppingChargeKeys(windows, droppingRates, droppingSettings);
+    // 10:30 is base-charge, sits 2 slots before the 12:00 cheapest → dropped.
+    expect(dropped.has('2026-04-01T10:30:00Z')).toBe(true);
+  });
+
+  it('preserves negative-price slots even when inside the lookback zone', () => {
+    // 10:30 is negative (-2p) and sits 2 slots before the cheapest trough at
+    // 12:00/12:30 (-8/-9p). Without the negative-preserve check it would be
+    // dropped as a "dropping" slot.
+    const rates = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 20),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', -2), // negative — preserve
+      rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 25),
+      rate('2026-04-01T11:30:00Z', '2026-04-01T12:00:00Z', 30),
+      rate('2026-04-01T12:00:00Z', '2026-04-01T12:30:00Z', -8),
+      rate('2026-04-01T12:30:00Z', '2026-04-01T13:00:00Z', -9),
+    ];
+    const windows = findCheapestSlots(rates, droppingSettings, { now: droppingNow });
+    const dropped = findDroppingChargeKeys(windows, rates, droppingSettings);
+    expect(dropped.has('2026-04-01T10:30:00Z')).toBe(false);
+  });
+
+  it('preserves slots below the always_charge_below_price threshold', () => {
+    const windows = findCheapestSlots(droppingRates, droppingSettings, { now: droppingNow });
+    const dropped = findDroppingChargeKeys(windows, droppingRates, {
+      ...droppingSettings,
+      always_charge_below_price: '16', // 14p slot at 10:30 is below this
+    });
+    expect(dropped.has('2026-04-01T10:30:00Z')).toBe(false);
+  });
+
+  it('disables the pass when pre_cheapest_lookback_slots is 0', () => {
+    const windows = findCheapestSlots(droppingRates, droppingSettings, { now: droppingNow });
+    const dropped = findDroppingChargeKeys(windows, droppingRates, {
+      ...droppingSettings,
+      pre_cheapest_lookback_slots: '0',
+    });
+    expect(dropped.size).toBe(0);
+  });
+
+  it('does not touch slots beyond the lookback distance', () => {
+    // lookback=1 → only the slot immediately before 12:00 (i.e. 11:30) is
+    // in range, and that slot is not in baseWindows. 10:00/10:30 sit beyond
+    // the window and must remain charge.
+    const windows = findCheapestSlots(droppingRates, droppingSettings, { now: droppingNow });
+    const dropped = findDroppingChargeKeys(windows, droppingRates, {
+      ...droppingSettings,
+      pre_cheapest_lookback_slots: '1',
+    });
+    expect(dropped.has('2026-04-01T10:00:00Z')).toBe(false);
+    expect(dropped.has('2026-04-01T10:30:00Z')).toBe(false);
+  });
+
+  it('buildSchedulePlan rewrites dropped slots as hold in the planned slots', () => {
+    const plan = buildSchedulePlan(droppingRates, droppingSettings, {
+      now: droppingNow,
+    });
+    const dropped = plan.slots.find((s) => s.slot_start === '2026-04-01T10:30:00Z');
+    const earliest = plan.slots.find((s) => s.slot_start === '2026-04-01T10:00:00Z');
+    const trough = plan.slots.find((s) => s.slot_start === '2026-04-01T12:00:00Z');
+    expect(dropped?.action).toBe('hold');
+    // 10:00 is beyond the lookback (lookback=3, index 0, earliest=4 → start=1)
+    expect(earliest?.action).toBe('charge');
+    expect(trough?.action).toBe('charge');
   });
 });

@@ -172,3 +172,113 @@ export function getRecentPlanData() {
 
   return { schedules, plan_slots };
 }
+
+export type OverrideSource =
+  | 'manual'
+  | 'scheduled'
+  | 'auto'
+  | 'plan'
+  | 'target_soc'
+  | 'solar_surplus'
+  | 'default';
+
+export interface SlotExecutionRow {
+  slot_start: string;
+  slot_end: string;
+  action: string;
+  reason: string | null;
+  override_source: OverrideSource;
+  soc_at_start: number | null;
+  soc_at_end?: number | null;
+  command_signature: string | null;
+  command_issued_at: string;
+  actual_import_wh?: number | null;
+  actual_export_wh?: number | null;
+  notes?: string | null;
+}
+
+export function recordSlotExecution(row: SlotExecutionRow): number {
+  const db = getDb();
+  const result = db
+    .prepare(
+      `INSERT INTO plan_slot_executions (
+        slot_start, slot_end, action, reason, override_source,
+        soc_at_start, soc_at_end, command_signature, command_issued_at,
+        actual_import_wh, actual_export_wh, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.slot_start,
+      row.slot_end,
+      row.action,
+      row.reason,
+      row.override_source,
+      row.soc_at_start,
+      row.soc_at_end ?? null,
+      row.command_signature,
+      row.command_issued_at,
+      row.actual_import_wh ?? null,
+      row.actual_export_wh ?? null,
+      row.notes ?? null,
+    );
+  return Number(result.lastInsertRowid);
+}
+
+export function updateSlotExecutionActuals(
+  id: number,
+  updates: { soc_at_end?: number; actual_import_wh?: number; actual_export_wh?: number },
+): void {
+  const setClauses: string[] = [];
+  const params: (number | string)[] = [];
+
+  if (updates.soc_at_end !== undefined) {
+    setClauses.push('soc_at_end = ?');
+    params.push(updates.soc_at_end);
+  }
+  if (updates.actual_import_wh !== undefined) {
+    setClauses.push('actual_import_wh = ?');
+    params.push(updates.actual_import_wh);
+  }
+  if (updates.actual_export_wh !== undefined) {
+    setClauses.push('actual_export_wh = ?');
+    params.push(updates.actual_export_wh);
+  }
+
+  if (setClauses.length === 0) return;
+
+  params.push(id);
+  const db = getDb();
+  db.prepare(`UPDATE plan_slot_executions SET ${setClauses.join(', ')} WHERE id = ?`).run(...params);
+}
+
+export function getSlotExecutions(startIso: string, endIso: string): SlotExecutionRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT slot_start, slot_end, action, reason, override_source,
+              soc_at_start, soc_at_end, command_signature, command_issued_at,
+              actual_import_wh, actual_export_wh, notes
+       FROM plan_slot_executions
+       WHERE command_issued_at >= ? AND command_issued_at < ?
+       ORDER BY command_issued_at DESC`,
+    )
+    .all(startIso, endIso) as SlotExecutionRow[];
+}
+
+export function getLatestExecutionForSlot(
+  slotStart: string,
+): (SlotExecutionRow & { id: number }) | null {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT id, slot_start, slot_end, action, reason, override_source,
+              soc_at_start, soc_at_end, command_signature, command_issued_at,
+              actual_import_wh, actual_export_wh, notes
+       FROM plan_slot_executions
+       WHERE slot_start = ?
+       ORDER BY command_issued_at DESC
+       LIMIT 1`,
+    )
+    .get(slotStart) as (SlotExecutionRow & { id: number }) | undefined;
+  return row ?? null;
+}

@@ -1,7 +1,54 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Mock the DB so the client's cache-read path starts empty and we can
+// capture writes to pv_forecasts without touching real SQLite.
+const { prepareMock, runMock, allMock, getMock, transactionMock, cacheState } = vi.hoisted(() => {
+  const cacheState: {
+    latest: string | null;
+    rows: Array<{
+      valid_from: string;
+      valid_to: string;
+      pv_estimate_w: number;
+      pv_estimate10_w: number | null;
+      pv_estimate90_w: number | null;
+      fetched_at: string;
+    }>;
+  } = { latest: null, rows: [] };
+  const runMock = vi.fn();
+  const allMock = vi.fn(() => cacheState.rows);
+  const getMock = vi.fn(() => ({ latest: cacheState.latest }));
+  const transactionMock = vi.fn((callback: (items: unknown[]) => void) => (items: unknown[]) => callback(items));
+  return {
+    prepareMock: vi.fn((_query: string) => ({
+      run: runMock,
+      all: allMock,
+      get: getMock,
+    })),
+    runMock,
+    allMock,
+    getMock,
+    transactionMock,
+    cacheState,
+  };
+});
+
+vi.mock('../../db', () => ({
+  getDb: () => ({
+    prepare: prepareMock,
+    transaction: transactionMock,
+  }),
+}));
+
 import { fetchPVForecast } from '../client';
 
 describe('fetchPVForecast', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cacheState.latest = null;
+    cacheState.rows = [];
+    vi.restoreAllMocks();
+  });
+
   it('throws a descriptive error when the API call fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 500, statusText: 'Server Error' }));
 
@@ -57,5 +104,42 @@ describe('fetchPVForecast', () => {
         pv_estimate90_w: 2100,
       },
     ]);
+  });
+
+  it('uses cached forecast data on the second call within the freshness window', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      result: {
+        watts: {
+          '2026-04-03T10:00:00Z': 0,
+          '2026-04-03T11:00:00Z': 1000,
+        },
+      },
+    }), { status: 200 }));
+
+    // First call: cache is empty → hits the API.
+    const first = await fetchPVForecast('51.5', '-0.1', '35', '0', '4.2');
+    expect(first.length).toBeGreaterThan(0);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // Capture every slot the client just wrote to the cache (upserts have 6
+    // args; the opportunistic DELETE at the end passes only 1).
+    const writeCalls = runMock.mock.calls
+      .filter((args) => args.length === 6)
+      .map((args) => ({
+        valid_from: args[0] as string,
+        valid_to: args[1] as string,
+        pv_estimate_w: args[2] as number,
+        pv_estimate10_w: args[3] as number | null,
+        pv_estimate90_w: args[4] as number | null,
+        fetched_at: args[5] as string,
+      }));
+    expect(writeCalls.length).toBeGreaterThan(0);
+    cacheState.rows = writeCalls;
+    cacheState.latest = writeCalls[0].fetched_at;
+
+    // Second call: cache is fresh → must return cached rows without a new fetch.
+    const second = await fetchPVForecast('51.5', '-0.1', '35', '0', '4.2');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
   });
 });

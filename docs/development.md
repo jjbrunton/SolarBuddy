@@ -42,6 +42,7 @@ npm run docs:check
 npm run lint
 npm test
 npm run test:coverage
+npm run test:integration
 npm run build
 npm run test:smoke
 npm run test:e2e
@@ -53,6 +54,8 @@ docker build -t solarbuddy .
 `npm run lint` uses the official Next.js ESLint flat config for App Router projects.
 
 `npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report for backend and API code under `src/lib/` and `src/app/api/`, `npm run build` performs the production compile plus TypeScript validation, and `npm run test:smoke` boots the production server and verifies key routes against a temporary SQLite database.
+
+`npm run test:integration` runs the dedicated integration suites (`*.integration.test.ts`) under `src/`. These tests use fixed fixtures and in-memory SQLite to verify cross-module behavior such as scheduler persistence, API+DB lifecycle flows, and SSE event/log pipelines without calling live external services.
 
 `npm run test:e2e` runs the Playwright browser suite against the built production server. On a new machine, run `npm run test:e2e:install` once to install the Chromium browser used by the suite.
 

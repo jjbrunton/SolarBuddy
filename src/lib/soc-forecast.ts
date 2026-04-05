@@ -12,6 +12,14 @@ export interface SOCForecastParams {
   estimatedConsumptionW: number;
   /** Optional PV forecast: map from slot index to expected PV generation in watts. */
   perSlotPVGenerationW?: Map<number, number>;
+  /**
+   * Optional per-slot consumption lookup (Watts). When provided, overrides the
+   * flat `estimatedConsumptionW` for drain calculations. The caller is responsible
+   * for translating slot indices to wall-clock time before querying the usage
+   * profile. Callers that pass this should still set `estimatedConsumptionW` as
+   * a sensible scalar fallback.
+   */
+  drainWAtSlot?: (slotIndex: number) => number;
   /** Optional starting SOC and index for modelling from an earlier slot than currentSlotIndex. */
   startSOC?: number;
   startIndex?: number;
@@ -36,6 +44,7 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
     maxChargePowerW,
     estimatedConsumptionW,
     perSlotPVGenerationW,
+    drainWAtSlot,
     startSOC,
     startIndex: paramStartIndex,
   } = params;
@@ -44,7 +53,9 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
 
   const effectiveChargePowerW = maxChargePowerW * (chargeRatePercent / 100);
   const chargePerSlotWh = effectiveChargePowerW * 0.5;
-  const drainPerSlotWh = estimatedConsumptionW * 0.5;
+  const fallbackDrainPerSlotWh = estimatedConsumptionW * 0.5;
+  const drainWhForSlot = (slotIndex: number): number =>
+    drainWAtSlot ? drainWAtSlot(slotIndex) * 0.5 : fallbackDrainPerSlotWh;
 
   const forecast: number[] = new Array(totalSlots);
   const hasStart = startSOC != null && paramStartIndex != null;
@@ -60,6 +71,7 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
   for (let i = modelStart; i < totalSlots; i++) {
     const action: PlanAction = slotActions.get(i) ?? 'hold';
     const pvWh = (perSlotPVGenerationW?.get(i) ?? 0) * 0.5;
+    const drainPerSlotWh = drainWhForSlot(i);
 
     switch (action) {
       case 'charge': {

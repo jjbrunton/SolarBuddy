@@ -10,6 +10,7 @@
     "release:dry-run": "docker build -t solarbuddy:dry-run .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --dir src integration.test.ts",
     "test:watch": "vitest",
     "test:smoke": "bash ./scripts/smoke-test.sh",
     "test:e2e": "playwright test",

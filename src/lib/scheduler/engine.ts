@@ -2,6 +2,7 @@ import { AgileRate } from '../octopus/rates';
 import { AppSettings } from '../config';
 import { type PlanAction } from '../plan-actions';
 import { computeSOCForecast } from '../soc-forecast';
+import { getForecastedConsumptionW } from '../usage';
 import { buildSmartDischargePlan } from './discharge';
 import { findAlwaysCheapSlots, findNegativePriceSlots, findNegativeRunDischargeSlots, findPreDischargeSlots } from './negative';
 import { findPeakPrepSlots } from './peak';
@@ -261,6 +262,12 @@ const schedulerDateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit',
 });
 
+export function parsePVDampFactor(settings: AppSettings): number {
+  const parsed = parseFloat(settings.pv_forecast_damp_factor);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 1.0;
+  return parsed;
+}
+
 export function shouldSkipOvernightCharge(
   pvForecast: PVForecastSlot[] | undefined,
   settings: AppSettings,
@@ -271,6 +278,7 @@ export function shouldSkipOvernightCharge(
   if (!pvForecast || pvForecast.length === 0) return false;
 
   const threshold = parseFloat(settings.solar_skip_threshold_kwh) || 15;
+  const dampFactor = parsePVDampFactor(settings);
 
   // Determine tomorrow's date in scheduler timezone
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -289,7 +297,7 @@ export function shouldSkipOvernightCharge(
     }
   }
 
-  return totalKwh >= threshold;
+  return totalKwh * dampFactor >= threshold;
 }
 
 // --- Pre-cheapest charge suppression ---
@@ -335,6 +343,61 @@ export function findSuppressedPreCheapestKeys(
   return suppressed;
 }
 
+// --- Dropping price suppression ---
+//
+// If the true cheapest block is later (e.g. 2am) and base selection also picks
+// up a below-average cluster earlier in the horizon (e.g. 3pm), we'd rather
+// wait for the real trough than fill early. This finds the cheapest base
+// charge window and walks backward `pre_cheapest_lookback_slots` positions,
+// stripping any base-charge slots in that zone. Negative slots and
+// below-always-charge-threshold slots are preserved because they remain
+// unconditionally worth charging.
+
+export function findDroppingChargeKeys(
+  baseWindows: ChargeWindow[],
+  rates: AgileRate[],
+  settings: AppSettings,
+): Set<string> {
+  const lookback = parseInt(settings.pre_cheapest_lookback_slots, 10);
+  if (!Number.isFinite(lookback) || lookback <= 0) return new Set();
+  if (baseWindows.length === 0) return new Set();
+
+  // Collect every base-charge slot and locate the cheapest window by avg_price.
+  const baseChargeKeys = new Set<string>();
+  let cheapestWindow: ChargeWindow | null = null;
+  for (const w of baseWindows) {
+    for (const slot of w.slots) {
+      baseChargeKeys.add(slot.valid_from);
+    }
+    if (!cheapestWindow || w.avg_price < cheapestWindow.avg_price) {
+      cheapestWindow = w;
+    }
+  }
+
+  if (!cheapestWindow) return new Set();
+
+  const sorted = [...rates].sort((a, b) => a.valid_from.localeCompare(b.valid_from));
+  const cheapestIndex = sorted.findIndex((r) => r.valid_from === cheapestWindow!.slot_start);
+  if (cheapestIndex <= 0) return new Set();
+
+  const alwaysChargeThreshold = parseFloat(settings.always_charge_below_price);
+  const hasAlwaysChargeThreshold = Number.isFinite(alwaysChargeThreshold) && alwaysChargeThreshold > 0;
+
+  const suppressed = new Set<string>();
+  const start = Math.max(0, cheapestIndex - lookback);
+  for (let i = start; i < cheapestIndex; i++) {
+    const slot = sorted[i];
+    // Only touch base-charge slots; unrelated slots are already hold.
+    if (!baseChargeKeys.has(slot.valid_from)) continue;
+    // Preserve genuinely cheap slots regardless of timing.
+    if (slot.price_inc_vat < 0) continue;
+    if (hasAlwaysChargeThreshold && slot.price_inc_vat < alwaysChargeThreshold) continue;
+    suppressed.add(slot.valid_from);
+  }
+
+  return suppressed;
+}
+
 // --- Composable charge plan ---
 
 export function buildChargePlan(
@@ -366,7 +429,11 @@ export function buildSchedulePlan(
   const negativeRunDischargeWindows = findNegativeRunDischargeSlots(rates, settings);
   const negativeRunDischargeKeys = flattenWindowSlotKeys(negativeRunDischargeWindows);
 
-  const baseWindows = filterSuppressedWindows(rawBaseWindows, negativeRunDischargeKeys);
+  const baseAfterNegRun = filterSuppressedWindows(rawBaseWindows, negativeRunDischargeKeys);
+  // Strip charge slots that are in the "dropping" zone just before the earliest
+  // cheapest window — we'd rather wait for the true trough than fill early.
+  const droppingKeys = findDroppingChargeKeys(baseAfterNegRun, rates, settings);
+  const baseWindows = filterSuppressedWindows(baseAfterNegRun, droppingKeys);
   const negativeWindows = filterSuppressedWindows(rawNegativeWindows, negativeRunDischargeKeys);
 
   // Pre-discharge intentionally uses the unfiltered negative windows so a long
@@ -521,16 +588,19 @@ function buildPlannedSlots(
     slotActions.set(index, action);
   });
 
-  // Build PV generation map aligned to rate slot indices
+  // Build PV generation map aligned to rate slot indices. Apply damp factor
+  // at the derived-value site (not on the raw pvForecast input) so callers that
+  // also consume pvForecast see unmodified upstream data.
   let perSlotPVGenerationW: Map<number, number> | undefined;
   if (pvForecast && pvForecast.length > 0) {
+    const dampFactor = parsePVDampFactor(settings);
     const pvMap = new Map<string, number>();
     const confidence = pvConfidence || 'estimate';
     for (const pv of pvForecast) {
       const value = confidence === 'estimate10' ? pv.pv_estimate10_w
         : confidence === 'estimate90' ? pv.pv_estimate90_w
         : pv.pv_estimate_w;
-      pvMap.set(pv.valid_from, value);
+      pvMap.set(pv.valid_from, value * dampFactor);
     }
     perSlotPVGenerationW = new Map<number, number>();
     futureRates.forEach((rate, index) => {
@@ -540,6 +610,17 @@ function buildPlannedSlots(
       }
     });
   }
+
+  // Build a per-slot drain lookup so the SOC forecast honours the learned
+  // usage profile when available. The closure maps a slot index back to a
+  // wall-clock timestamp via the rate list, then asks the usage repository
+  // for the expected W at that moment.
+  const fallbackConsumptionW = parseFloat(settings.estimated_consumption_w) || 500;
+  const drainWAtSlot = (slotIndex: number): number => {
+    const rate = futureRates[slotIndex];
+    if (!rate) return fallbackConsumptionW;
+    return getForecastedConsumptionW(new Date(rate.valid_from), fallbackConsumptionW);
+  };
 
   const expectedSocAfter =
     currentSoc === null
@@ -552,7 +633,8 @@ function buildPlannedSlots(
           chargeRatePercent: parseFloat(settings.charge_rate) || 100,
           batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
           maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
-          estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
+          estimatedConsumptionW: fallbackConsumptionW,
+          drainWAtSlot,
           perSlotPVGenerationW,
         }).map((value) => Math.round(value * 10) / 10);
 

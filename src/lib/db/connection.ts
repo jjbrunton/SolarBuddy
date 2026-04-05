@@ -142,6 +142,60 @@ function initSchema(db: Database.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS plan_slot_executions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slot_start TEXT NOT NULL,
+      slot_end TEXT NOT NULL,
+      action TEXT NOT NULL,
+      reason TEXT,
+      override_source TEXT NOT NULL,
+      soc_at_start REAL,
+      soc_at_end REAL,
+      command_signature TEXT,
+      command_issued_at TEXT NOT NULL,
+      actual_import_wh REAL,
+      actual_export_wh REAL,
+      notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS usage_profile (
+      day_type    TEXT    NOT NULL CHECK(day_type IN ('weekday','weekend')),
+      slot_index  INTEGER NOT NULL CHECK(slot_index >= 0 AND slot_index < 48),
+      median_w    REAL    NOT NULL,
+      p25_w       REAL    NOT NULL,
+      p75_w       REAL    NOT NULL,
+      mean_w      REAL    NOT NULL,
+      sample_count INTEGER NOT NULL,
+      updated_at  TEXT    NOT NULL,
+      PRIMARY KEY (day_type, slot_index)
+    );
+
+    CREATE TABLE IF NOT EXISTS usage_profile_meta (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      baseload_w          REAL NOT NULL,
+      baseload_percentile REAL NOT NULL,
+      window_days         INTEGER NOT NULL,
+      window_start        TEXT NOT NULL,
+      window_end          TEXT NOT NULL,
+      total_samples       INTEGER NOT NULL,
+      computed_at         TEXT NOT NULL,
+      high_periods_json   TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auto_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slot_start TEXT NOT NULL,
+      slot_end TEXT NOT NULL,
+      action TEXT NOT NULL,
+      source TEXT NOT NULL,
+      reason TEXT,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auto_overrides_slot_start ON auto_overrides(slot_start);
+    CREATE INDEX IF NOT EXISTS idx_auto_overrides_expires_at ON auto_overrides(expires_at);
+
     CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings(timestamp);
     CREATE INDEX IF NOT EXISTS idx_readings_date ON readings(date(timestamp));
     CREATE INDEX IF NOT EXISTS idx_rates_valid_from ON rates(valid_from);
@@ -157,6 +211,8 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_export_rates_valid_from ON export_rates(valid_from);
     CREATE INDEX IF NOT EXISTS idx_pv_forecasts_valid_from ON pv_forecasts(valid_from);
     CREATE INDEX IF NOT EXISTS idx_scheduled_actions_enabled ON scheduled_actions(enabled);
+    CREATE INDEX IF NOT EXISTS idx_plan_slot_executions_slot_start ON plan_slot_executions(slot_start);
+    CREATE INDEX IF NOT EXISTS idx_plan_slot_executions_issued_at ON plan_slot_executions(command_issued_at);
   `);
 
   // Migrate: add new columns for expanded Solar Assistant data

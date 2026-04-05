@@ -79,25 +79,79 @@ export default function UpcomingChargesWidget() {
     );
   }, [schedules, rawRates, chargeSettings, state.battery_soc]);
 
+  const groups = useMemo(() => {
+    const sorted = [...schedules].sort(
+      (a, b) => new Date(a.slot_start).getTime() - new Date(b.slot_start).getTime(),
+    );
+    const costByStart = new Map<string, number>();
+    for (const w of costForecast?.windows ?? []) {
+      costByStart.set(w.slot_start, w.cost_pence);
+    }
+
+    type Group = {
+      key: number;
+      slot_start: string;
+      slot_end: string;
+      status: string;
+      avg_price: number;
+      cost_pence: number | null;
+      has_cost: boolean;
+    };
+
+    const result: Group[] = [];
+    for (const s of sorted) {
+      const last = result[result.length - 1];
+      const slotCost = costByStart.get(s.slot_start);
+      const contiguous =
+        last &&
+        last.slot_end === s.slot_start &&
+        last.status === s.status;
+
+      if (contiguous) {
+        // Weighted merge of avg_price by slot count via running counter stored on key trick.
+        // Simpler: recompute as incremental mean using count tracked via (end-start)/30min.
+        const prevSlots =
+          (new Date(last.slot_end).getTime() - new Date(last.slot_start).getTime()) / (30 * 60 * 1000);
+        last.avg_price = (last.avg_price * prevSlots + (s.avg_price ?? 0)) / (prevSlots + 1);
+        last.slot_end = s.slot_end;
+        if (slotCost !== undefined) {
+          last.cost_pence = (last.cost_pence ?? 0) + slotCost;
+          last.has_cost = true;
+        }
+      } else {
+        result.push({
+          key: s.id,
+          slot_start: s.slot_start,
+          slot_end: s.slot_end,
+          status: s.status,
+          avg_price: s.avg_price ?? 0,
+          cost_pence: slotCost ?? null,
+          has_cost: slotCost !== undefined,
+        });
+      }
+    }
+    return result;
+  }, [schedules, costForecast]);
+
   if (schedules.length === 0) return null;
 
   return (
     <Card>
       <CardHeader title="Upcoming Charges" />
       <div className="space-y-2">
-        {schedules.map((s) => (
-          <div key={s.id} className="flex items-center justify-between rounded-md bg-sb-bg px-3 py-2">
+        {groups.map((g) => (
+          <div key={g.key} className="flex items-center justify-between rounded-md bg-sb-bg px-3 py-2">
             <span className="text-sm text-sb-text">
-              {formatTime(s.slot_start)} – {formatTime(s.slot_end)}
+              {formatTime(g.slot_start)} – {formatTime(g.slot_end)}
             </span>
             <div className="flex items-center gap-3">
-              <span className="text-sm text-sb-text-muted">{s.avg_price?.toFixed(2)}p/kWh</span>
-              {costForecast?.windows.find((w) => w.slot_start === s.slot_start) && (
+              <span className="text-sm text-sb-text-muted">{g.avg_price.toFixed(2)}p/kWh</span>
+              {g.has_cost && g.cost_pence !== null && (
                 <span className="text-sm font-medium text-sb-success">
-                  {formatCost(costForecast.windows.find((w) => w.slot_start === s.slot_start)!.cost_pence)}
+                  {formatCost(g.cost_pence)}
                 </span>
               )}
-              <Badge kind={statusKind(s.status)}>{s.status}</Badge>
+              <Badge kind={statusKind(g.status)}>{g.status}</Badge>
             </div>
           </div>
         ))}

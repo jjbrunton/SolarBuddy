@@ -31,11 +31,13 @@ Verification is required both before and after changes.
 ### Before making changes
 
 - Run the relevant baseline checks for the area you are touching
+- For cross-module scheduler/API/MQTT or persistence-to-route flow changes, run `npm run test:integration` as part of the baseline
 - If the baseline already fails, stop and report it unless the task is to fix that failure
 
 ### After making changes
 
 - Re-run the relevant checks
+- For cross-module scheduler/API/MQTT or persistence-to-route flow changes, re-run `npm run test:integration`
 - Add or update tests for the behaviour you changed
 - Do not treat lint or a successful build as a substitute for tests when logic changed
 
@@ -46,6 +48,7 @@ A change is not complete if:
 - Relevant docs were not updated
 - New functionality was added without corresponding documentation
 - Relevant verification commands were not run
+- A change requiring integration coverage did not run `npm run test:integration`
 - Changed behaviour has no test coverage and no explicit justification
 
 ## Engineering Expectations

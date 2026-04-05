@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { ComposedChart, Bar, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -26,6 +26,8 @@ import {
   ACTION_LABELS,
   ACTION_BADGE_KIND,
 } from '@/lib/plan-actions';
+import { alignPVForecastToSlots, type PVConfidence } from '@/lib/pv-forecast-utils';
+import type { PVForecastSlot } from '@/lib/solcast/client';
 
 interface Rate {
   valid_from: string;
@@ -57,6 +59,7 @@ interface Override {
 type PlanSlot = ScheduleHistorySlot & {
   forecastSOC?: number;
   actualSOC?: number;
+  pvGenerationKw?: number;
 };
 
 const ACTION_ICON: Record<PlanAction, typeof Zap> = {
@@ -70,10 +73,12 @@ function SlotTooltip({ active, payload, label }: { active?: boolean; payload?: {
   const price = payload.find((p) => p.dataKey === 'price');
   const actual = payload.find((p) => p.dataKey === 'actualSOC');
   const forecast = payload.find((p) => p.dataKey === 'forecastSOC');
+  const pv = payload.find((p) => p.dataKey === 'pvGenerationKw');
   return (
     <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
       <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
       {price && <p className="text-sm font-semibold text-sb-text">{price.value}p/kWh</p>}
+      {pv && pv.value != null && <p className="text-xs text-sb-solar">Solar: {pv.value.toFixed(2)} kW</p>}
       {actual && actual.value != null && <p className="text-xs text-sb-accent">Actual: {actual.value}%</p>}
       {forecast && forecast.value != null && <p className="text-xs text-sb-text-muted">Predicted: {forecast.value}%</p>}
     </div>
@@ -110,6 +115,9 @@ export default function ScheduleView() {
     max_charge_power_kw: string;
     estimated_consumption_w: string;
   } | null>(null);
+  const [pvForecasts, setPvForecasts] = useState<PVForecastSlot[]>([]);
+  const [pvEnabled, setPvEnabled] = useState(false);
+  const [pvConfidence, setPvConfidence] = useState<PVConfidence>('estimate');
 
   const todayDay = getTodayScheduleDayKey(effectiveNow);
 
@@ -130,6 +138,10 @@ export default function ScheduleView() {
 
       setSettings(settingsJson);
 
+      const isPvEnabled = settingsJson.pv_forecast_enabled === 'true';
+      setPvEnabled(isPvEnabled);
+      setPvConfidence((settingsJson.pv_forecast_confidence as PVConfidence) || 'estimate');
+
       const rates: Rate[] = ratesJson.rates || [];
       const schedules: Schedule[] = scheduleJson.schedules || [];
       const plannedSlots: PlannedSlotRow[] = scheduleJson.plan_slots || [];
@@ -137,6 +149,20 @@ export default function ScheduleView() {
 
       setSlots(buildSchedulePlanSlots(rates, schedules, plannedSlots, overrides, effectiveNowRef.current));
       setError(null);
+
+      if (isPvEnabled && rates.length > 0) {
+        try {
+          const from = rates[0].valid_from;
+          const to = rates[rates.length - 1].valid_to;
+          const forecastRes = await fetch(`/api/forecast?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+          const forecastJson = await forecastRes.json();
+          setPvForecasts(forecastJson.forecasts || []);
+        } catch {
+          setPvForecasts([]);
+        }
+      } else {
+        setPvForecasts([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load plan data');
     } finally {
@@ -179,10 +205,30 @@ export default function ScheduleView() {
     return () => { cancelled = true; };
   }, [selectedDay]);
 
+  const pvAligned = useMemo(() => {
+    if (!pvEnabled || pvForecasts.length === 0 || slots.length === 0) {
+      return { pvChartValues: [] as (number | undefined)[] };
+    }
+    const { pvChartValues } = alignPVForecastToSlots(
+      pvForecasts,
+      slots.map((slot) => slot.validFrom),
+      pvConfidence,
+    );
+    return { pvChartValues };
+  }, [pvEnabled, pvForecasts, slots, pvConfidence]);
+
   const slotsWithSOC = useMemo(() => {
-    if (slots.length === 0 || state.battery_soc === null || !settings) {
-      return slots.map((slot) => ({
+    const withPv = (slot: PlanSlot, index: number): PlanSlot => {
+      const watts = pvAligned.pvChartValues[index];
+      return {
         ...slot,
+        pvGenerationKw: watts != null ? watts / 1000 : undefined,
+      };
+    };
+
+    if (slots.length === 0 || state.battery_soc === null || !settings) {
+      return slots.map((slot, index) => ({
+        ...withPv(slot, index),
         actualSOC: actualSOCMap.get(toSlotKey(slot.validFrom)) ?? undefined,
       }));
     }
@@ -215,11 +261,11 @@ export default function ScheduleView() {
     });
 
     return slots.map((slot, index) => ({
-      ...slot,
+      ...withPv(slot, index),
       forecastSOC: forecast[index] ?? undefined,
       actualSOC: actualSOCMap.get(toSlotKey(slot.validFrom)) ?? undefined,
     }));
-  }, [slots, state.battery_soc, settings, actualSOCMap]);
+  }, [slots, state.battery_soc, settings, actualSOCMap, pvAligned]);
 
   const visibleSlots = useMemo(() => {
     if (!selectedDay) {
@@ -444,6 +490,11 @@ export default function ScheduleView() {
               <span className="inline-block h-0.5 w-4 border-t-2 border-sb-accent" /> Actual SOC
             </span>
           ) : null}
+          {pvEnabled && visibleSlots.some((s) => s.pvGenerationKw != null) ? (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: colors.solar, opacity: 0.5 }} /> Solar forecast
+            </span>
+          ) : null}
         </div>
 
         {loading && slots.length === 0 ? (
@@ -477,8 +528,24 @@ export default function ScheduleView() {
                 tickFormatter={(value: number) => `${value}%`}
                 width={45}
               />
+              <YAxis yAxisId="pv" orientation="right" domain={[0, 'dataMax']} hide />
               <Tooltip content={<SlotTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
               <ReferenceLine yAxisId="price" y={0} stroke={colors.border} />
+              {pvEnabled && visibleSlots.some((s) => s.pvGenerationKw != null) ? (
+                <Area
+                  yAxisId="pv"
+                  type="monotone"
+                  dataKey="pvGenerationKw"
+                  fill={colors.solar}
+                  fillOpacity={0.2}
+                  stroke={colors.solar}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.6}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ) : null}
               <Bar yAxisId="price" dataKey="price" radius={[2, 2, 0, 0]}>
                 {visibleSlots.map((entry) => (
                   <Cell

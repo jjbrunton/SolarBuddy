@@ -6,12 +6,14 @@ const {
   getVirtualNowMock,
   getVirtualScheduleDataMock,
   isVirtualModeEnabledMock,
+  getResolvedSlotActionMock,
 } = vi.hoisted(() => ({
   getRecentPlanDataMock: vi.fn(),
   runScheduleCycleMock: vi.fn(),
   getVirtualNowMock: vi.fn(),
   getVirtualScheduleDataMock: vi.fn(),
   isVirtualModeEnabledMock: vi.fn(),
+  getResolvedSlotActionMock: vi.fn(),
 }));
 
 vi.mock('@/lib/db/schedule-repository', () => ({
@@ -20,6 +22,10 @@ vi.mock('@/lib/db/schedule-repository', () => ({
 
 vi.mock('@/lib/scheduler/cron', () => ({
   runScheduleCycle: runScheduleCycleMock,
+}));
+
+vi.mock('@/lib/scheduler/watchdog', () => ({
+  getResolvedSlotAction: getResolvedSlotActionMock,
 }));
 
 vi.mock('@/lib/virtual-inverter/runtime', () => ({
@@ -31,18 +37,28 @@ vi.mock('@/lib/virtual-inverter/runtime', () => ({
 import { GET, POST } from './route';
 
 describe('/api/schedule', () => {
+  const resolvedAction = {
+    action: 'charge',
+    source: 'plan',
+    reason: 'scheduled_slot',
+    detail: 'Planned charge action is active for the current slot.',
+    slotStart: '2026-04-03T10:00:00Z',
+    slotEnd: '2026-04-03T10:30:00Z',
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-03T10:15:00Z'));
     isVirtualModeEnabledMock.mockReturnValue(false);
+    getResolvedSlotActionMock.mockReturnValue(resolvedAction);
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('returns recent schedules and plan slots', async () => {
+  it('returns recent schedules, plan slots, and the resolved current action', async () => {
     getRecentPlanDataMock.mockReturnValue({
       schedules: [{ id: 'schedule' }],
       plan_slots: [{ id: 'plan' }],
@@ -53,7 +69,9 @@ describe('/api/schedule', () => {
     expect(await response.json()).toEqual({
       schedules: [{ id: 'schedule' }],
       plan_slots: [{ id: 'plan' }],
+      current_action: resolvedAction,
     });
+    expect(getResolvedSlotActionMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns virtual schedules when virtual mode is active', async () => {
@@ -70,9 +88,12 @@ describe('/api/schedule', () => {
     expect(await response.json()).toEqual({
       schedules: [{ id: 'virtual-schedule' }],
       plan_slots: [{ id: 'virtual-plan' }],
+      current_action: resolvedAction,
     });
     expect(getVirtualScheduleDataMock).toHaveBeenCalledWith(now);
     expect(getRecentPlanDataMock).not.toHaveBeenCalled();
+    // Virtual mode must resolve at the virtual "now", not the wall clock.
+    expect(getResolvedSlotActionMock).toHaveBeenCalledWith(now);
   });
 
   it.each([
@@ -93,6 +114,7 @@ describe('/api/schedule', () => {
       ...result,
       schedules: [{ id: 'schedule' }],
       plan_slots: [{ id: 'plan' }],
+      current_action: resolvedAction,
     });
   });
 });

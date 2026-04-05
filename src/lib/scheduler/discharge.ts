@@ -1,6 +1,10 @@
 import { AppSettings } from '../config';
 import { AgileRate } from '../octopus/rates';
 import {
+  getAverageForecastedConsumptionW,
+  getForecastedConsumptionW,
+} from '../usage';
+import {
   ChargeWindow,
   PlanningContext,
   getChargingStrategy,
@@ -46,8 +50,17 @@ interface SimulationPoint {
 interface EnergyModel {
   batteryCapacityWh: number;
   chargePerSlotWh: number;
-  dischargePerSlotWh: number;
-  drainPerSlotWh: number;
+  /**
+   * Expected household consumption in Wh for a half-hour slot starting at the
+   * given ms timestamp. When the usage profile is available this returns the
+   * learned median for that slot; otherwise it returns the flat
+   * estimated_consumption_w fallback. Callers use this for both "house load"
+   * (charge/hold slots) and "battery output rate" (discharge slots) — the
+   * existing approximation that treats those as equal is preserved here.
+   */
+  drainWhAtMs: (startMs: number) => number;
+  /** Scalar fallback, retained for logging and legacy diagnostics. */
+  fallbackDrainPerSlotWh: number;
 }
 
 export interface SmartDischargePlan {
@@ -235,16 +248,28 @@ export function calculateDischargeSlotsAvailable(
   currentSoc: number,
   reserveSoc: number,
   settings: Pick<AppSettings, 'battery_capacity_kwh' | 'max_charge_power_kw' | 'estimated_consumption_w'>,
+  now: Date = new Date(),
 ): number {
   const batteryCapacityKwh = parseFloat(settings.battery_capacity_kwh);
-  const estimatedConsumptionW = parseFloat(settings.estimated_consumption_w) || 0;
+  const fallbackConsumptionW = parseFloat(settings.estimated_consumption_w) || 0;
 
   if (!Number.isFinite(batteryCapacityKwh) || batteryCapacityKwh <= 0) {
     return 0;
   }
 
+  // Use the 24h-forward forecast average when the usage profile is available —
+  // a flat figure over-estimates available slots when a consumption peak is
+  // imminent. Falls back to estimated_consumption_w when the profile is empty
+  // or learning is disabled (handled inside the repository).
+  const horizonMs = now.getTime() + 24 * 60 * 60 * 1000;
+  const forecastedConsumptionW = getAverageForecastedConsumptionW(
+    now.getTime(),
+    horizonMs,
+    fallbackConsumptionW,
+  );
+
   const availableEnergyKwh = batteryCapacityKwh * ((currentSoc - reserveSoc) / 100);
-  const energyPerSlotKwh = (estimatedConsumptionW / 1000) * HALF_HOUR_HOURS;
+  const energyPerSlotKwh = (forecastedConsumptionW / 1000) * HALF_HOUR_HOURS;
 
   if (availableEnergyKwh <= 0 || energyPerSlotKwh <= 0) {
     return 0;
@@ -411,19 +436,23 @@ function simulatePlan(
 
   for (const slot of slots) {
     const pvWh = slot.pvEstimateWh;
+    // Per-slot drain lookup: when the usage profile is available this varies
+    // slot-by-slot; otherwise it collapses to the flat fallback.
+    const drainWh = energy.drainWhAtMs(slot.startMs);
     let actualDischargeWh = 0;
 
     if (plan.chargeKeys.has(slot.key)) {
       // Grid charging + PV surplus after covering consumption
-      const addWh = energy.chargePerSlotWh + Math.max(0, pvWh - energy.drainPerSlotWh);
+      const addWh = energy.chargePerSlotWh + Math.max(0, pvWh - drainWh);
       socWh = Math.min(energy.batteryCapacityWh, socWh + addWh);
     } else if (plan.dischargeKeys.has(slot.key)) {
-      // Load-following: PV offsets consumption, battery covers the rest
-      if (pvWh >= energy.drainPerSlotWh) {
+      // Load-following: PV offsets consumption, battery covers the rest.
+      // Existing approximation: battery output rate = house load (drainWh).
+      if (pvWh >= drainWh) {
         // PV covers all consumption; surplus charges battery
-        socWh = Math.min(energy.batteryCapacityWh, socWh + (pvWh - energy.drainPerSlotWh));
+        socWh = Math.min(energy.batteryCapacityWh, socWh + (pvWh - drainWh));
       } else {
-        const netDrain = energy.dischargePerSlotWh - pvWh;
+        const netDrain = drainWh - pvWh;
         const available = Math.max(0, socWh - dischargeFloorWh);
         actualDischargeWh = Math.min(netDrain, available);
         socWh -= actualDischargeWh;
@@ -431,8 +460,8 @@ function simulatePlan(
     } else {
       // Hold: inverter prevents grid discharge so consumption comes
       // from the grid, not the battery.  PV surplus still charges.
-      if (pvWh > energy.drainPerSlotWh) {
-        socWh = Math.min(energy.batteryCapacityWh, socWh + (pvWh - energy.drainPerSlotWh));
+      if (pvWh > drainWh) {
+        socWh = Math.min(energy.batteryCapacityWh, socWh + (pvWh - drainWh));
       }
     }
 
@@ -472,8 +501,10 @@ function calculatePlanValue(
       total -= (energy.chargePerSlotWh / 1000) * slot.rate.price_inc_vat;
     } else if (plan.dischargeKeys.has(slot.key)) {
       // Use actual discharge from simulation (supports partial discharge
-      // when SOC is near the floor), falling back to full rate
-      const dischargeWh = simByKey?.get(slot.key)?.actualDischargeWh ?? energy.dischargePerSlotWh;
+      // when SOC is near the floor), falling back to the per-slot drain
+      // (preserves the "battery output = house load" approximation).
+      const dischargeWh =
+        simByKey?.get(slot.key)?.actualDischargeWh ?? energy.drainWhAtMs(slot.startMs);
       total += (dischargeWh / 1000) * slot.exportPrice;
     }
   }
@@ -523,11 +554,15 @@ function resolveEnergyModel(settings: Pick<AppSettings, 'battery_capacity_kwh' |
     return null;
   }
 
+  const fallbackDrainPerSlotWh = estimatedConsumptionW * HALF_HOUR_HOURS;
   return {
     batteryCapacityWh,
     chargePerSlotWh: effectiveChargePowerW * HALF_HOUR_HOURS,
-    dischargePerSlotWh: estimatedConsumptionW * HALF_HOUR_HOURS,
-    drainPerSlotWh: estimatedConsumptionW * HALF_HOUR_HOURS,
+    drainWhAtMs: (startMs: number) => {
+      const forecastW = getForecastedConsumptionW(new Date(startMs), estimatedConsumptionW);
+      return forecastW * HALF_HOUR_HOURS;
+    },
+    fallbackDrainPerSlotWh,
   };
 }
 

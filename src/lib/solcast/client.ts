@@ -1,3 +1,5 @@
+import { getDb } from '../db';
+
 export interface PVForecastSlot {
   valid_from: string;
   valid_to: string;
@@ -20,9 +22,86 @@ interface ForecastSolarResponse {
   message: { code: number; type: string; text: string };
 }
 
+const CACHE_FRESH_MS = 4 * 60 * 60 * 1000; // 4 hours
+const CACHE_PURGE_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+interface CachedForecastRow {
+  valid_from: string;
+  valid_to: string;
+  pv_estimate_w: number;
+  pv_estimate10_w: number | null;
+  pv_estimate90_w: number | null;
+  fetched_at: string;
+}
+
+function readFreshForecastCache(): PVForecastSlot[] | null {
+  const db = getDb();
+  const latest = db
+    .prepare('SELECT MAX(fetched_at) as latest FROM pv_forecasts')
+    .get() as { latest: string | null } | undefined;
+
+  if (!latest?.latest) return null;
+
+  const ageMs = Date.now() - new Date(latest.latest).getTime();
+  if (!Number.isFinite(ageMs) || ageMs >= CACHE_FRESH_MS) return null;
+
+  const rows = db
+    .prepare(
+      'SELECT valid_from, valid_to, pv_estimate_w, pv_estimate10_w, pv_estimate90_w, fetched_at FROM pv_forecasts ORDER BY valid_from ASC',
+    )
+    .all() as CachedForecastRow[];
+
+  if (rows.length === 0) return null;
+
+  return rows.map((r) => ({
+    valid_from: r.valid_from,
+    valid_to: r.valid_to,
+    pv_estimate_w: r.pv_estimate_w,
+    pv_estimate10_w: r.pv_estimate10_w ?? Math.round(r.pv_estimate_w * 0.8),
+    pv_estimate90_w: r.pv_estimate90_w ?? Math.round(r.pv_estimate_w * 1.2),
+  }));
+}
+
+function writeForecastCache(forecasts: PVForecastSlot[]) {
+  if (forecasts.length === 0) return;
+  const db = getDb();
+  const upsert = db.prepare(`
+    INSERT INTO pv_forecasts (valid_from, valid_to, pv_estimate_w, pv_estimate10_w, pv_estimate90_w, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(valid_from) DO UPDATE SET
+      valid_to = excluded.valid_to,
+      pv_estimate_w = excluded.pv_estimate_w,
+      pv_estimate10_w = excluded.pv_estimate10_w,
+      pv_estimate90_w = excluded.pv_estimate90_w,
+      fetched_at = excluded.fetched_at
+  `);
+  const now = new Date().toISOString();
+  const transaction = db.transaction((slots: PVForecastSlot[]) => {
+    for (const slot of slots) {
+      upsert.run(
+        slot.valid_from,
+        slot.valid_to,
+        slot.pv_estimate_w,
+        slot.pv_estimate10_w,
+        slot.pv_estimate90_w,
+        now,
+      );
+    }
+  });
+  transaction(forecasts);
+
+  // Opportunistic cleanup of stale rows to prevent table bloat.
+  const purgeBefore = new Date(Date.now() - CACHE_PURGE_MS).toISOString();
+  db.prepare('DELETE FROM pv_forecasts WHERE fetched_at < ?').run(purgeBefore);
+}
+
 /**
  * Fetch PV forecast from api.forecast.solar (free, no auth required).
  * Returns hourly watt estimates converted to half-hour slots.
+ *
+ * Cache-first: if the DB has PV forecast rows fresher than 4 hours, they're
+ * returned directly without hitting the API. Otherwise a fresh request is
+ * made and the result is persisted to the cache.
  *
  * API: GET https://api.forecast.solar/estimate/{lat}/{lon}/{dec}/{az}/{kwp}
  * - lat/lon: location
@@ -37,6 +116,12 @@ export async function fetchPVForecast(
   azimuth: string,
   kwp: string,
 ): Promise<PVForecastSlot[]> {
+  const cached = readFreshForecastCache();
+  if (cached) {
+    console.log(`[PVForecast] Using cached forecast (${cached.length} slots)`);
+    return cached;
+  }
+
   const url = `https://api.forecast.solar/estimate/${latitude}/${longitude}/${declination}/${azimuth}/${kwp}`;
 
   console.log(`[PVForecast] Fetching from: ${url}`);
@@ -94,5 +179,6 @@ export async function fetchPVForecast(
     });
   }
 
+  writeForecastCache(slots);
   return slots;
 }

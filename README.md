@@ -167,6 +167,7 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 ```bash
 npm test          # Run all tests once
 npm run test:coverage  # Generate a backend/API coverage report
+npm run test:integration  # Run integration suites under src/**
 npm run test:watch  # Run in watch mode
 npm run lint      # Run the Next.js/TypeScript lint rules
 npm run test:e2e:install  # One-time Playwright browser install

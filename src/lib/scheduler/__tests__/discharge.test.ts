@@ -1,4 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Stub the usage repository so tests remain hermetic — previously these
+// tests had no DB dependency, and we preserve that by forcing the fallback
+// path (returns the caller's estimated_consumption_w fallback).
+vi.mock('../../usage', () => ({
+  getForecastedConsumptionW: (_: Date, fallbackW: number) => fallbackW,
+  getAverageForecastedConsumptionW: (_start: number, _end: number, fallbackW: number) =>
+    fallbackW,
+}));
+
 import { buildSmartDischargePlan, calculateDischargeSlotsAvailable, findSmartDischargeSlots } from '../discharge';
 import { buildSchedulePlan } from '../engine';
 import type { AgileRate } from '../../octopus/rates';

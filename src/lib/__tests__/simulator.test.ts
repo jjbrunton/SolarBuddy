@@ -1,4 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
+
+// Stub the usage repository so tests remain hermetic — the simulator's
+// per-slot drain lookup would otherwise read the real DB profile if one
+// has been populated by dev-server usage. Forcing the fallback path keeps
+// the test's expected totals independent of any machine-specific profile.
+vi.mock('../usage', () => ({
+  getForecastedConsumptionW: (_: Date, fallbackW: number) => fallbackW,
+  getAverageForecastedConsumptionW: (_start: number, _end: number, fallbackW: number) =>
+    fallbackW,
+}));
+
 import { runFullSimulation } from '../simulator';
 
 const { buildSchedulePlanMock } = vi.hoisted(() => ({

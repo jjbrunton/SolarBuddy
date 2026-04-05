@@ -12,6 +12,10 @@ const {
   setWorkMode,
   setLoadFirstStopDischarge,
   appendEvent,
+  recordSlotExecution,
+  updateSlotExecutionActuals,
+  getLatestExecutionForSlot,
+  getCurrentAutoOverride,
 } = vi.hoisted(() => ({
   startGridCharging: vi.fn().mockResolvedValue(undefined),
   startGridDischarge: vi.fn().mockResolvedValue(undefined),
@@ -21,6 +25,10 @@ const {
   setWorkMode: vi.fn().mockResolvedValue(undefined),
   setLoadFirstStopDischarge: vi.fn().mockResolvedValue(undefined),
   appendEvent: vi.fn(),
+  recordSlotExecution: vi.fn().mockReturnValue(1),
+  updateSlotExecutionActuals: vi.fn(),
+  getLatestExecutionForSlot: vi.fn().mockReturnValue(null),
+  getCurrentAutoOverride: vi.fn().mockReturnValue(null),
 }));
 
 type OverrideRow = {
@@ -40,6 +48,7 @@ const listeners = new Set<(state: InverterState) => void>();
 
 let overrideRow: OverrideRow | null = null;
 let planSlotRow: PlanSlotRow | null = null;
+let planSlotRows: PlanSlotRow[] | null = null;
 let currentState: InverterState;
 let currentSettings: AppSettings;
 
@@ -95,17 +104,40 @@ function buildSettings(partial: Partial<AppSettings> = {}): AppSettings {
   };
 }
 
+vi.mock('../../db/schedule-repository', () => ({
+  recordSlotExecution,
+  updateSlotExecutionActuals,
+  getLatestExecutionForSlot,
+}));
+
+vi.mock('../../db/auto-override-repository', () => ({
+  getCurrentAutoOverride,
+}));
+
 vi.mock('../../db', () => ({
   getDb: () => ({
     prepare: (sql: string) => ({
-      get: () => {
+      get: (a?: string, b?: string) => {
         if (sql.includes('FROM manual_overrides')) {
-          return overrideRow;
+          if (!overrideRow) return null;
+          const ts = a ?? b;
+          if (!ts) return overrideRow;
+          if (ts >= overrideRow.slot_start && ts < overrideRow.slot_end) {
+            return overrideRow;
+          }
+          return null;
         }
-        if (sql.includes('FROM plan_slots')) {
+        if (sql.includes('FROM plan_slots') && sql.includes('slot_start <=')) {
           return planSlotRow;
         }
         return null;
+      },
+      all: (_a?: string, _b?: number) => {
+        if (sql.includes('FROM plan_slots') && sql.includes('slot_end >')) {
+          if (planSlotRows) return planSlotRows;
+          return planSlotRow ? [planSlotRow] : [];
+        }
+        return [];
       },
     }),
   }),
@@ -113,6 +145,17 @@ vi.mock('../../db', () => ({
 
 vi.mock('../../scheduled-actions', () => ({
   evaluateScheduledActions: () => null,
+}));
+
+// Stub out the usage module to keep the watchdog tests hermetic — the real
+// module transitively hits the DB and pulls in unrelated WIP code.
+vi.mock('../../usage', () => ({
+  getForecastedConsumptionW: () => 0,
+  getBaseloadW: () => 0,
+  getAverageForecastedConsumptionW: () => 0,
+  getUsageHighPeriods: () => [],
+  getUsageProfile: () => null,
+  invalidateUsageProfileCache: () => {},
 }));
 
 vi.mock('../../config', async (importOriginal) => {
@@ -166,6 +209,7 @@ describe('resolveRuntimeIntent', () => {
     currentState = buildState();
     overrideRow = null;
     planSlotRow = null;
+    planSlotRows = null;
   });
 
   it('gives the current manual override precedence over scheduled windows', () => {
@@ -195,6 +239,7 @@ describe('reconcileInverterState', () => {
     currentState = buildState();
     overrideRow = null;
     planSlotRow = null;
+    planSlotRows = null;
     listeners.clear();
     startGridCharging.mockClear();
     startGridDischarge.mockClear();
@@ -204,6 +249,16 @@ describe('reconcileInverterState', () => {
     setWorkMode.mockClear();
     setLoadFirstStopDischarge.mockClear();
     appendEvent.mockClear();
+    recordSlotExecution.mockClear();
+    recordSlotExecution.mockReturnValue(1);
+    updateSlotExecutionActuals.mockClear();
+    getLatestExecutionForSlot.mockClear();
+    getLatestExecutionForSlot.mockReturnValue(null);
+    getCurrentAutoOverride.mockClear();
+    getCurrentAutoOverride.mockReturnValue(null);
+    // Reset the global watchdog state so the cooldown/lastCommand state doesn't
+    // bleed between tests.
+    stopInverterWatchdog();
   });
 
   afterEach(() => {
@@ -481,5 +536,322 @@ describe('reconcileInverterState', () => {
     await reconcileInverterState('watchdog startup');
 
     expect(startBatteryHold).toHaveBeenCalledWith(40);
+  });
+
+  it('suppresses the write when charge state is already satisfied', async () => {
+    currentSettings = buildSettings({ charge_rate: '100' });
+    // Plan slot wants charge; state already reports the desired charge posture.
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Battery first',
+      battery_first_charge_rate: 100,
+      battery_first_grid_charge: 'Enabled',
+    });
+
+    await reconcileInverterState('state-satisfied charge');
+
+    expect(startGridCharging).not.toHaveBeenCalled();
+    expect(stopGridCharging).not.toHaveBeenCalled();
+    expect(startBatteryHold).not.toHaveBeenCalled();
+    expect(startGridDischarge).not.toHaveBeenCalled();
+  });
+
+  it('re-issues the charge command when state drifts away from the desired posture', async () => {
+    currentSettings = buildSettings({ charge_rate: '100' });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+
+    // First tick: state already satisfies the charge intent → no write.
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Battery first',
+      battery_first_charge_rate: 100,
+      battery_first_grid_charge: 'Enabled',
+    });
+    await reconcileInverterState('tick 1 — satisfied');
+    expect(startGridCharging).not.toHaveBeenCalled();
+
+    // Second tick: state has drifted back to Load first. Even though the plan
+    // still says charge and no cooldown was recorded (since we suppressed the
+    // earlier write without touching the timers), the command must fire.
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Load first',
+      battery_first_charge_rate: null,
+      battery_first_grid_charge: 'Disabled',
+    });
+    await reconcileInverterState('tick 2 — drift');
+    expect(startGridCharging).toHaveBeenCalledWith(100);
+  });
+
+  it('keeps the command signature stable across two ticks inside the same conflated run', async () => {
+    // Three contiguous charge plan slots: the range walker conflates them.
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    planSlotRows = [
+      planSlotRow,
+      {
+        slot_start: '2026-04-01T10:30:00Z',
+        slot_end: '2026-04-01T11:00:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      },
+      {
+        slot_start: '2026-04-01T11:00:00Z',
+        slot_end: '2026-04-01T11:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      },
+    ];
+
+    // Tick 1: state is not yet satisfied, command fires.
+    currentState = buildState({ battery_soc: 40, work_mode: 'Load first' });
+    await reconcileInverterState('tick 1');
+    expect(startGridCharging).toHaveBeenCalledTimes(1);
+
+    startGridCharging.mockClear();
+
+    // Tick 2 (a little later, still inside the same conflated charge run).
+    // Telemetry hasn't yet caught up — still Load first — so state is NOT
+    // satisfied. The write should be blocked by the 120s cooldown because the
+    // range-aware signature is stable across every tick in the run.
+    currentState = buildState({ battery_soc: 40, work_mode: 'Load first' });
+    await reconcileInverterState('tick 2');
+    expect(startGridCharging).not.toHaveBeenCalled();
+  });
+
+  it('bypasses state satisfaction when telemetry is stale and re-issues the command', async () => {
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    // State looks satisfied (Battery first + matching rate) but `last_updated`
+    // is stale (> 60s old), so the watchdog must not trust it.
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Battery first',
+      battery_first_charge_rate: 100,
+      battery_first_grid_charge: 'Enabled',
+      last_updated: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+
+    await reconcileInverterState('stale telemetry');
+
+    expect(startGridCharging).toHaveBeenCalledWith(100);
+  });
+
+  it('bypasses state satisfaction when last_updated is null', async () => {
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Battery first',
+      battery_first_charge_rate: 100,
+      battery_first_grid_charge: 'Enabled',
+      last_updated: null,
+    });
+
+    await reconcileInverterState('null telemetry');
+
+    expect(startGridCharging).toHaveBeenCalledWith(100);
+  });
+
+  describe('plan_slot_executions logging', () => {
+    it('records an execution row on a charge command issuance', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      currentState = buildState({ battery_soc: 42, work_mode: 'Load first' });
+
+      await reconcileInverterState('tick 1');
+
+      expect(startGridCharging).toHaveBeenCalledWith(100);
+      expect(recordSlotExecution).toHaveBeenCalledTimes(1);
+      const row = recordSlotExecution.mock.calls[0][0];
+      expect(row).toMatchObject({
+        action: 'charge',
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        override_source: 'plan',
+        soc_at_start: 42,
+        soc_at_end: null,
+      });
+      expect(typeof row.command_signature).toBe('string');
+      expect(row.command_signature).toContain('charge');
+      expect(typeof row.command_issued_at).toBe('string');
+    });
+
+    it('does NOT record an execution when the state is already satisfied', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      // State already reports the desired charge posture.
+      currentState = buildState({
+        battery_soc: 40,
+        work_mode: 'Battery first',
+        battery_first_charge_rate: 100,
+        battery_first_grid_charge: 'Enabled',
+      });
+
+      await reconcileInverterState('state-satisfied charge');
+
+      expect(startGridCharging).not.toHaveBeenCalled();
+      expect(recordSlotExecution).not.toHaveBeenCalled();
+    });
+
+    it('does NOT record a second execution on a cooldown-blocked repeat tick', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      // Tick 1: state not satisfied — command fires, row written.
+      currentState = buildState({ battery_soc: 40, work_mode: 'Load first' });
+      await reconcileInverterState('tick 1');
+      expect(startGridCharging).toHaveBeenCalledTimes(1);
+      expect(recordSlotExecution).toHaveBeenCalledTimes(1);
+
+      startGridCharging.mockClear();
+
+      // Tick 2 immediately after — telemetry hasn't caught up yet, so the
+      // state is still unsatisfied but the 120s cooldown blocks the re-issue.
+      currentState = buildState({ battery_soc: 40, work_mode: 'Load first' });
+      await reconcileInverterState('tick 2');
+
+      expect(startGridCharging).not.toHaveBeenCalled();
+      // Still only one recorded execution — the cooldown-blocked tick must
+      // not append a new row.
+      expect(recordSlotExecution).toHaveBeenCalledTimes(1);
+    });
+
+    it('records override_source="manual" when a manual override drives the command', async () => {
+      overrideRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+      };
+      currentState = buildState({ battery_soc: 40, work_mode: 'Load first' });
+
+      await reconcileInverterState('manual override updated');
+
+      expect(startGridCharging).toHaveBeenCalledWith(100);
+      expect(recordSlotExecution).toHaveBeenCalledTimes(1);
+      expect(recordSlotExecution.mock.calls[0][0]).toMatchObject({
+        action: 'charge',
+        override_source: 'manual',
+      });
+    });
+
+    it('records override_source="auto" when an auto override drives the command', async () => {
+      getCurrentAutoOverride.mockReturnValue({
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        source: 'soc_boost',
+        reason: 'Auto SOC boost to recover from overnight drift.',
+        expires_at: '2026-04-01T11:00:00Z',
+      });
+      currentState = buildState({ battery_soc: 30, work_mode: 'Load first' });
+
+      await reconcileInverterState('auto override tick');
+
+      expect(startGridCharging).toHaveBeenCalledWith(100);
+      expect(recordSlotExecution).toHaveBeenCalledTimes(1);
+      expect(recordSlotExecution.mock.calls[0][0]).toMatchObject({
+        action: 'charge',
+        override_source: 'auto',
+      });
+    });
+
+    it('backfills soc_at_end on the previous execution row when the range changes between ticks', async () => {
+      // Tick 1: charge plan slot 10:00–10:30 at SOC 40.
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      currentState = buildState({ battery_soc: 40, work_mode: 'Load first' });
+
+      await reconcileInverterState('tick 1 — slot A');
+      expect(recordSlotExecution).toHaveBeenCalledTimes(1);
+
+      // Arrange the backfill lookup: the next tick's resolve sees a different
+      // range start, so the watchdog should look up the latest row for slot A
+      // and update soc_at_end with the current SOC (75).
+      getLatestExecutionForSlot.mockReturnValue({
+        id: 42,
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'scheduled_slot',
+        override_source: 'plan',
+        soc_at_start: 40,
+        soc_at_end: null,
+        command_signature: 'sig-a',
+        command_issued_at: '2026-04-01T10:00:00.100Z',
+      });
+
+      // Tick 2: new slot at 10:30, different action → different range start.
+      planSlotRow = {
+        slot_start: '2026-04-01T10:30:00Z',
+        slot_end: '2026-04-01T11:00:00Z',
+        action: 'discharge',
+        reason: 'Discharge slot selected by the arbitrage planner.',
+      };
+      // Move virtual time forward by overriding the clock mock — but since
+      // getVirtualNow is stubbed to a constant, use the now-time alignment by
+      // also returning the new plan slot from the stub. The resolver uses
+      // getVirtualNow() as "now", so we need the plan slot to be active there.
+      // The default virtual now is 2026-04-01T10:10:00Z — the new slot
+      // (10:30–11:00) wouldn't be active yet. We can still trigger backfill
+      // by reaching into resolve via a slot that's active at 10:10 but with a
+      // different slot_start than 10:00. Instead, use a manual override for
+      // 10:00:00Z–10:30:00Z that conflicts with slot A's range.
+      //
+      // Simpler: keep the same "now" and swap slot A for a manual override
+      // starting at a different slot_start value so rangeStart differs.
+      planSlotRow = null;
+      overrideRow = {
+        slot_start: '2026-04-01T10:05:00Z',
+        slot_end: '2026-04-01T10:20:00Z',
+        action: 'discharge',
+      };
+      currentState = buildState({ battery_soc: 75, work_mode: 'Battery first' });
+
+      await reconcileInverterState('tick 2 — slot B');
+
+      // Backfill should have been called for slot A's latest row with the
+      // SOC observed at tick 2 (75).
+      expect(getLatestExecutionForSlot).toHaveBeenCalledWith('2026-04-01T10:00:00Z');
+      expect(updateSlotExecutionActuals).toHaveBeenCalledWith(42, { soc_at_end: 75 });
+    });
   });
 });
