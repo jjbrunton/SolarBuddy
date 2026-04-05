@@ -354,15 +354,34 @@ export function buildSchedulePlan(
   const strategy = getChargingStrategy(settings);
   const skipOvernight = strategy === 'night_fill' &&
     shouldSkipOvernightCharge(context.pvForecast, settings, now);
-  const baseWindows = skipOvernight ? [] : findCheapestSlots(rates, settings, context);
-  const negativeWindows = findNegativePriceSlots(rates, settings);
+  const rawBaseWindows = skipOvernight ? [] : findCheapestSlots(rates, settings, context);
+  const rawNegativeWindows = findNegativePriceSlots(rates, settings);
   const alwaysCheapWindows = findAlwaysCheapSlots(rates, settings);
-  const preDischargeWindows = findPreDischargeSlots(rates, negativeWindows, settings);
+
+  // Long negative runs: leading slots are discharge windows. Remove them from
+  // every charge-source window before composition — otherwise deduplicateAndMerge
+  // drops the discharge classification (charge wins on conflict) and
+  // buildSmartDischargePlan's simulatePlan treats the slot as charge in the SOC
+  // forecast and marginal-cost gate.
   const negativeRunDischargeWindows = findNegativeRunDischargeSlots(rates, settings);
+  const negativeRunDischargeKeys = flattenWindowSlotKeys(negativeRunDischargeWindows);
+
+  const baseWindows = filterSuppressedWindows(rawBaseWindows, negativeRunDischargeKeys);
+  const negativeWindows = filterSuppressedWindows(rawNegativeWindows, negativeRunDischargeKeys);
+
+  // Pre-discharge intentionally uses the unfiltered negative windows so a long
+  // run can still trigger a pre-slot discharge when the feature is enabled
+  // independently. findPreDischargeSlots already refuses to emit a discharge when
+  // the preceding slot is itself negative, so there's no risk of double-discharging.
+  const preDischargeWindows = findPreDischargeSlots(rates, rawNegativeWindows, settings);
+
   const suppressedKeys = findSuppressedPreCheapestKeys(baseWindows, rates, settings);
   const peakPrepWindows = filterSuppressedWindows(
-    findPeakPrepSlots(rates, settings, context),
-    suppressedKeys,
+    filterSuppressedWindows(
+      findPeakPrepSlots(rates, settings, context),
+      suppressedKeys,
+    ),
+    negativeRunDischargeKeys,
   );
   const smartDischargePlan = buildSmartDischargePlan(
     rates,

@@ -170,6 +170,130 @@ describe('buildSchedulePlan', () => {
   });
 });
 
+describe('buildSchedulePlan negative run discharge', () => {
+  // slotsForFullCharge = ceil(5 / (2.5 * 0.5)) = 4
+  const longRunSettings = {
+    negative_price_charging: 'true',
+    negative_run_discharge: 'true',
+    battery_capacity_kwh: '5',
+    max_charge_power_kw: '2.5',
+    charge_rate: '100',
+    estimated_consumption_w: '500',
+    discharge_soc_floor: '20',
+  };
+
+  const longNegativeRun = [
+    rate('2026-04-01T01:00:00Z', '2026-04-01T01:30:00Z', -1),
+    rate('2026-04-01T01:30:00Z', '2026-04-01T02:00:00Z', -2),
+    rate('2026-04-01T02:00:00Z', '2026-04-01T02:30:00Z', -3),
+    rate('2026-04-01T02:30:00Z', '2026-04-01T03:00:00Z', -4),
+    rate('2026-04-01T03:00:00Z', '2026-04-01T03:30:00Z', -5),
+    rate('2026-04-01T03:30:00Z', '2026-04-01T04:00:00Z', -6),
+  ];
+
+  it('discharges leading slots and charges trailing slots over a long negative run', () => {
+    const plan = buildSchedulePlan(longNegativeRun, {
+      ...baseSettings,
+      ...longRunSettings,
+      smart_discharge: 'true',
+      charge_hours: '4',
+      min_soc_target: '100',
+    }, {
+      currentSoc: 80,
+      now: new Date('2026-04-01T00:30:00Z'),
+    });
+
+    const actions = plan.slots.map((slot) => slot.action);
+    expect(actions).toEqual(['discharge', 'discharge', 'charge', 'charge', 'charge', 'charge']);
+
+    expect(plan.slots[0].reason).toContain('Discharge during extended negative-price run');
+    expect(plan.slots[1].reason).toContain('Discharge during extended negative-price run');
+    expect(plan.slots[2].reason).toBe('Negative-price charge slot.');
+
+    // SOC forecast reflects the discharge-then-charge cycle
+    const socs = plan.slots.map((slot) => slot.expected_soc_after);
+    expect(socs[0]).not.toBeNull();
+    expect(socs[0]!).toBeLessThan(80);
+    expect(socs[1]!).toBeLessThan(socs[0]!);
+    expect(socs[2]!).toBeGreaterThan(socs[1]!);
+  });
+
+  it('keeps the discharge classification when findCheapestSlots would also select a leading slot', () => {
+    // Leading slots are the cheapest in the horizon, so findCheapestSlots
+    // will pick them too. Without the baseWindows filter fix, deduplicateAndMerge
+    // would demote them back to charge.
+    const biasedRun = [
+      rate('2026-04-01T01:00:00Z', '2026-04-01T01:30:00Z', -10),
+      rate('2026-04-01T01:30:00Z', '2026-04-01T02:00:00Z', -9),
+      rate('2026-04-01T02:00:00Z', '2026-04-01T02:30:00Z', -1),
+      rate('2026-04-01T02:30:00Z', '2026-04-01T03:00:00Z', -2),
+      rate('2026-04-01T03:00:00Z', '2026-04-01T03:30:00Z', -3),
+      rate('2026-04-01T03:30:00Z', '2026-04-01T04:00:00Z', -4),
+    ];
+
+    const plan = buildSchedulePlan(biasedRun, {
+      ...baseSettings,
+      ...longRunSettings,
+      charging_strategy: 'opportunistic_topup',
+      charge_hours: '2',
+      min_soc_target: '100',
+    }, {
+      currentSoc: 50,
+      now: new Date('2026-04-01T00:30:00Z'),
+    });
+
+    expect(plan.slots[0].action).toBe('discharge');
+    expect(plan.slots[1].action).toBe('discharge');
+    expect(plan.slots[0].reason).toContain('Discharge during extended negative-price run');
+  });
+
+  it('leaves short negative runs unchanged as charge slots', () => {
+    const shortRun = [
+      rate('2026-04-01T01:00:00Z', '2026-04-01T01:30:00Z', -1),
+      rate('2026-04-01T01:30:00Z', '2026-04-01T02:00:00Z', -2),
+    ];
+
+    const plan = buildSchedulePlan(shortRun, {
+      ...baseSettings,
+      ...longRunSettings,
+      min_soc_target: '100',
+    }, {
+      currentSoc: 50,
+      now: new Date('2026-04-01T00:30:00Z'),
+    });
+
+    const actions = plan.slots.map((slot) => slot.action);
+    expect(actions).not.toContain('discharge');
+    expect(actions.filter((action) => action === 'charge')).toHaveLength(2);
+  });
+
+  it('preserves pre-discharge before a long negative run when both flags are enabled', () => {
+    const ratesWithPreSlot = [
+      rate('2026-04-01T00:30:00Z', '2026-04-01T01:00:00Z', 10),
+      ...longNegativeRun,
+    ];
+
+    const plan = buildSchedulePlan(ratesWithPreSlot, {
+      ...baseSettings,
+      ...longRunSettings,
+      negative_price_pre_discharge: 'true',
+      charge_hours: '4',
+      min_soc_target: '100',
+    }, {
+      currentSoc: 80,
+      now: new Date('2026-04-01T00:25:00Z'),
+    });
+
+    expect(plan.slots[0].action).toBe('discharge');
+    expect(plan.slots[0].reason).toBe('Pre-discharge slot reserved before a negative-price charging window.');
+    expect(plan.slots[1].action).toBe('discharge');
+    expect(plan.slots[1].reason).toContain('Discharge during extended negative-price run');
+    expect(plan.slots[2].action).toBe('discharge');
+    expect(plan.slots[2].reason).toContain('Discharge during extended negative-price run');
+    expect(plan.slots[3].action).toBe('charge');
+  });
+});
+
 describe('findSuppressedPreCheapestKeys', () => {
   it('returns empty when disabled', () => {
     const windows = findCheapestSlots([

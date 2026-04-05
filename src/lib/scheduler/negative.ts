@@ -97,8 +97,11 @@ export function findNegativeRunDischargeSlots(
   const dischargeSlots: AgileRate[] = [];
   for (const run of runs) {
     if (run.length > slotsForFullCharge) {
-      // Trailing slotsForFullCharge remain as charge (handled by findNegativePriceSlots)
-      // Leading slots become discharge
+      // Leading (run.length - slotsForFullCharge) slots are discharge.
+      // Trailing slotsForFullCharge slots remain charge candidates, but the
+      // caller (buildSchedulePlan in engine.ts) is responsible for removing
+      // the leading slots from findNegativePriceSlots' output before
+      // composition — this function does NOT rewrite the charge windows.
       const dischargeCount = run.length - slotsForFullCharge;
       for (let i = 0; i < dischargeCount; i++) {
         dischargeSlots.push(run[i]);
