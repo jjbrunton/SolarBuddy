@@ -1,16 +1,31 @@
 import type { Metadata, Viewport } from 'next';
-import { JetBrains_Mono, Manrope } from 'next/font/google';
+import { Fraunces, Geist_Mono, Instrument_Sans } from 'next/font/google';
 import { AppShell } from '@/components/layout/AppShell';
 import './globals.css';
 
-const sans = Manrope({
+/*
+ * Agile Almanac typography
+ * - Display / numerics: Fraunces (variable serif, opsz + SOFT axes)
+ * - Body / UI: Instrument Sans (warm grotesk)
+ * - Mono / diagnostics: Geist Mono
+ */
+const sans = Instrument_Sans({
   subsets: ['latin'],
   variable: '--font-sb-sans',
+  display: 'swap',
 });
 
-const mono = JetBrains_Mono({
+const display = Fraunces({
+  subsets: ['latin'],
+  variable: '--font-sb-display',
+  axes: ['SOFT', 'WONK', 'opsz'],
+  display: 'swap',
+});
+
+const mono = Geist_Mono({
   subsets: ['latin'],
   variable: '--font-sb-mono',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
@@ -28,7 +43,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#44b0c9',
+  themeColor: '#ffb547',
   maximumScale: 1,
 };
 
@@ -42,7 +57,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className={`${sans.variable} ${mono.variable} min-h-screen bg-sb-bg font-[family-name:var(--font-sb-sans)] text-sb-text antialiased`}>
+      <body
+        className={`${sans.variable} ${display.variable} ${mono.variable} sb-grain min-h-screen bg-sb-bg font-[family-name:var(--font-sb-sans)] text-sb-text antialiased`}
+      >
         <AppShell>{children}</AppShell>
       </body>
     </html>

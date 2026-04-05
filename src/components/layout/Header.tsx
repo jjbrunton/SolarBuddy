@@ -1,6 +1,6 @@
 'use client';
 
-import { Menu, Sun, Moon, Activity, Radio } from 'lucide-react';
+import { Menu, Sun, Moon } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { Badge } from '@/components/ui/Badge';
@@ -9,47 +9,46 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const { theme, toggle } = useTheme();
   const { connected, state } = useSSE();
 
+  const todayLabel = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  });
+
+  // Inverter connection status — three states: virtual playback, live MQTT, or
+  // waiting for a connection. The label is written for an operator glance, not
+  // the protocol name.
+  const inverterStatus =
+    state.runtime_mode === 'virtual'
+      ? { kind: 'warning' as const, text: `Virtual ${state.virtual_playback_state ?? 'mode'}` }
+      : state.mqtt_connected
+        ? { kind: 'info' as const, text: 'Inverter connected' }
+        : { kind: 'warning' as const, text: 'Waiting for inverter' };
+
   return (
-    <header className="sb-shell-panel sticky top-0 z-30 border-b border-sb-border bg-sb-header px-4 py-3 sm:px-6">
-      <div className="flex items-center gap-3">
+    <header className="sb-shell-panel sticky top-0 z-30 border-b border-sb-rule bg-sb-header">
+      <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
         <button
           onClick={onMenuClick}
-          className="rounded-xl border border-sb-border bg-sb-card p-2 text-sb-text-muted transition-colors hover:text-sb-text lg:hidden"
+          className="rounded-lg border border-sb-rule bg-transparent p-2 text-sb-text-muted transition-colors hover:border-sb-ember/60 hover:text-sb-ember lg:hidden"
         >
           <Menu size={18} />
         </button>
 
         <div className="min-w-0 flex-1">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sb-text-subtle">
-            Energy Control
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-sb-text sm:text-base">SolarBuddy operations console</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="sb-display text-lg text-sb-text sm:text-xl">{todayLabel}</span>
+            <span className="h-3 w-px bg-sb-rule" />
             <Badge kind={connected ? 'success' : 'warning'}>
-              {connected ? 'SSE online' : 'SSE reconnecting'}
+              {connected ? 'Live' : 'Reconnecting…'}
             </Badge>
-            <Badge kind={state.runtime_mode === 'virtual' ? 'warning' : state.mqtt_connected ? 'info' : 'warning'}>
-              {state.runtime_mode === 'virtual'
-                ? `Virtual ${state.virtual_playback_state ?? 'ready'}`
-                : state.mqtt_connected
-                  ? 'MQTT live'
-                  : 'MQTT waiting'}
-            </Badge>
+            <Badge kind={inverterStatus.kind}>{inverterStatus.text}</Badge>
           </div>
-        </div>
-
-        <div className="hidden items-center gap-2 rounded-2xl border border-sb-border bg-sb-card px-3 py-2 text-xs text-sb-text-muted sm:flex">
-          <Activity size={14} className="text-sb-accent" />
-          <span>{state.runtime_mode === 'virtual' ? 'Virtual runtime' : state.device_mode || 'Awaiting inverter mode'}</span>
-          <Radio
-            size={14}
-            className={state.runtime_mode === 'virtual' || state.mqtt_connected ? 'text-sb-success' : 'text-sb-warning'}
-          />
         </div>
 
         <button
           onClick={toggle}
-          className="rounded-xl border border-sb-border bg-sb-card p-2 text-sb-text-muted transition-colors hover:text-sb-text"
+          className="rounded-lg border border-sb-rule bg-transparent p-2 text-sb-text-muted transition-colors hover:border-sb-ember/60 hover:text-sb-ember"
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}

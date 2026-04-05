@@ -10,6 +10,12 @@ interface LinkTabItem {
   href: string;
 }
 
+/*
+ * Editorial segmented tabs — a row of hairline-separated labels with the
+ * active tab marked by an ember underline instead of a filled pill. The
+ * underline pattern lets the group sit cleanly inside an editorial page
+ * where boxed-pill controls would add visual noise.
+ */
 export function SegmentedTabs({
   items,
   activeValue,
@@ -22,21 +28,25 @@ export function SegmentedTabs({
   className?: string;
 }) {
   return (
-    <div className={`inline-flex flex-wrap gap-1 rounded-2xl border border-sb-border bg-sb-surface-muted p-1 ${className}`}>
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          onClick={() => onChange(item.value)}
-          className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
-            activeValue === item.value
-              ? 'bg-sb-active text-sb-text shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]'
-              : 'text-sb-text-muted hover:text-sb-text'
-          }`}
-        >
-          {item.label}
-        </button>
-      ))}
+    <div className={`inline-flex flex-wrap gap-0 border-b border-sb-rule ${className}`}>
+      {items.map((item) => {
+        const active = activeValue === item.value;
+        return (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onChange(item.value)}
+            className={`relative px-4 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] transition-colors ${
+              active ? 'text-sb-ember' : 'text-sb-text-muted hover:text-sb-text'
+            }`}
+          >
+            {item.label}
+            {active ? (
+              <span className="absolute inset-x-3 -bottom-[1px] h-[2px] bg-sb-ember" />
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -51,7 +61,7 @@ export function SegmentedLinkTabs({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-wrap gap-1 rounded-2xl border border-sb-border bg-sb-surface-muted p-1 ${className}`}>
+    <div className={`flex flex-wrap gap-0 border-b border-sb-rule ${className}`}>
       {items.map((item) => {
         const active = activeHref === item.href;
 
@@ -59,13 +69,14 @@ export function SegmentedLinkTabs({
           <Link
             key={item.href}
             href={item.href}
-            className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
-              active
-                ? 'bg-sb-active text-sb-text shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]'
-                : 'text-sb-text-muted hover:text-sb-text'
+            className={`relative whitespace-nowrap px-4 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] transition-colors ${
+              active ? 'text-sb-ember' : 'text-sb-text-muted hover:text-sb-text'
             }`}
           >
             {item.label}
+            {active ? (
+              <span className="absolute inset-x-3 -bottom-[1px] h-[2px] bg-sb-ember" />
+            ) : null}
           </Link>
         );
       })}

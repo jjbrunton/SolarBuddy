@@ -10,12 +10,15 @@ describe('ChartTooltip', () => {
       children: [emphasizedRow, coloredRow],
     });
 
-    expect(tooltip.props.className).toContain('border-sb-border');
+    expect(tooltip.props.className).toContain('border-sb-rule-strong');
+    expect(tooltip.props.className).toContain('bg-sb-card/95');
 
     const tooltipChildren = Array.isArray(tooltip.props.children) ? tooltip.props.children : [tooltip.props.children];
     expect(tooltipChildren[0].props.children).toBe('12:00');
+    expect(tooltipChildren[0].props.className).toContain('sb-eyebrow');
 
     expect(emphasizedRow.props.className).toContain('font-semibold');
+    expect(emphasizedRow.props.className).toContain('font-[family-name:var(--font-sb-mono)]');
     expect(emphasizedRow.props.children).toEqual(['Solar', ': ', '1200W']);
 
     expect(coloredRow.props.style).toEqual({ color: '#5d9cec' });

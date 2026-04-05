@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import { getAnimatedGaugeLayout } from './animatedGaugeLayout';
 
 interface Threshold {
@@ -7,7 +8,7 @@ interface Threshold {
   color: string;
 }
 
-interface AnimatedGaugeProps {
+interface SunArcProps {
   value: number | null;
   min: number;
   max: number;
@@ -15,15 +16,26 @@ interface AnimatedGaugeProps {
   label: string;
   thresholds: Threshold[];
   size?: 'sm' | 'md' | 'lg';
+  /** Optional target tick mark (e.g. target SOC). */
+  target?: number | null;
 }
 
 const SIZES = {
-  sm: { width: 100, strokeWidth: 6, fontSize: 16, labelSize: 9 },
-  md: { width: 140, strokeWidth: 8, fontSize: 22, labelSize: 11 },
-  lg: { width: 180, strokeWidth: 10, fontSize: 28, labelSize: 13 },
+  sm: { width: 112, strokeWidth: 4, fontSize: 22, labelSize: 9 },
+  md: { width: 156, strokeWidth: 5, fontSize: 34, labelSize: 11 },
+  lg: { width: 208, strokeWidth: 6, fontSize: 48, labelSize: 13 },
 };
 
-export function AnimatedGauge({
+/*
+ * SunArc — a 180° partial-arc gauge shaped like a rising sun. The filled
+ * portion uses an ember-deep → ember gradient stroke and sits above a
+ * hairline background track. A soft radial glow behind the active region
+ * hints at warmth. The numeric value uses the Fraunces display face.
+ *
+ * Exported as both `SunArc` (canonical) and `AnimatedGauge` (back-compat
+ * for the test suite and any existing consumer).
+ */
+export function SunArc({
   value,
   min,
   max,
@@ -31,19 +43,32 @@ export function AnimatedGauge({
   label,
   thresholds,
   size = 'md',
-}: AnimatedGaugeProps) {
+  target = null,
+}: SunArcProps) {
   const cfg = SIZES[size];
   const { radius, circumference, center, svgHeight, unitY, valueY } = getAnimatedGaugeLayout(cfg);
+  const gradientId = useId();
+  const glowId = useId();
 
   const pct = value !== null ? Math.max(0, Math.min(1, (value - min) / (max - min))) : 0;
   const offset = circumference - pct * circumference;
 
-  // Determine color from thresholds (last threshold whose value is <= current value)
-  let color = thresholds[0]?.color ?? '#5d9cec';
+  // Pick the strongest threshold whose value is below the current reading.
+  let activeColor = thresholds[0]?.color ?? 'var(--color-sb-ember)';
   if (value !== null) {
     for (const t of thresholds) {
-      if (value >= t.value) color = t.color;
+      if (value >= t.value) activeColor = t.color;
     }
+  }
+
+  // Target tick position along the arc.
+  let targetX: number | null = null;
+  let targetY: number | null = null;
+  if (target !== null && target !== undefined) {
+    const targetPct = Math.max(0, Math.min(1, (target - min) / (max - min)));
+    const angle = Math.PI * (1 - targetPct);
+    targetX = center + Math.cos(angle) * radius;
+    targetY = center - Math.sin(angle) * radius;
   }
 
   return (
@@ -53,33 +78,67 @@ export function AnimatedGauge({
         height={svgHeight}
         viewBox={`0 0 ${cfg.width} ${svgHeight}`}
       >
-        {/* Background arc */}
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="var(--color-sb-ember-deep)" />
+            <stop offset="55%" stopColor="var(--color-sb-ember)" />
+            <stop offset="100%" stopColor="var(--color-sb-ember-hover)" />
+          </linearGradient>
+          <radialGradient id={glowId} cx="50%" cy="90%" r="70%">
+            <stop offset="0%" stopColor={activeColor} stopOpacity="0.22" />
+            <stop offset="55%" stopColor={activeColor} stopOpacity="0.06" />
+            <stop offset="100%" stopColor={activeColor} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        {/* Soft radial warmth behind the arc */}
+        {value !== null ? (
+          <circle cx={center} cy={center} r={radius * 0.95} fill={`url(#${glowId})`} />
+        ) : null}
+
+        {/* Background track */}
         <path
           d={`M ${cfg.strokeWidth / 2} ${center} A ${radius} ${radius} 0 0 1 ${cfg.width - cfg.strokeWidth / 2} ${center}`}
           fill="none"
-          stroke="var(--color-sb-border)"
+          stroke="var(--color-sb-rule)"
           strokeWidth={cfg.strokeWidth}
           strokeLinecap="round"
         />
-        {/* Value arc */}
+
+        {/* Active arc */}
         <path
           d={`M ${cfg.strokeWidth / 2} ${center} A ${radius} ${radius} 0 0 1 ${cfg.width - cfg.strokeWidth / 2} ${center}`}
           fill="none"
-          stroke={value !== null ? color : 'var(--color-sb-border)'}
+          stroke={value !== null ? `url(#${gradientId})` : 'var(--color-sb-rule)'}
           strokeWidth={cfg.strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           className="transition-all duration-700 ease-out"
         />
-        {/* Value text */}
+
+        {/* Target tick */}
+        {targetX !== null && targetY !== null ? (
+          <circle
+            cx={targetX}
+            cy={targetY}
+            r={cfg.strokeWidth * 0.9}
+            fill="var(--color-sb-parchment)"
+            stroke="var(--color-sb-ember)"
+            strokeWidth={1}
+          />
+        ) : null}
+
+        {/* Value text — Fraunces display */}
         <text
           x={center}
           y={valueY}
           textAnchor="middle"
           fill="var(--color-sb-text)"
+          fontFamily="var(--font-sb-display), serif"
           fontSize={cfg.fontSize}
-          fontWeight="bold"
+          fontWeight="440"
+          style={{ fontVariationSettings: "'opsz' 144, 'SOFT' 30", letterSpacing: '-0.025em' }}
         >
           {value !== null ? `${Math.round(value * 10) / 10}` : '\u2014'}
         </text>
@@ -87,13 +146,22 @@ export function AnimatedGauge({
           x={center}
           y={unitY}
           textAnchor="middle"
-          fill="var(--color-sb-text-muted)"
+          fill="var(--color-sb-text-subtle)"
+          fontFamily="var(--font-sb-sans), sans-serif"
           fontSize={cfg.labelSize}
+          letterSpacing="0.18em"
+          style={{ textTransform: 'uppercase' }}
         >
           {unit}
         </text>
       </svg>
-      <span className="text-xs text-sb-text-muted">{label}</span>
+      <span className="sb-eyebrow">{label}</span>
     </div>
   );
 }
+
+/**
+ * @deprecated Use `SunArc` instead. This alias is kept so existing
+ * imports of `AnimatedGauge` (and the layout test) keep working.
+ */
+export const AnimatedGauge = SunArc;

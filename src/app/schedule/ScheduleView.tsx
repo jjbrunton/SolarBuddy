@@ -6,6 +6,7 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Figure } from '@/components/ui/Figure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { RefreshCw, Play, Trash2, Zap, BatteryLow, Pause, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
@@ -75,12 +76,19 @@ function SlotTooltip({ active, payload, label }: { active?: boolean; payload?: {
   const forecast = payload.find((p) => p.dataKey === 'forecastSOC');
   const pv = payload.find((p) => p.dataKey === 'pvGenerationKw');
   return (
-    <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
-      <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
-      {price && <p className="text-sm font-semibold text-sb-text">{price.value}p/kWh</p>}
-      {pv && pv.value != null && <p className="text-xs text-sb-solar">Solar: {pv.value.toFixed(2)} kW</p>}
-      {actual && actual.value != null && <p className="text-xs text-sb-accent">Actual: {actual.value}%</p>}
-      {forecast && forecast.value != null && <p className="text-xs text-sb-text-muted">Predicted: {forecast.value}%</p>}
+    <div className="rounded-[0.5rem] border border-sb-rule-strong bg-sb-card/95 px-4 py-3 backdrop-blur-sm">
+      <p className="sb-eyebrow">{label ? formatSlotTooltipLabel(label) : ''}</p>
+      {price && (
+        <p className="sb-display mt-1 text-2xl leading-none text-sb-ember">
+          {price.value}
+          <span className="ml-1 text-[0.55rem] uppercase tracking-[0.18em] text-sb-text-muted">p/kWh</span>
+        </p>
+      )}
+      <div className="mt-2 space-y-0.5 font-[family-name:var(--font-sb-mono)] text-[0.7rem] text-sb-text-muted">
+        {pv && pv.value != null && <p>PV       {pv.value.toFixed(2)} kW</p>}
+        {actual && actual.value != null && <p>Actual   {actual.value}%</p>}
+        {forecast && forecast.value != null && <p>Predict  {forecast.value}%</p>}
+      </div>
     </div>
   );
 }
@@ -402,9 +410,9 @@ export default function ScheduleView() {
         <Card>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Viewing day</p>
+              <p className="sb-eyebrow">Viewing day</p>
               <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h2 className="text-2xl font-semibold tracking-[-0.03em] text-sb-text">
+                <h2 className="sb-display text-2xl text-sb-text sm:text-3xl">
                   {formatScheduleDayLabel(selectedDay)}
                 </h2>
                 <Badge kind={viewingToday ? 'success' : isHistoricalDay ? 'info' : 'warning'}>
@@ -442,19 +450,16 @@ export default function ScheduleView() {
       ) : null}
 
       {stats && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Card>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Minimum</p>
-            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-success">{stats.min}p/kWh</p>
-          </Card>
-          <Card>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Average</p>
-            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-text">{stats.avg}p/kWh</p>
-          </Card>
-          <Card>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Maximum</p>
-            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-danger">{stats.max}p/kWh</p>
-          </Card>
+        <div className="grid grid-cols-1 divide-y divide-sb-rule border-y border-sb-rule sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="px-4 py-5 sm:px-6">
+            <Figure label="Minimum" value={`${stats.min}p/kWh`} tone="success" size="sm" />
+          </div>
+          <div className="px-4 py-5 sm:px-6">
+            <Figure label="Average" value={`${stats.avg}p/kWh`} tone="default" size="sm" />
+          </div>
+          <div className="px-4 py-5 sm:px-6">
+            <Figure label="Maximum" value={`${stats.max}p/kWh`} tone="danger" size="sm" />
+          </div>
         </div>
       )}
 
@@ -478,7 +483,7 @@ export default function ScheduleView() {
             </span>
           ))}
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded border-2 border-yellow-400" /> Current
+            <span className="inline-block h-2.5 w-2.5 rounded border-2" style={{ borderColor: colors.ember }} /> Current
           </span>
           {state.battery_soc !== null ? (
             <span className="flex items-center gap-1">
@@ -551,7 +556,7 @@ export default function ScheduleView() {
                   <Cell
                     key={entry.validFrom}
                     fill={ACTION_COLORS[entry.effectiveAction]}
-                    stroke={entry.isCurrent ? '#facc15' : 'none'}
+                    stroke={entry.isCurrent ? colors.ember : 'none'}
                     strokeWidth={entry.isCurrent ? 2 : 0}
                     opacity={entry.isPast ? 0.4 : 1}
                   />

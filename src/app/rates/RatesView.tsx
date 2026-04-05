@@ -5,6 +5,7 @@ import { ComposedChart, Bar, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContai
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Figure } from '@/components/ui/Figure';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { RefreshCw, Play, Pencil, X, Save } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
@@ -57,7 +58,9 @@ interface ChartData {
   pvGenerationKw?: number;
 }
 
-const TEAL = '#26a69a';
+// Ember is the override / selected colour — ties the selection state back to
+// the Agile Almanac ember pole instead of a stray teal.
+const OVERRIDE_EMBER = '#ffb547';
 const CHART_LEFT_MARGIN = 45;
 const CHART_RIGHT_MARGIN = 50;
 
@@ -67,13 +70,18 @@ function RateTooltip({ active, payload, label }: { active?: boolean; payload?: {
   const soc = payload.find((p) => p.dataKey === 'forecastSOC');
   const pv = payload.find((p) => p.dataKey === 'pvGenerationKw');
   return (
-    <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
-      <p className="text-xs text-sb-text-muted">{label ? formatSlotTooltipLabel(label) : ''}</p>
-      {price && <p className="text-sm font-semibold text-sb-text">{price.value}p/kWh</p>}
-      {soc && soc.value != null && <p className="text-xs text-sb-text-muted">SOC: {soc.value}%</p>}
-      {pv && pv.value != null && pv.value > 0 && (
-        <p className="text-xs text-sb-text-muted">PV: {pv.value.toFixed(2)} kW</p>
+    <div className="rounded-[0.5rem] border border-sb-rule-strong bg-sb-card/95 px-4 py-3 backdrop-blur-sm">
+      <p className="sb-eyebrow">{label ? formatSlotTooltipLabel(label) : ''}</p>
+      {price && (
+        <p className="sb-display mt-1 text-2xl leading-none text-sb-ember">
+          {price.value}
+          <span className="ml-1 text-[0.55rem] uppercase tracking-[0.18em] text-sb-text-muted">p/kWh</span>
+        </p>
       )}
+      <div className="mt-2 space-y-0.5 font-[family-name:var(--font-sb-mono)] text-[0.7rem] text-sb-text-muted">
+        {soc && soc.value != null && <p>SOC  {soc.value}%</p>}
+        {pv && pv.value != null && pv.value > 0 && <p>PV   {pv.value.toFixed(2)} kW</p>}
+      </div>
     </div>
   );
 }
@@ -341,9 +349,9 @@ export default function RatesView() {
   const getBarFill = (entry: ChartData, index: number) => {
     const isInDragRange = isDragging && dragRange && index >= dragRange[0] && index <= dragRange[1];
     const isSelected = selectedIndices.has(index);
-    if (isInDragRange) return TEAL + 'aa';
-    if (isSelected) return TEAL;
-    if (entry.price < 0 && entry.plannedAction === 'hold') return colors.warning;
+    if (isInDragRange) return OVERRIDE_EMBER + 'aa';
+    if (isSelected) return OVERRIDE_EMBER;
+    if (entry.price < 0 && entry.plannedAction === 'hold') return colors.ember;
     return ACTION_COLORS[entry.plannedAction];
   };
 
@@ -374,21 +382,18 @@ export default function RatesView() {
         )}
       />
 
-      {/* Stats row */}
+      {/* Editorial stats band — hairline-divided, no boxed cards */}
       {stats && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Card>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Minimum</p>
-            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-success">{stats.min}p/kWh</p>
-          </Card>
-          <Card>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Average</p>
-            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-text">{stats.avg}p/kWh</p>
-          </Card>
-          <Card>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">Maximum</p>
-            <p className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em] text-sb-danger">{stats.max}p/kWh</p>
-          </Card>
+        <div className="grid grid-cols-1 divide-y divide-sb-rule border-y border-sb-rule sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="px-4 py-5 sm:px-6">
+            <Figure label="Minimum" value={`${stats.min}p/kWh`} tone="success" size="sm" />
+          </div>
+          <div className="px-4 py-5 sm:px-6">
+            <Figure label="Average" value={`${stats.avg}p/kWh`} tone="default" size="sm" />
+          </div>
+          <div className="px-4 py-5 sm:px-6">
+            <Figure label="Maximum" value={`${stats.max}p/kWh`} tone="danger" size="sm" />
+          </div>
         </div>
       )}
 
@@ -415,10 +420,10 @@ export default function RatesView() {
             </span>
           ))}
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: TEAL }} /> Manual Override
+            <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: OVERRIDE_EMBER }} /> Manual Override
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded border-2 border-yellow-400" /> Current
+            <span className="inline-block h-2.5 w-2.5 rounded border-2" style={{ borderColor: colors.ember }} /> Current
           </span>
           {state.battery_soc !== null && (
             <span className="flex items-center gap-1">
@@ -487,7 +492,7 @@ export default function RatesView() {
                     <Cell
                       key={i}
                       fill={getBarFill(entry, i)}
-                      stroke={entry.isCurrent ? '#facc15' : 'none'}
+                      stroke={entry.isCurrent ? colors.ember : 'none'}
                       strokeWidth={entry.isCurrent ? 2 : 0}
                     />
                   ))}

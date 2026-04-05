@@ -1,5 +1,10 @@
 import type { ReactNode } from 'react';
 
+/*
+ * Editorial chart tooltip — hairline frame, small-caps label, quiet
+ * backdrop blur. Paired with `ChartTooltipRow` for diagnostic rows
+ * rendered in the mono face.
+ */
 export function ChartTooltip({
   label,
   children,
@@ -8,8 +13,8 @@ export function ChartTooltip({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-sb-border bg-sb-card px-3 py-2 shadow-lg">
-      {label && <p className="mb-1 text-xs text-sb-text-muted">{label}</p>}
+    <div className="rounded-[0.5rem] border border-sb-rule-strong bg-sb-card/95 px-4 py-3 backdrop-blur-sm">
+      {label && <p className="sb-eyebrow mb-2">{label}</p>}
       <div className="space-y-1">{children}</div>
     </div>
   );
@@ -28,10 +33,15 @@ export function ChartTooltipRow({
   color?: string;
   emphasized?: boolean;
 }) {
-  const className = emphasized ? 'text-sm font-semibold' : 'text-sm';
+  const className = emphasized
+    ? 'font-[family-name:var(--font-sb-mono)] text-sm font-semibold'
+    : 'font-[family-name:var(--font-sb-mono)] text-[0.78rem]';
 
   return (
-    <p className={`${className} ${colorClassName ?? 'text-sb-text'}`.trim()} style={color ? { color } : undefined}>
+    <p
+      className={`${className} ${colorClassName ?? 'text-sb-text'}`.trim()}
+      style={color ? { color } : undefined}
+    >
       {label}: {value}
     </p>
   );

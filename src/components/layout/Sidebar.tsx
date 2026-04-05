@@ -54,26 +54,27 @@ export function Sidebar({
       ) : null}
 
       <aside
-        className={`sb-shell-panel fixed top-0 left-0 z-50 flex h-full w-[260px] flex-col border-r border-sb-border bg-sb-sidebar px-4 py-4 transition-transform duration-200 lg:translate-x-0 ${
+        className={`sb-shell-panel fixed top-0 left-0 z-50 flex h-full w-[240px] flex-col border-r border-sb-rule bg-sb-sidebar px-5 py-6 transition-transform duration-200 lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex h-14 items-center justify-between rounded-2xl border border-sb-border bg-sb-card px-4">
+        {/* Brand */}
+        <div className="flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3" onClick={onClose}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sb-warning/14 text-sb-warning">
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-sb-ember/40 bg-sb-ember/10 text-sb-ember">
               <Sun size={18} />
+              <span className="absolute inset-0 rounded-full border border-sb-ember/20 blur-[1px]" />
             </div>
-            <div>
-              <p className="text-sm font-semibold tracking-[-0.02em] text-sb-text">SolarBuddy</p>
-              <p className="text-[0.7rem] uppercase tracking-[0.16em] text-sb-text-subtle">Energy control</p>
-            </div>
+            <p className="sb-display text-lg leading-tight text-sb-text">SolarBuddy</p>
           </Link>
-          <button onClick={onClose} className="rounded-xl p-2 text-sb-text-muted hover:text-sb-text lg:hidden">
+          <button onClick={onClose} className="rounded-lg p-2 text-sb-text-muted hover:text-sb-ember lg:hidden">
             <X size={18} />
           </button>
         </div>
 
-        <nav className="mt-5 flex-1 space-y-2 overflow-y-auto pr-1">
+        <div className="sb-rule mt-6" />
+
+        <nav className="mt-6 flex-1 space-y-0.5 overflow-y-auto pr-1">
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -81,24 +82,27 @@ export function Sidebar({
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
+                className={`group relative flex items-center gap-3 rounded-[0.5rem] px-3 py-2.5 text-[0.85rem] transition-colors ${
                   active
-                    ? 'bg-sb-active text-sb-text'
-                    : 'text-sb-text-muted hover:bg-sb-active/70 hover:text-sb-text'
+                    ? 'bg-sb-ember/10 text-sb-ember'
+                    : 'text-sb-text-muted hover:bg-sb-card/60 hover:text-sb-text'
                 }`}
               >
-                <item.icon size={18} />
-                <span>{item.label}</span>
+                {active ? (
+                  <span className="absolute inset-y-1 left-0 w-[2px] rounded-full bg-sb-ember" />
+                ) : null}
+                <item.icon size={16} className={active ? 'text-sb-ember' : ''} />
+                <span className="tracking-[0.01em]">{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="mt-5 rounded-2xl border border-sb-border bg-sb-card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">
-            Version
-          </p>
-          <p className="mt-1 text-sm text-sb-text">SolarBuddy v1.0.0</p>
+        <div className="sb-rule mt-4" />
+
+        <div className="mt-4 flex flex-col gap-1">
+          <p className="sb-eyebrow">Version</p>
+          <p className="font-[family-name:var(--font-sb-mono)] text-[0.72rem] text-sb-text">v1.0.0</p>
         </div>
       </aside>
     </>
