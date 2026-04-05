@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildSchedulePlan,
   findCheapestSlots,
@@ -8,6 +8,12 @@ import {
 } from '../engine';
 import type { AgileRate } from '../../octopus/rates';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../config';
+
+// Keep planner tests hermetic: force usage lookups to use the provided fallback
+// value instead of depending on local SQLite usage-profile contents.
+vi.mock('../../usage', () => ({
+  getForecastedConsumptionW: (_: Date, fallbackW: number) => fallbackW,
+}));
 
 const baseSettings: AppSettings = {
   ...DEFAULT_SETTINGS,
@@ -114,6 +120,67 @@ describe('findCheapestSlots', () => {
       avg_price: 1,
     });
   });
+
+  it('caps opportunistic smart-discharge charging when existing SOC already covers expected high-value demand', () => {
+    const rates = [
+      rate('2026-03-30T10:00:00Z', '2026-03-30T10:30:00Z', 12),
+      rate('2026-03-30T10:30:00Z', '2026-03-30T11:00:00Z', 10),
+      rate('2026-03-30T11:00:00Z', '2026-03-30T11:30:00Z', 9),
+      rate('2026-03-30T11:30:00Z', '2026-03-30T12:00:00Z', 8),
+      rate('2026-03-30T17:00:00Z', '2026-03-30T17:30:00Z', 40),
+      rate('2026-03-30T17:30:00Z', '2026-03-30T18:00:00Z', 38),
+    ];
+
+    const windows = findCheapestSlots(rates, {
+      ...baseSettings,
+      charging_strategy: 'opportunistic_topup',
+      smart_discharge: 'true',
+      charge_hours: '0',
+      min_soc_target: '0',
+      discharge_soc_floor: '20',
+      discharge_price_threshold: '35',
+      battery_capacity_kwh: '5',
+      max_charge_power_kw: '2',
+      charge_rate: '100',
+      estimated_consumption_w: '500',
+    }, {
+      currentSoc: 90,
+      now: new Date('2026-03-30T09:55:00Z'),
+    });
+
+    expect(windows).toHaveLength(0);
+  });
+
+  it('still honors min_soc_target in opportunistic smart-discharge mode', () => {
+    const rates = [
+      rate('2026-03-30T10:00:00Z', '2026-03-30T10:30:00Z', 12),
+      rate('2026-03-30T10:30:00Z', '2026-03-30T11:00:00Z', 10),
+      rate('2026-03-30T11:00:00Z', '2026-03-30T11:30:00Z', 9),
+      rate('2026-03-30T11:30:00Z', '2026-03-30T12:00:00Z', 8),
+      rate('2026-03-30T17:00:00Z', '2026-03-30T17:30:00Z', 40),
+      rate('2026-03-30T17:30:00Z', '2026-03-30T18:00:00Z', 38),
+    ];
+
+    const windows = findCheapestSlots(rates, {
+      ...baseSettings,
+      charging_strategy: 'opportunistic_topup',
+      smart_discharge: 'true',
+      charge_hours: '0',
+      min_soc_target: '50',
+      discharge_soc_floor: '20',
+      discharge_price_threshold: '35',
+      battery_capacity_kwh: '5',
+      max_charge_power_kw: '2',
+      charge_rate: '100',
+      estimated_consumption_w: '500',
+    }, {
+      currentSoc: 10,
+      now: new Date('2026-03-30T09:55:00Z'),
+    });
+
+    const selectedSlots = windows.reduce((count, window) => count + window.slots.length, 0);
+    expect(selectedSlots).toBe(2);
+  });
 });
 
 describe('buildSchedulePlan', () => {
@@ -152,7 +219,7 @@ describe('buildSchedulePlan', () => {
       charging_strategy: 'opportunistic_topup',
       smart_discharge: 'true',
       discharge_price_threshold: '40',
-      min_soc_target: '50',
+      min_soc_target: '90',
       charge_hours: '2',
       estimated_consumption_w: '500',
     }, {

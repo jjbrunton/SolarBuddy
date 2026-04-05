@@ -119,6 +119,7 @@ All settings are managed through the web UI under **Settings**:
 - `Price Threshold` is an optional eligibility ceiling for either strategy. If it is greater than `0`, SolarBuddy only plans slots at or below that price.
 - `Max Charge Slots` is now a cap rather than a fixed target. When live battery SOC and charge-power settings are available, SolarBuddy trims the plan to only the slots needed to reach the target SOC.
 - `Smart Discharge` now simulates the published tariff horizon slot by slot, so it can charge cheaply first, discharge later in expensive slots, and still preserve the configured reserve SOC floor.
+- In `Opportunistic Top-up` with `Smart Discharge` enabled, SolarBuddy now caps base charge-slot selection using expected demand in high-value discharge periods, so it avoids over-filling when the battery already has enough energy above the reserve floor.
 - `Discharge Price Threshold` is an optional minimum price for automatic discharge windows. If it is greater than `0`, SolarBuddy only discharges in slots at or above that price.
 - When a profitable discharge would otherwise cause SolarBuddy to miss a later SOC target, it can add extra cheap charge slots within the configured charge-slot budget to keep the plan feasible.
 - The scheduler now persists a canonical slot-by-slot battery plan in `plan_slots` with `charge`, `discharge`, or `hold` for every future tariff slot in the published horizon. Charge and discharge windows in `schedules` are derived from that plan for execution and history views.

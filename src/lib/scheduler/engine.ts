@@ -68,7 +68,12 @@ export function findCheapestSlots(
   const priceThreshold = parseFloat(settings.price_threshold) || 0;
   const strategy = getChargingStrategy(settings);
   const now = context.now ?? new Date();
-  const slotBudget = resolveSlotBudget(settings, context.currentSoc ?? null);
+  const slotBudget = resolveSlotBudget(settings, context.currentSoc ?? null, {
+    rates,
+    now,
+    strategy,
+    pvForecast: context.pvForecast,
+  });
 
   if (slotBudget <= 0) return [];
 
@@ -127,7 +132,16 @@ export function parseSlotBudget(chargeHours: string): number {
   return Math.max(1, parsed || 4);
 }
 
-function resolveSlotBudget(settings: AppSettings, currentSoc: number | null): number {
+function resolveSlotBudget(
+  settings: AppSettings,
+  currentSoc: number | null,
+  context?: {
+    rates: AgileRate[];
+    now: Date;
+    strategy: ChargingStrategy;
+    pvForecast?: PVForecastSlot[];
+  },
+): number {
   const configuredSlots = parseSlotBudget(settings.charge_hours);
 
   if (currentSoc === null) {
@@ -136,10 +150,34 @@ function resolveSlotBudget(settings: AppSettings, currentSoc: number | null): nu
 
   const targetSoc = clampPercentage(parseFloat(settings.min_soc_target));
 
-  // When smart discharge is active the battery cycles through
-  // charge-discharge patterns.  Always use the full configured budget
-  // so the planner can pick enough cheap slots for the next cycle,
-  // regardless of the current SOC.
+  if (
+    settings.smart_discharge === 'true' &&
+    context?.strategy === 'opportunistic_topup' &&
+    context.rates.length > 0
+  ) {
+    const targetSlots =
+      targetSoc !== null && currentSoc < targetSoc
+        ? calculateSlotsNeeded(currentSoc, targetSoc, settings)
+        : 0;
+    const demandDrivenSlots = estimateLoadAwareOpportunisticSlots(
+      context.rates,
+      settings,
+      context.now,
+      currentSoc,
+      context.pvForecast,
+    );
+
+    if (demandDrivenSlots !== null) {
+      const requiredSlots = Math.max(targetSlots, demandDrivenSlots);
+      if (!Number.isFinite(configuredSlots)) {
+        return requiredSlots;
+      }
+      return Math.min(configuredSlots, requiredSlots);
+    }
+  }
+
+  // For non-opportunistic paths, smart discharge can still require
+  // charge-discharge cycles, so keep the full configured slot budget.
   if (settings.smart_discharge === 'true' && targetSoc !== null && targetSoc > 0) {
     return configuredSlots;
   }
@@ -154,6 +192,88 @@ function resolveSlotBudget(settings: AppSettings, currentSoc: number | null): nu
   }
 
   return Math.min(configuredSlots, slotsNeeded);
+}
+
+function estimateLoadAwareOpportunisticSlots(
+  rates: AgileRate[],
+  settings: AppSettings,
+  now: Date,
+  currentSoc: number,
+  pvForecast?: PVForecastSlot[],
+): number | null {
+  const batteryCapacityWh = (parseFloat(settings.battery_capacity_kwh) || 0) * 1000;
+  const maxChargePowerW = (parseFloat(settings.max_charge_power_kw) || 0) * 1000;
+  const chargeRate = parseFloat(settings.charge_rate);
+  const effectiveChargePowerW = maxChargePowerW * ((Number.isFinite(chargeRate) ? chargeRate : 100) / 100);
+  const chargePerSlotWh = effectiveChargePowerW * HALF_HOUR_HOURS;
+  if (batteryCapacityWh <= 0 || chargePerSlotWh <= 0) {
+    return null;
+  }
+
+  const dischargeFloor = clampPercentage(parseFloat(settings.discharge_soc_floor)) ?? 20;
+  const reserveWh = batteryCapacityWh * (dischargeFloor / 100);
+  const availableBufferWh = Math.max(0, (batteryCapacityWh * (currentSoc / 100)) - reserveWh);
+  const usableCapacityWh = Math.max(0, batteryCapacityWh - reserveWh);
+
+  const highValueSlots = selectHighValueDischargeSlots(rates, settings, now);
+  if (highValueSlots.length === 0) {
+    return 0;
+  }
+
+  const fallbackConsumptionW = parseFloat(settings.estimated_consumption_w) || 500;
+  const pvBySlot = new Map<string, number>();
+  if (pvForecast) {
+    for (const slot of pvForecast) {
+      pvBySlot.set(slot.valid_from, slot.pv_estimate_w);
+    }
+  }
+
+  let highValueDemandWh = 0;
+  for (const slot of highValueSlots) {
+    const expectedLoadW = getForecastedConsumptionW(new Date(slot.valid_from), fallbackConsumptionW);
+    const expectedPvW = pvBySlot.get(slot.valid_from) ?? 0;
+    highValueDemandWh += Math.max(0, (expectedLoadW - expectedPvW) * HALF_HOUR_HOURS);
+  }
+
+  const desiredBufferWh = Math.min(usableCapacityWh, highValueDemandWh);
+  const requiredChargeWh = Math.max(0, desiredBufferWh - availableBufferWh);
+  if (requiredChargeWh <= 0) {
+    return 0;
+  }
+
+  return Math.ceil(requiredChargeWh / chargePerSlotWh);
+}
+
+function selectHighValueDischargeSlots(
+  rates: AgileRate[],
+  settings: AppSettings,
+  now: Date,
+): AgileRate[] {
+  const futureRates = rates
+    .filter((rate) => new Date(rate.valid_to).getTime() > now.getTime())
+    .sort((a, b) => a.valid_from.localeCompare(b.valid_from));
+  if (futureRates.length === 0) {
+    return [];
+  }
+
+  const configuredThreshold = parseFloat(settings.discharge_price_threshold);
+  if (Number.isFinite(configuredThreshold) && configuredThreshold > 0) {
+    return futureRates.filter((rate) => rate.price_inc_vat >= configuredThreshold);
+  }
+
+  const sortedPrices = futureRates
+    .map((rate) => rate.price_inc_vat)
+    .filter((price) => Number.isFinite(price))
+    .sort((a, b) => a - b);
+  if (sortedPrices.length === 0) {
+    return [];
+  }
+
+  // With no explicit discharge threshold, use the top quartile as the
+  // "high-value" demand window for charge-cap sizing.
+  const quartileIndex = Math.floor((sortedPrices.length - 1) * 0.75);
+  const derivedThreshold = sortedPrices[quartileIndex];
+  return futureRates.filter((rate) => rate.price_inc_vat >= derivedThreshold);
 }
 
 function clampPercentage(value: number): number | null {
