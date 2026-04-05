@@ -108,7 +108,8 @@ All settings are managed through the web UI under **Settings**:
 
 ### Dashboard Highlights
 
-- The dashboard overview is intentionally limited to five non-overlapping widgets: live gauges, energy flow, current rate, rate chart, and upcoming charges.
+- The dashboard overview is intentionally limited to seven non-overlapping widgets: live gauges, current mode, energy flow, current rate, rate chart, upcoming charges, and solar forecast.
+- The dashboard includes a dedicated **Current Mode** card showing the scheduler's resolved live action (`charge`, `hold`, or `discharge`), its source, and the active slot timing.
 - The dashboard includes a dedicated **Current Rate** card showing the active Agile half-hour slot, the next slot price, and low/average benchmarks from the currently loaded rates.
 - Click the current-rate card or the rate chart to jump to the full `/rates` view for detailed rate inspection and manual scheduling actions.
 
