@@ -57,6 +57,7 @@ export interface AppSettings {
   negative_run_discharge: string;
   // Usage pattern learning
   usage_learning_enabled: string;
+  usage_source: string;
   usage_learning_window_days: string;
   usage_baseload_percentile: string;
   usage_high_period_multiplier: string;
@@ -140,6 +141,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   negative_run_discharge: 'false',
   // Usage pattern learning
   usage_learning_enabled: 'true',
+  usage_source: 'octopus',
   usage_learning_window_days: '14',
   usage_baseload_percentile: '10',
   usage_high_period_multiplier: '1.5',

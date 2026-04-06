@@ -46,6 +46,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 - Dashboard current-rate card with live Agile slot, next-slot preview, and loaded rate benchmarks
 - Inverter configuration read-back, including compatibility fallbacks for renamed Solar Assistant settings and clear unavailable-state messaging when an inverter does not publish a read-back value
 - Octopus Energy Agile rate tracking and visualization
+- Usage-profile learning that can pull half-hour household import data from Octopus (with automatic fallback to local telemetry when Octopus data is unavailable)
 - Automatic battery scheduling with selectable Night Fill and Opportunistic Top-up strategies, horizon-aware smart discharge, and slot-level hold planning
 - Manual charge window and work mode overrides
 - Daily charge-plan navigation that defaults to today and keeps recent schedule history available for review
@@ -102,7 +103,7 @@ All settings are managed through the web UI under **Settings**:
 
 1. **MQTT** — Solar Assistant host, port, and credentials
 2. **Octopus Energy** — API key and account number (region and tariff are auto-detected)
-3. **Charging** — Strategy, max slots, price thresholds, charge/discharge SOC targets, night window, work mode
+3. **Charging** — Strategy, max slots, price thresholds, charge/discharge SOC targets, night window, work mode, and usage-profile source (Octopus vs local telemetry)
 4. **General** — Background automation toggles such as Auto Schedule and the inverter watchdog
 5. **Virtual Inverter** — Optional sandbox mode with preset scenarios, playback controls, and live-command blocking
 
@@ -122,6 +123,7 @@ All settings are managed through the web UI under **Settings**:
 - `Smart Discharge` now simulates the published tariff horizon slot by slot, so it can charge cheaply first, discharge later in expensive slots, and still preserve the configured reserve SOC floor.
 - In `Opportunistic Top-up` with `Smart Discharge` enabled, SolarBuddy now caps base charge-slot selection using expected demand in high-value discharge periods, so it avoids over-filling when the battery already has enough energy above the reserve floor.
 - `Discharge Price Threshold` is an optional minimum price for automatic discharge windows. If it is greater than `0`, SolarBuddy only discharges in slots at or above that price.
+- Usage-profile learning now prefers Octopus import-consumption intervals when `Usage Profile Source` is set to `Octopus`. If Octopus credentials or meter identifiers are missing, or Octopus usage retrieval fails, SolarBuddy falls back to local telemetry-derived usage until Octopus data becomes available again.
 - When a profitable discharge would otherwise cause SolarBuddy to miss a later SOC target, it can add extra cheap charge slots within the configured charge-slot budget to keep the plan feasible.
 - The scheduler now persists a canonical slot-by-slot battery plan in `plan_slots` with `charge`, `discharge`, or `hold` for every future tariff slot in the published horizon. Charge and discharge windows in `schedules` are derived from that plan for execution and history views.
 - `hold` means SolarBuddy drives the inverter into a battery-preserving state for that slot to prevent discharge. It may be preserving energy for a better later discharge opportunity, or simply deciding to wait.

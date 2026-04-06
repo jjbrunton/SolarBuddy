@@ -1,6 +1,6 @@
 # Software Architecture
 
-SolarBuddy is a self-hosted Next.js application that combines a server-rendered dashboard with long-lived background services. It monitors inverter telemetry from Solar Assistant over MQTT, fetches Octopus Agile tariff data over HTTP, computes slot-level battery actions plus derived execution windows, and persists operational data in SQLite.
+SolarBuddy is a self-hosted Next.js application that combines a server-rendered dashboard with long-lived background services. It monitors inverter telemetry from Solar Assistant over MQTT, fetches Octopus Agile tariff and consumption data over HTTP, computes slot-level battery actions plus derived execution windows, and persists operational data in SQLite.
 
 SolarBuddy also supports an optional Virtual Inverter runtime that swaps the live MQTT-backed inverter for a scripted in-memory scenario. When enabled, the UI, scheduler, and simulator all read from the virtual runtime while outbound inverter commands are intercepted and simulated instead of being published to MQTT.
 
@@ -21,6 +21,8 @@ flowchart LR
   SNAP --> DB
   OCT["Octopus Energy API"] --> RATES["Rates client"]
   RATES --> DB
+  OCT --> USAGE["Usage profile refresh"]
+  USAGE --> DB
   CRON["Scheduler cron"] --> ENGINE["Charge window engine"]
   ENGINE --> DB
   ENGINE --> EXEC["Execution timers"]
@@ -90,6 +92,13 @@ flowchart LR
 - `hold` means the planner is intentionally preserving the battery in that slot. In some cases that is because it is saving energy for a better future discharge opportunity; in others it is simply preventing discharge while waiting. Physically, the watchdog implements `hold` by setting the inverter to Load first and pinning `load_first_stop_discharge` to the current SOC, so home load comes from grid and only PV surplus can continue to charge the battery.
 - Adjacent `charge` and `discharge` actions are merged into execution windows before they are written to `schedules`.
 
+### Usage Profile Learning
+
+- [`src/lib/usage/compute.ts`](../src/lib/usage/compute.ts) refreshes the learned half-hour consumption profile daily.
+- When `usage_source` is `octopus`, usage refresh first attempts to load meter consumption from [`src/lib/octopus/consumption.ts`](../src/lib/octopus/consumption.ts) using the configured API key, MPAN, and meter serial.
+- If Octopus consumption is unavailable, insufficient, or errors, the refresh automatically falls back to local `readings.load_power` samples.
+- The computed profile is persisted to `usage_profile` and `usage_profile_meta`, and read by scheduler forecasting helpers in [`src/lib/usage/repository.ts`](../src/lib/usage/repository.ts).
+
 ### 5. Charge Execution
 
 - [`src/lib/scheduler/executor.ts`](../src/lib/scheduler/executor.ts) translates planned windows into `setTimeout` timers.
@@ -131,6 +140,14 @@ When the virtual runtime is active, the same shared state store and SSE stream a
 4. Canonical slot actions are written to `plan_slots`, and derived charge/discharge windows are written to `schedules`.
 5. If auto-scheduling is enabled, execution timers are created from the derived windows.
 
+### Usage Learning Flow
+
+1. The daily usage-refresh cron job triggers `computeUsageProfile()`.
+2. SolarBuddy loads usage samples from the configured source (Octopus first or telemetry-only).
+3. Samples are bucketed into weekday/weekend half-hour slots with baseload and high-period detection.
+4. The new profile is persisted to `usage_profile` and `usage_profile_meta`.
+5. If the profile changed materially, SolarBuddy queues a scheduler replan.
+
 ### Operator Interaction Flow
 
 1. The browser calls App Router API endpoints for settings, schedules, overrides, analytics, and system status.
@@ -150,6 +167,8 @@ The SQLite schema currently contains:
 - `plan_slots`: canonical slot-level planner output and execution metadata
 - `schedules`: planned and executed charge windows
 - `readings`: periodic inverter telemetry snapshots
+- `usage_profile`: learned weekday/weekend half-hour consumption buckets
+- `usage_profile_meta`: profile baseload, learning window, and high-period metadata
 - `events`: operational event history
 - `mqtt_logs`: recent MQTT connection, topic, and command activity
 - `carbon_intensity`: cached grid carbon intensity records
@@ -178,6 +197,7 @@ The default database path is `data/solarbuddy.db`, unless `DB_PATH` is set.
 - `src/lib/db.ts`: SQLite connection and schema
 - `src/lib/mqtt/`: MQTT topics, commands, and client lifecycle
 - `src/lib/octopus/`: Octopus Energy integration
+- `src/lib/usage/`: usage learning, profile persistence, and forecast lookups
 - `src/lib/readings/`: telemetry persistence jobs
 - `src/lib/scheduler/`: schedule computation, cron orchestration, and execution
 

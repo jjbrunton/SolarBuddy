@@ -228,7 +228,7 @@ export function UsageProfileChart() {
       <Card>
         <CardHeader
           title="Learned usage profile"
-          subtitle="Typical half-hour consumption pattern, computed from the last two weeks of telemetry."
+          subtitle="Typical half-hour consumption pattern, computed from the configured usage source over the selected learning window."
         >
           <div className="flex flex-wrap items-center gap-2">
             <SegmentedTabs
@@ -254,7 +254,7 @@ export function UsageProfileChart() {
         ) : !profile || profile.status === 'empty' ? (
           <EmptyState
             title="Still learning your usage"
-            description="SolarBuddy refreshes the usage profile at 03:17 each night. You can also press Refresh now to build it from whatever readings you already have — you'll need at least a few days of 1-minute telemetry for meaningful results."
+            description="SolarBuddy refreshes the usage profile at 03:17 each night. You can also press Refresh now to build it from your configured source (Octopus import data or local telemetry)."
           />
         ) : (
           <div>

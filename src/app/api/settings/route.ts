@@ -67,11 +67,16 @@ export async function POST(request: Request) {
     previousLearningEnabled !== 'true' &&
     validated.usage_learning_enabled === 'true';
   const aggregationParamsChanged =
+    validated.usage_source !== undefined ||
     validated.usage_learning_window_days !== undefined ||
     validated.usage_baseload_percentile !== undefined ||
     validated.usage_high_period_multiplier !== undefined ||
     validated.usage_high_period_min_slots !== undefined;
-  if (learningJustEnabled || aggregationParamsChanged) {
+  const usageSourceConfigChanged =
+    validated.octopus_api_key !== undefined ||
+    validated.octopus_mpan !== undefined ||
+    validated.octopus_meter_serial !== undefined;
+  if (learningJustEnabled || aggregationParamsChanged || usageSourceConfigChanged) {
     void (async () => {
       try {
         const { computeUsageProfile } = await import('@/lib/usage');

@@ -38,6 +38,7 @@ export const SCHEDULE_RELEVANT_KEYS = new Set([
   'negative_run_discharge',
   'pv_forecast_damp_factor',
   'usage_learning_enabled',
+  'usage_source',
   'usage_learning_window_days',
   'usage_baseload_percentile',
   'usage_high_period_multiplier',

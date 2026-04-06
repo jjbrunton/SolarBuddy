@@ -11,6 +11,8 @@ const {
   getUsageProfileMock,
   invalidateCacheMock,
   requestReplanMock,
+  fetchConsumptionMock,
+  hasOctopusConsumptionConfigMock,
 } = vi.hoisted(() => ({
   readingsAllMock: vi.fn(),
   insertBucketMock: vi.fn(),
@@ -22,6 +24,8 @@ const {
   getUsageProfileMock: vi.fn(),
   invalidateCacheMock: vi.fn(),
   requestReplanMock: vi.fn(),
+  fetchConsumptionMock: vi.fn(),
+  hasOctopusConsumptionConfigMock: vi.fn(),
 }));
 
 vi.mock('../../db', () => ({
@@ -61,6 +65,11 @@ vi.mock('../../scheduler/reevaluate', () => ({
   requestReplan: requestReplanMock,
 }));
 
+vi.mock('../../octopus/consumption', () => ({
+  fetchConsumption: fetchConsumptionMock,
+  hasOctopusConsumptionConfig: hasOctopusConsumptionConfigMock,
+}));
+
 import { computeUsageProfile } from '../compute';
 
 const ORIGINAL_TZ = process.env.TZ;
@@ -76,6 +85,7 @@ afterAll(() => {
 function defaultSettings() {
   return {
     usage_learning_enabled: 'true',
+    usage_source: 'telemetry',
     usage_learning_window_days: '14',
     usage_baseload_percentile: '10',
     usage_high_period_multiplier: '1.5',
@@ -116,11 +126,53 @@ function generateSyntheticReadings() {
   return rows;
 }
 
+function generateSyntheticOctopusIntervals() {
+  const rows: Array<{
+    interval_start: string;
+    interval_end: string;
+    consumption_kwh: number;
+    average_w: number;
+  }> = [];
+  const startMs = new Date('2026-01-05T00:00:00Z').getTime();
+  const HALF_HOUR_MS = 30 * 60 * 1000;
+
+  for (let day = 0; day < 14; day++) {
+    const dayStartMs = startMs + day * 24 * 60 * 60 * 1000;
+    const dayDate = new Date(dayStartMs);
+    const dow = dayDate.getDay();
+    const isWeekend = dow === 0 || dow === 6;
+
+    for (let slotIndex = 0; slotIndex < 48; slotIndex++) {
+      const start = dayStartMs + slotIndex * HALF_HOUR_MS;
+      const end = start + HALF_HOUR_MS;
+      let loadW: number;
+      if (isWeekend) {
+        loadW = 400;
+      } else if (slotIndex >= 34 && slotIndex <= 37) {
+        loadW = 1200;
+      } else {
+        loadW = 300;
+      }
+
+      rows.push({
+        interval_start: new Date(start).toISOString(),
+        interval_end: new Date(end).toISOString(),
+        consumption_kwh: loadW / 2000,
+        average_w: loadW,
+      });
+    }
+  }
+
+  return rows;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   transactionMock.mockImplementation((fn: () => void) => fn);
   getSettingsMock.mockReturnValue(defaultSettings());
   getUsageProfileMock.mockReturnValue(null);
+  hasOctopusConsumptionConfigMock.mockReturnValue(false);
+  fetchConsumptionMock.mockResolvedValue([]);
 });
 
 describe('computeUsageProfile', () => {
@@ -189,7 +241,7 @@ describe('computeUsageProfile', () => {
     const result = await computeUsageProfile({ now: new Date('2026-01-19T00:00:00Z') });
 
     expect(result.ok).toBe(false);
-    expect(result.reason).toContain('insufficient data');
+    expect(result.reason).toContain('insufficient');
     // Must not touch the tables on the insufficient-data path.
     expect(transactionMock).not.toHaveBeenCalled();
     expect(insertBucketMock).not.toHaveBeenCalled();
@@ -212,6 +264,52 @@ describe('computeUsageProfile', () => {
 
     expect(result.ok).toBe(true);
     expect(result.stats.dropped_days).toBeGreaterThanOrEqual(1);
+  });
+
+  it('uses Octopus interval data when Octopus is the selected usage source', async () => {
+    getSettingsMock.mockReturnValue({ ...defaultSettings(), usage_source: 'octopus' });
+    hasOctopusConsumptionConfigMock.mockReturnValue(true);
+    fetchConsumptionMock.mockResolvedValue(generateSyntheticOctopusIntervals());
+
+    const result = await computeUsageProfile({ now: new Date('2026-01-19T00:00:00Z') });
+
+    expect(result.ok).toBe(true);
+    expect(result.stats.total_samples).toBe(48 * 14);
+    expect(fetchConsumptionMock).toHaveBeenCalledTimes(1);
+    expect(readingsAllMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to telemetry samples when Octopus usage fetch fails', async () => {
+    getSettingsMock.mockReturnValue({ ...defaultSettings(), usage_source: 'octopus' });
+    hasOctopusConsumptionConfigMock.mockReturnValue(true);
+    fetchConsumptionMock.mockRejectedValue(new Error('Octopus unavailable'));
+    readingsAllMock.mockReturnValue(generateSyntheticReadings());
+
+    const result = await computeUsageProfile({ now: new Date('2026-01-19T00:00:00Z') });
+
+    expect(result.ok).toBe(true);
+    expect(fetchConsumptionMock).toHaveBeenCalledTimes(1);
+    expect(readingsAllMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to telemetry samples when Octopus usage is too sparse', async () => {
+    getSettingsMock.mockReturnValue({ ...defaultSettings(), usage_source: 'octopus' });
+    hasOctopusConsumptionConfigMock.mockReturnValue(true);
+    fetchConsumptionMock.mockResolvedValue([
+      {
+        interval_start: '2026-01-18T00:00:00Z',
+        interval_end: '2026-01-18T00:30:00Z',
+        consumption_kwh: 0.2,
+        average_w: 400,
+      },
+    ]);
+    readingsAllMock.mockReturnValue(generateSyntheticReadings());
+
+    const result = await computeUsageProfile({ now: new Date('2026-01-19T00:00:00Z') });
+
+    expect(result.ok).toBe(true);
+    expect(fetchConsumptionMock).toHaveBeenCalledTimes(1);
+    expect(readingsAllMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not trigger a replan when there is no meaningful drift', async () => {

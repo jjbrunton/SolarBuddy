@@ -17,7 +17,7 @@ export default function UsageView() {
       <PageHeader
         eyebrow="Analytics"
         title="Usage profile"
-        description="Learned household consumption pattern — baseload and high-consumption periods derived from your telemetry history. The scheduler uses these to forecast per-slot drain instead of a flat estimate."
+        description="Learned household consumption pattern — baseload and high-consumption periods derived from your configured usage source (Octopus consumption data or local telemetry). The scheduler uses this to forecast per-slot drain instead of a flat estimate."
       />
       <UsageProfileChart />
     </div>
