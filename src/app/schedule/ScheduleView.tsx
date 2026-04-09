@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { RefreshCw, Play, Trash2, Zap, BatteryLow, Pause, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
+import { sliceTimeWindowsFromCurrentPeriod } from '@/lib/chart-window';
 import { computeSOCForecast } from '@/lib/soc-forecast';
 import { formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import {
@@ -292,6 +293,19 @@ export default function ScheduleView() {
   const isHistoricalDay = Boolean(selectedDay && selectedDay < todayDay);
   const canEditDay = Boolean(selectedDay && selectedDay >= todayDay);
 
+  const chartSlots = useMemo(() => {
+    if (!viewingToday) {
+      return visibleSlots;
+    }
+
+    return sliceTimeWindowsFromCurrentPeriod(
+      visibleSlots,
+      (slot) => slot.validFrom,
+      (slot) => slot.validTo,
+      effectiveNow,
+    );
+  }, [effectiveNow, viewingToday, visibleSlots]);
+
   useEffect(() => {
     if (!viewingToday || visibleSlots.length === 0 || !tableRef.current) {
       return;
@@ -366,17 +380,17 @@ export default function ScheduleView() {
   };
 
   const stats = useMemo(() => {
-    if (visibleSlots.length === 0) {
+    if (chartSlots.length === 0) {
       return null;
     }
 
-    const prices = visibleSlots.map((slot) => slot.price);
+    const prices = chartSlots.map((slot) => slot.price);
     return {
       min: Math.round(Math.min(...prices) * 100) / 100,
       max: Math.round(Math.max(...prices) * 100) / 100,
       avg: Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100,
     };
-  }, [visibleSlots]);
+  }, [chartSlots]);
 
   const hasOverrides = visibleSlots.some((slot) => slot.overrideAction !== null);
 
@@ -490,12 +504,12 @@ export default function ScheduleView() {
               <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-sb-text-muted" /> Predicted SOC
             </span>
           ) : null}
-          {visibleSlots.some((s) => s.actualSOC != null) ? (
+          {chartSlots.some((s) => s.actualSOC != null) ? (
             <span className="flex items-center gap-1">
               <span className="inline-block h-0.5 w-4 border-t-2 border-sb-accent" /> Actual SOC
             </span>
           ) : null}
-          {pvEnabled && visibleSlots.some((s) => s.pvGenerationKw != null) ? (
+          {pvEnabled && chartSlots.some((s) => s.pvGenerationKw != null) ? (
             <span className="flex items-center gap-1">
               <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: colors.solar, opacity: 0.5 }} /> Solar forecast
             </span>
@@ -509,14 +523,14 @@ export default function ScheduleView() {
             title="No rates loaded yet"
             description="Fetch the current rate horizon to populate the charge plan and allow the scheduler to generate actions."
           />
-        ) : visibleSlots.length === 0 ? (
+        ) : chartSlots.length === 0 ? (
           <EmptyState
             title="No slot history for this day"
             description="SolarBuddy does not have stored tariff slots for the selected day yet."
           />
         ) : (
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={visibleSlots} margin={{ top: 5, right: 50, bottom: 5, left: 5 }}>
+            <ComposedChart data={chartSlots} margin={{ top: 5, right: 50, bottom: 5, left: 5 }}>
               <XAxis
                 dataKey="validFrom"
                 tick={{ fill: colors.muted, fontSize: 11 }}
@@ -542,7 +556,7 @@ export default function ScheduleView() {
               />
               <Tooltip content={<SlotTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
               <ReferenceLine yAxisId="price" y={0} stroke={colors.border} />
-              {pvEnabled && visibleSlots.some((s) => s.pvGenerationKw != null) ? (
+              {pvEnabled && chartSlots.some((s) => s.pvGenerationKw != null) ? (
                 <Area
                   yAxisId="pv"
                   type="monotone"
@@ -558,7 +572,7 @@ export default function ScheduleView() {
                 />
               ) : null}
               <Bar yAxisId="price" dataKey="price" radius={[2, 2, 0, 0]}>
-                {visibleSlots.map((entry) => (
+                {chartSlots.map((entry) => (
                   <Cell
                     key={entry.validFrom}
                     fill={ACTION_COLORS[entry.effectiveAction]}

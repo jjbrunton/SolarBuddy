@@ -6,6 +6,7 @@ import { ComposedChart, Bar, Line, Area, XAxis, YAxis, Tooltip, ResponsiveContai
 import { Card, CardHeader } from '@/components/ui/Card';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
+import { sliceTimeWindowsFromCurrentPeriod } from '@/lib/chart-window';
 import { computeSOCForecast } from '@/lib/soc-forecast';
 import { ACTION_COLORS, type PlanAction } from '@/lib/plan-actions';
 import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
@@ -19,6 +20,12 @@ interface RatePoint {
   plannedAction: PlanAction;
   forecastSOC?: number;
   pvGenerationKw?: number;
+}
+
+interface RateSlot {
+  valid_from: string;
+  valid_to: string;
+  price_inc_vat: number;
 }
 
 interface PlannedSlotRow {
@@ -81,10 +88,16 @@ export default function RateChartWidget() {
         setPvEnabled(isPvEnabled);
         setPvConfidence(settingsJson.pv_forecast_confidence || 'estimate');
 
-        const rawRates = ratesJson.rates || [];
+        const rawRates: RateSlot[] = ratesJson.rates || [];
         const rawScheds = schedJson.schedules || [];
         const rawPlanSlots: PlannedSlotRow[] = schedJson.plan_slots || [];
         const now = effectiveNowRef.current;
+        const visibleRates = sliceTimeWindowsFromCurrentPeriod(
+          rawRates,
+          (rate) => rate.valid_from,
+          (rate) => rate.valid_to,
+          now,
+        );
 
         const plannedActionMap = new Map<string, PlanAction>();
         for (const slot of rawPlanSlots) {
@@ -102,7 +115,7 @@ export default function RateChartWidget() {
 
         let curSlotIdx = 0;
 
-        const chartData: RatePoint[] = rawRates.map((r: { valid_from: string; valid_to: string; price_inc_vat: number }, i: number) => {
+        const chartData: RatePoint[] = visibleRates.map((r, i) => {
           const dt = new Date(r.valid_from);
           const isCurrent = now >= dt && now < new Date(r.valid_to);
           if (isCurrent) curSlotIdx = i;
@@ -117,10 +130,10 @@ export default function RateChartWidget() {
         setCurrentSlotIndex(curSlotIdx);
         setRates(chartData);
 
-        if (isPvEnabled && rawRates.length > 0) {
+        if (isPvEnabled && visibleRates.length > 0) {
           try {
-            const from = rawRates[0].valid_from;
-            const to = rawRates[rawRates.length - 1].valid_to;
+            const from = visibleRates[0].valid_from;
+            const to = visibleRates[visibleRates.length - 1].valid_to;
             const forecastRes = await fetch(`/api/forecast?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
             const forecastJson = await forecastRes.json();
             setPvForecasts(forecastJson.forecasts || []);

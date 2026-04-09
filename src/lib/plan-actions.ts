@@ -7,7 +7,7 @@ export const PLAN_ACTIONS: PlanAction[] = ['charge', 'discharge', 'hold'];
  *
  * Charge is the *ember* pole — storing solar / cheap import = warm.
  * Discharge is the cool *signal-green* — sending energy out profitably.
- * Hold is a quiet neutral ink — "the planner is waiting".
+ * Hold is a cool neutral slate — "the planner is waiting".
  *
  * The upstream chart layers these as thin caps on a quiet base bar so
  * you read action from colour hints, not from a full-bar rainbow.
@@ -15,7 +15,7 @@ export const PLAN_ACTIONS: PlanAction[] = ['charge', 'discharge', 'hold'];
 export const ACTION_COLORS: Record<PlanAction, string> = {
   charge: '#ffb547',
   discharge: '#6bb87a',
-  hold: '#8c7a52',
+  hold: '#6b7c93',
 };
 
 export const ACTION_LABELS: Record<PlanAction, string> = {

@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { RefreshCw, Play, Pencil, X, Save } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
+import { sliceTimeWindowsFromCurrentPeriod } from '@/lib/chart-window';
 import { computeSOCForecast } from '@/lib/soc-forecast';
 import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import { useSlotSelection } from '@/hooks/useSlotSelection';
@@ -155,6 +156,12 @@ export default function RatesView() {
       const plannedSlots: PlannedSlotRow[] = scheduleJson.plan_slots || [];
       const overrides: Override[] = overridesJson.overrides || [];
       const now = effectiveNowRef.current;
+      const visibleRates = sliceTimeWindowsFromCurrentPeriod(
+        rates,
+        (rate) => rate.valid_from,
+        (rate) => rate.valid_to,
+        now,
+      );
 
       const plannedActionMap = new Map<string, PlanAction>();
       for (const slot of plannedSlots) {
@@ -183,7 +190,7 @@ export default function RatesView() {
       const overrideIndices = new Set<number>();
       let curSlotIdx = 0;
 
-      const chartData: ChartData[] = rates.map((rate, i) => {
+      const chartData: ChartData[] = visibleRates.map((rate, i) => {
         const dt = new Date(rate.valid_from);
         const isCurrent = now >= dt && now < new Date(rate.valid_to);
         if (isCurrent) curSlotIdx = i;
@@ -205,8 +212,8 @@ export default function RatesView() {
       setCurrentSlotIndex(curSlotIdx);
       setSelectedIndices(overrideIndices);
 
-      if (rates.length > 0) {
-        const prices = rates.map((r) => r.price_inc_vat);
+      if (visibleRates.length > 0) {
+        const prices = visibleRates.map((r) => r.price_inc_vat);
         setStats({
           min: Math.round(Math.min(...prices) * 100) / 100,
           max: Math.round(Math.max(...prices) * 100) / 100,
@@ -217,10 +224,10 @@ export default function RatesView() {
       setData(chartData);
       setError(null);
 
-      if (isPvEnabled && rates.length > 0) {
+      if (isPvEnabled && visibleRates.length > 0) {
         try {
-          const from = rates[0].valid_from;
-          const to = rates[rates.length - 1].valid_to;
+          const from = visibleRates[0].valid_from;
+          const to = visibleRates[visibleRates.length - 1].valid_to;
           const forecastRes = await fetch(`/api/forecast?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
           const forecastJson = await forecastRes.json();
           setPvForecasts(forecastJson.forecasts || []);

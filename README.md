@@ -113,6 +113,7 @@ All settings are managed through the web UI under **Settings**:
 - The dashboard includes a dedicated **Current Mode** card showing the scheduler's resolved live action (`charge`, `hold`, or `discharge`), its source, and the active slot timing.
 - The dashboard includes a dedicated **Current Rate** card showing the active Agile half-hour slot, the next slot price, and low/average benchmarks from the currently loaded rates.
 - Click the current-rate card or the rate chart to jump to the full `/rates` view for detailed rate inspection and manual scheduling actions.
+- Current-day operational charts such as the dashboard rate chart, the full rates view, and the charge-plan overview start at the active or next slot instead of midnight, so operators see the actionable horizon first.
 
 #### Scheduling Notes
 

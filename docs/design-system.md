@@ -102,7 +102,9 @@ When a new visual pattern appears in more than one route, move it into this shar
 - Empty or loading states should use the same copy and alignment conventions as the rest of the app.
 - Missing field values should use the shared placeholder treatment instead of raw `--` or em-dash fallbacks.
 - For chart tooltips, prefer the shared tooltip primitives in [`src/components/ui/ChartTooltip.tsx`](../src/components/ui/ChartTooltip.tsx).
+- Shared planner-action colours live in [`src/lib/plan-actions.ts`](../src/lib/plan-actions.ts): `charge` stays on the warm ember pole, `discharge` stays green, and `hold` should remain a cooler neutral so those categories are easy to distinguish at a glance.
 - Time-series charts must use a unique slot identifier such as the ISO `valid_from` value for `XAxis.dataKey`, then format the visible tick text separately. Do not use a display-only `HH:MM` string as the category key because repeated wall-clock times can misalign hover state and tooltips.
+- Current-day operational time-series charts should start at the active slot or next upcoming period rather than showing expired history on the left edge. Historical-day views can continue to render the full recorded range.
 
 ## Live Telemetry Diagrams
 
