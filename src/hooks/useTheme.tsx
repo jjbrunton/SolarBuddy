@@ -50,68 +50,61 @@ export function useTheme() {
 /**
  * Returns resolved hex values from CSS variables for Recharts.
  *
- * The palette is organised around the Agile Almanac ember/frost duality:
- * - ember = solar, charge, stored energy
- * - frost = grid, import, cold side
- * - ink / muted / subtle = editorial text scale
- * - rule / border = hairline dividers
- *
- * Legacy keys (accent, success, warning, danger, solar, grid, load) are
- * preserved so existing chart code keeps working.
+ * Terminal Blueprint palette: orange/black primary with cyan frost.
  */
 export function useChartColors() {
   const { theme } = useTheme();
 
   return useMemo(() => {
     if (typeof window === 'undefined') {
-      // SSR fallback — dark-theme almanac defaults
+      // SSR fallback — dark terminal defaults
       return {
-        text: '#efe7d4',
-        ink: '#efe7d4',
-        muted: '#b6a98c',
-        subtle: '#7f745d',
-        accent: '#ffb547',
-        ember: '#ffb547',
-        emberDeep: '#e07a2a',
-        frost: '#7fb3ff',
-        frostDeep: '#3e6bd6',
-        success: '#6bb87a',
-        warning: '#e8a046',
-        danger: '#d95545',
-        info: '#7fb3ff',
-        border: 'rgba(239, 231, 212, 0.1)',
-        rule: 'rgba(239, 231, 212, 0.14)',
-        card: 'rgba(24, 18, 12, 0.78)',
-        cardBorder: 'rgba(239, 231, 212, 0.22)',
-        solar: '#ffb547',
-        grid: '#7fb3ff',
-        load: '#d8a8ff',
+        text: '#d4d4d4',
+        ink: '#d4d4d4',
+        muted: '#808080',
+        subtle: '#505050',
+        accent: '#ff6600',
+        ember: '#ff6600',
+        emberDeep: '#cc5200',
+        frost: '#00aaff',
+        frostDeep: '#0077cc',
+        success: '#00cc66',
+        warning: '#ffaa00',
+        danger: '#ff3333',
+        info: '#00aaff',
+        border: 'rgba(255, 102, 0, 0.12)',
+        rule: 'rgba(255, 102, 0, 0.10)',
+        card: 'rgba(17, 17, 17, 0.85)',
+        cardBorder: 'rgba(255, 102, 0, 0.25)',
+        solar: '#ff6600',
+        grid: '#00aaff',
+        load: '#aa66ff',
       };
     }
     const style = getComputedStyle(document.documentElement);
     const get = (name: string, fallback: string) =>
       style.getPropertyValue(name).trim() || fallback;
     return {
-      text: get('--color-sb-text', '#efe7d4'),
-      ink: get('--color-sb-ink', '#efe7d4'),
-      muted: get('--color-sb-text-muted', '#b6a98c'),
-      subtle: get('--color-sb-text-subtle', '#7f745d'),
-      accent: get('--color-sb-accent', '#ffb547'),
-      ember: get('--color-sb-ember', '#ffb547'),
-      emberDeep: get('--color-sb-ember-deep', '#e07a2a'),
-      frost: get('--color-sb-frost', '#7fb3ff'),
-      frostDeep: get('--color-sb-frost-deep', '#3e6bd6'),
-      success: get('--color-sb-success', '#6bb87a'),
-      warning: get('--color-sb-warning', '#e8a046'),
-      danger: get('--color-sb-danger', '#d95545'),
-      info: get('--color-sb-info', '#7fb3ff'),
-      border: get('--color-sb-border', 'rgba(239,231,212,0.1)'),
-      rule: get('--color-sb-rule', 'rgba(239,231,212,0.14)'),
-      card: get('--color-sb-card', 'rgba(24,18,12,0.78)'),
-      cardBorder: get('--color-sb-border-strong', 'rgba(239,231,212,0.22)'),
-      solar: get('--color-sb-solar', '#ffb547'),
-      grid: get('--color-sb-grid', '#7fb3ff'),
-      load: get('--color-sb-load', '#d8a8ff'),
+      text: get('--color-sb-text', '#d4d4d4'),
+      ink: get('--color-sb-ink', '#d4d4d4'),
+      muted: get('--color-sb-text-muted', '#808080'),
+      subtle: get('--color-sb-text-subtle', '#505050'),
+      accent: get('--color-sb-accent', '#ff6600'),
+      ember: get('--color-sb-ember', '#ff6600'),
+      emberDeep: get('--color-sb-ember-deep', '#cc5200'),
+      frost: get('--color-sb-frost', '#00aaff'),
+      frostDeep: get('--color-sb-frost-deep', '#0077cc'),
+      success: get('--color-sb-success', '#00cc66'),
+      warning: get('--color-sb-warning', '#ffaa00'),
+      danger: get('--color-sb-danger', '#ff3333'),
+      info: get('--color-sb-info', '#00aaff'),
+      border: get('--color-sb-border', 'rgba(255,102,0,0.12)'),
+      rule: get('--color-sb-rule', 'rgba(255,102,0,0.10)'),
+      card: get('--color-sb-card', 'rgba(17,17,17,0.85)'),
+      cardBorder: get('--color-sb-border-strong', 'rgba(255,102,0,0.25)'),
+      solar: get('--color-sb-solar', '#ff6600'),
+      grid: get('--color-sb-grid', '#00aaff'),
+      load: get('--color-sb-load', '#aa66ff'),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);

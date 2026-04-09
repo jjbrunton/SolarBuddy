@@ -137,6 +137,7 @@ describe('octopus export rates', () => {
       18.75,
       17.8571,
       '2026-04-03T09:15:27.000Z',
+      'octopus',
     );
     expect(runMock).toHaveBeenNthCalledWith(
       2,
@@ -145,6 +146,7 @@ describe('octopus export rates', () => {
       17.4,
       16.5714,
       '2026-04-03T09:15:27.000Z',
+      'octopus',
     );
 
     vi.useRealTimers();

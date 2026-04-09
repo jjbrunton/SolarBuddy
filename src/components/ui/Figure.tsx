@@ -16,9 +16,9 @@ const toneClasses: Record<FigureTone, string> = {
 };
 
 const sizeClasses: Record<FigureSize, string> = {
-  sm: 'text-[2rem] sm:text-[2.25rem] leading-[0.95]',
-  md: 'text-[2.75rem] sm:text-[3.25rem] leading-[0.92]',
-  lg: 'text-[4rem] sm:text-[5.25rem] leading-[0.9]',
+  sm: 'text-[1.75rem] sm:text-[2rem] leading-[0.95]',
+  md: 'text-[2.5rem] sm:text-[3rem] leading-[0.92]',
+  lg: 'text-[3.5rem] sm:text-[4.5rem] leading-[0.9]',
 };
 
 interface FigureProps {
@@ -35,16 +35,11 @@ interface FigureProps {
 }
 
 /*
- * Figure — editorial hero numeric with Fraunces display face.
+ * Figure — monospace hero numeric for data-dense terminal displays.
  *
- * The structure is intentional: small-caps eyebrow label, a large display
- * numeric with optional unit and inline icon, a hairline rule underneath,
- * then a one-line caption. No card frame — the caller wraps it in Card
- * (or places it directly in an almanac grid) to keep the primitive
- * composable.
- *
- * Values refresh via the `animate-value-pop` keyframe on key change so
- * live updates register as small editorial beats, not constant motion.
+ * Structure: uppercase eyebrow label, large monospace number with
+ * optional unit, a structural rule, then a one-line caption.
+ * Values refresh via `animate-value-pop` on key change.
  */
 export function Figure({
   label,
@@ -70,7 +65,7 @@ export function Figure({
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
       <div className="flex items-center gap-2">
-        {Icon ? <Icon size={14} className="text-sb-text-subtle" /> : null}
+        {Icon ? <Icon size={12} strokeWidth={1.5} className="text-sb-text-subtle" /> : null}
         <span className="sb-eyebrow">{label}</span>
       </div>
 
@@ -83,7 +78,7 @@ export function Figure({
           <div className={`sb-display flex items-baseline gap-2 ${toneClasses[tone]} ${sizeClasses[size]}`}>
             <span>{displayValue}</span>
             {unit ? (
-              <span className="text-[0.32em] font-medium tracking-[0.08em] text-sb-text-muted uppercase">
+              <span className="text-[0.35em] font-medium tracking-[0.1em] text-sb-text-muted uppercase">
                 {unit}
               </span>
             ) : null}
@@ -95,7 +90,7 @@ export function Figure({
       <div className="sb-rule" />
 
       {caption ? (
-        <p className="text-xs leading-5 text-sb-text-muted">{caption}</p>
+        <p className="text-[0.7rem] leading-5 text-sb-text-muted">{caption}</p>
       ) : null}
     </div>
   );

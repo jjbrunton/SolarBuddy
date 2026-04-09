@@ -166,7 +166,7 @@ export default function CurrentRateWidget() {
               {currentAction ? ACTION_LABELS[currentAction] : 'No Plan'}
             </Badge>
             <span
-              className={`inline-flex items-center rounded-full border px-3 py-[0.2rem] text-[0.66rem] font-semibold uppercase tracking-[0.18em] ${styles.badge}`}
+              className={`inline-flex items-center border px-2.5 py-[0.15rem] text-[0.6rem] font-semibold uppercase tracking-[0.14em] ${styles.badge}`}
             >
               {getStatusLabel(summary.status)}
             </span>

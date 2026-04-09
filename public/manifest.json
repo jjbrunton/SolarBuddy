@@ -4,8 +4,8 @@
   "description": "Octopus Agile + Solar Assistant charging optimizer",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1a1a1a",
-  "theme_color": "#5d9cec",
+  "background_color": "#0a0a0a",
+  "theme_color": "#ff6600",
   "orientation": "any",
   "icons": [
     {

@@ -27,15 +27,15 @@ export function StatusIndicator({ label, value, colorMap, size = 'md' }: StatusI
 
   return (
     <div className="flex items-center gap-2.5">
-      <span className="relative flex h-2.5 w-2.5">
+      <span className="relative flex h-2 w-2">
         {isActive && (
-          <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-50 ${dotColor}`} />
+          <span className={`absolute inline-flex h-full w-full animate-ping opacity-50 ${dotColor}`} />
         )}
-        <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${dotColor}`} />
+        <span className={`relative inline-flex h-2 w-2 ${dotColor}`} />
       </span>
-      <div className={size === 'sm' ? '' : ''}>
-        <span className="text-xs text-sb-text-muted">{label}</span>
-        <p className={`font-semibold text-sb-text ${size === 'sm' ? 'text-sm' : 'text-base'}`}>
+      <div>
+        <span className="text-[0.65rem] uppercase tracking-[0.1em] text-sb-text-muted">{label}</span>
+        <p className={`font-semibold text-sb-text ${size === 'sm' ? 'text-[0.8rem]' : 'text-[0.9rem]'}`}>
           {hasValue ? value : <PlaceholderValue tone="text" />}
         </p>
       </div>

@@ -27,8 +27,8 @@ export function PlaceholderValue({
 }: PlaceholderValueProps) {
   const toneClassName =
     tone === 'pill'
-      ? 'inline-flex items-center rounded-full border border-sb-border bg-sb-surface-muted px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-sb-text-subtle'
-      : 'text-sm font-medium text-sb-text-muted';
+      ? 'inline-flex items-center border border-sb-border bg-sb-surface-muted px-2.5 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.14em] text-sb-text-subtle'
+      : 'text-[0.78rem] font-medium text-sb-text-muted';
 
   return <span className={`${toneClassName} ${className}`.trim()}>{label}</span>;
 }

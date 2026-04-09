@@ -27,10 +27,9 @@ const SIZES = {
 };
 
 /*
- * SunArc — a 180° partial-arc gauge shaped like a rising sun. The filled
- * portion uses an ember-deep → ember gradient stroke and sits above a
- * hairline background track. A soft radial glow behind the active region
- * hints at warmth. The numeric value uses the Fraunces display face.
+ * SunArc — a 180° partial-arc gauge. The filled portion uses an
+ * ember-deep → ember gradient stroke above a hairline background track.
+ * A soft radial glow behind the active region adds depth.
  *
  * Exported as both `SunArc` (canonical) and `AnimatedGauge` (back-compat
  * for the test suite and any existing consumer).
@@ -102,7 +101,7 @@ export function SunArc({
           fill="none"
           stroke="var(--color-sb-rule)"
           strokeWidth={cfg.strokeWidth}
-          strokeLinecap="round"
+          strokeLinecap="butt"
         />
 
         {/* Active arc */}
@@ -111,7 +110,7 @@ export function SunArc({
           fill="none"
           stroke={value !== null ? `url(#${gradientId})` : 'var(--color-sb-rule)'}
           strokeWidth={cfg.strokeWidth}
-          strokeLinecap="round"
+          strokeLinecap="butt"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           className="transition-all duration-700 ease-out"
@@ -129,16 +128,16 @@ export function SunArc({
           />
         ) : null}
 
-        {/* Value text — Fraunces display */}
+        {/* Value text — monospace display */}
         <text
           x={center}
           y={valueY}
           textAnchor="middle"
           fill="var(--color-sb-text)"
-          fontFamily="var(--font-sb-display), serif"
+          fontFamily="var(--font-sb-mono), monospace"
           fontSize={cfg.fontSize}
-          fontWeight="440"
-          style={{ fontVariationSettings: "'opsz' 144, 'SOFT' 30", letterSpacing: '-0.025em' }}
+          fontWeight="600"
+          style={{ letterSpacing: '-0.02em' }}
         >
           {value !== null ? `${Math.round(value * 10) / 10}` : '\u2014'}
         </text>
@@ -147,7 +146,7 @@ export function SunArc({
           y={unitY}
           textAnchor="middle"
           fill="var(--color-sb-text-subtle)"
-          fontFamily="var(--font-sb-sans), sans-serif"
+          fontFamily="var(--font-sb-mono), monospace"
           fontSize={cfg.labelSize}
           letterSpacing="0.18em"
           style={{ textTransform: 'uppercase' }}

@@ -82,6 +82,12 @@ export interface Settings {
   notifications_telegram_enabled: string;
   notifications_telegram_bot_token: string;
   notifications_telegram_chat_id: string;
+  // Nordpool day-ahead forecast
+  nordpool_forecast_enabled: string;
+  nordpool_distribution_multiplier: string;
+  nordpool_peak_adder: string;
+  nordpool_peak_start: string;
+  nordpool_peak_end: string;
 }
 
 const tabs = [

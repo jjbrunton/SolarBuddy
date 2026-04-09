@@ -11,10 +11,8 @@ interface LinkTabItem {
 }
 
 /*
- * Editorial segmented tabs — a row of hairline-separated labels with the
- * active tab marked by an ember underline instead of a filled pill. The
- * underline pattern lets the group sit cleanly inside an editorial page
- * where boxed-pill controls would add visual noise.
+ * Terminal segmented tabs — monospace uppercase labels with the active
+ * tab marked by an orange underline. Sharp, no rounded corners.
  */
 export function SegmentedTabs({
   items,
@@ -36,13 +34,13 @@ export function SegmentedTabs({
             key={item.value}
             type="button"
             onClick={() => onChange(item.value)}
-            className={`relative px-4 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] transition-colors ${
+            className={`relative px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.1em] transition-colors ${
               active ? 'text-sb-ember' : 'text-sb-text-muted hover:text-sb-text'
             }`}
           >
             {item.label}
             {active ? (
-              <span className="absolute inset-x-3 -bottom-[1px] h-[2px] bg-sb-ember" />
+              <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-sb-ember" />
             ) : null}
           </button>
         );
@@ -69,13 +67,13 @@ export function SegmentedLinkTabs({
           <Link
             key={item.href}
             href={item.href}
-            className={`relative whitespace-nowrap px-4 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.1em] transition-colors ${
+            className={`relative whitespace-nowrap px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.1em] transition-colors ${
               active ? 'text-sb-ember' : 'text-sb-text-muted hover:text-sb-text'
             }`}
           >
             {item.label}
             {active ? (
-              <span className="absolute inset-x-3 -bottom-[1px] h-[2px] bg-sb-ember" />
+              <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-sb-ember" />
             ) : null}
           </Link>
         );

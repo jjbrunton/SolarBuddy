@@ -260,6 +260,76 @@ export default function OctopusSettingsView() {
         </SettingsSection>
       </Card>
 
+      {isAgile ? (
+        <Card>
+          <SettingsSection
+            title="Nordpool day-ahead forecast"
+            description="Get estimated Agile rates ~5 hours before Octopus publishes by converting Nordpool N2EX wholesale prices. Estimates are automatically replaced with confirmed rates when available."
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Enable forecast" description="Fetch Nordpool day-ahead prices at ~11:15am and estimate Agile rates">
+                <select
+                  className={inputClass}
+                  value={settings.nordpool_forecast_enabled}
+                  onChange={(e) => update('nordpool_forecast_enabled', e.target.value)}
+                >
+                  <option value="false">Disabled</option>
+                  <option value="true">Enabled</option>
+                </select>
+              </Field>
+            </div>
+
+            {settings.nordpool_forecast_enabled === 'true' ? (
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field
+                  label="Distribution multiplier"
+                  description="Wholesale-to-retail markup factor. Varies by DNO region (2.0–2.4). Default 2.2 works for most regions."
+                >
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="4"
+                    value={settings.nordpool_distribution_multiplier}
+                    onChange={(e) => update('nordpool_distribution_multiplier', e.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Peak adder (p/kWh)"
+                  description="Extra charge during peak hours for DUoS costs. Default 12.5p."
+                >
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={settings.nordpool_peak_adder}
+                    onChange={(e) => update('nordpool_peak_adder', e.target.value)}
+                  />
+                </Field>
+                <Field label="Peak start" description="Start of peak DUoS period (default 16:00)">
+                  <input
+                    className={inputClass}
+                    type="time"
+                    value={settings.nordpool_peak_start}
+                    onChange={(e) => update('nordpool_peak_start', e.target.value)}
+                  />
+                </Field>
+                <Field label="Peak end" description="End of peak DUoS period (default 19:00)">
+                  <input
+                    className={inputClass}
+                    type="time"
+                    value={settings.nordpool_peak_end}
+                    onChange={(e) => update('nordpool_peak_end', e.target.value)}
+                  />
+                </Field>
+              </div>
+            ) : null}
+          </SettingsSection>
+        </Card>
+      ) : null}
+
       <SaveButton saving={saving} message={message} onSave={save} />
     </div>
   );

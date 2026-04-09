@@ -39,28 +39,28 @@ export function TelemetryStatusBanner() {
   if (showingCachedTelemetry) {
     kind = 'warning';
     title = 'Showing cached telemetry';
-    message = 'Displaying the last known inverter values while SolarBuddy waits for fresh MQTT updates.';
+    message = 'Displaying last known inverter values while waiting for fresh MQTT updates.';
   } else if (!connected) {
     kind = 'warning';
-    message = 'The browser is reconnecting to the live update stream.';
+    message = 'Reconnecting to the live update stream.';
   } else if (!state.mqtt_connected) {
     kind = 'warning';
-    message = 'SolarBuddy is waiting for the MQTT broker connection before inverter data can appear.';
+    message = 'Waiting for MQTT broker connection.';
   } else {
-    message = 'SolarBuddy is connected to MQTT but the inverter has not published telemetry yet.';
+    message = 'Connected to MQTT. Awaiting inverter telemetry.';
   }
 
   const timestamp = formatTimestamp(showingCachedTelemetry ? cachedTelemetryAt ?? state.last_updated : null);
 
   return (
-    <div className="border-b border-sb-border bg-sb-card/65 px-4 py-3 sm:px-6">
+    <div className="border-b border-sb-border bg-sb-card/50 px-4 py-3 sm:px-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Badge kind={kind}>{title}</Badge>
-            {timestamp ? <span className="text-xs text-sb-text-muted">Saved {timestamp}</span> : null}
+            {timestamp ? <span className="text-[0.65rem] text-sb-text-muted">Saved {timestamp}</span> : null}
           </div>
-          <p className="mt-2 text-sm leading-6 text-sb-text-muted">{message}</p>
+          <p className="mt-2 text-[0.75rem] leading-6 text-sb-text-muted">{message}</p>
         </div>
       </div>
     </div>

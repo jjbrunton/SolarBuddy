@@ -90,6 +90,12 @@ export interface AppSettings {
   notifications_telegram_enabled: string;
   notifications_telegram_bot_token: string;
   notifications_telegram_chat_id: string;
+  // Nordpool day-ahead forecast
+  nordpool_forecast_enabled: string;
+  nordpool_distribution_multiplier: string;
+  nordpool_peak_adder: string;
+  nordpool_peak_start: string;
+  nordpool_peak_end: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -179,6 +185,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifications_telegram_enabled: 'false',
   notifications_telegram_bot_token: '',
   notifications_telegram_chat_id: '',
+  // Nordpool day-ahead forecast
+  nordpool_forecast_enabled: 'false',
+  nordpool_distribution_multiplier: '2.2',
+  nordpool_peak_adder: '12.5',
+  nordpool_peak_start: '16:00',
+  nordpool_peak_end: '19:00',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];

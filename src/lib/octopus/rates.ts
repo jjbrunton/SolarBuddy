@@ -4,6 +4,7 @@ import { generateSyntheticRates } from '../tariffs/rate-generator';
 import {
   storeImportRates,
   getStoredImportRates,
+  type RateSource,
 } from '../db/rate-repository';
 
 export interface AgileRate {
@@ -11,6 +12,7 @@ export interface AgileRate {
   valid_to: string;
   price_inc_vat: number;
   price_exc_vat: number;
+  source?: RateSource;
 }
 
 export async function fetchRates(periodFrom?: string, periodTo?: string): Promise<AgileRate[]> {

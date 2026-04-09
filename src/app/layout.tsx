@@ -1,28 +1,14 @@
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, Geist_Mono, Instrument_Sans } from 'next/font/google';
+import { JetBrains_Mono } from 'next/font/google';
 import { AppShell } from '@/components/layout/AppShell';
 import './globals.css';
 
 /*
- * Agile Almanac typography
- * - Display / numerics: Fraunces (variable serif, opsz + SOFT axes)
- * - Body / UI: Instrument Sans (warm grotesk)
- * - Mono / diagnostics: Geist Mono
+ * Terminal Blueprint typography
+ * - Mono: JetBrains Mono for everything — body, display, code
+ * Pure monospace design. No serif, no sans-serif.
  */
-const sans = Instrument_Sans({
-  subsets: ['latin'],
-  variable: '--font-sb-sans',
-  display: 'swap',
-});
-
-const display = Fraunces({
-  subsets: ['latin'],
-  variable: '--font-sb-display',
-  axes: ['SOFT', 'WONK', 'opsz'],
-  display: 'swap',
-});
-
-const mono = Geist_Mono({
+const mono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-sb-mono',
   display: 'swap',
@@ -43,7 +29,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#ffb547',
+  themeColor: '#ff6600',
   maximumScale: 1,
 };
 
@@ -58,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body
-        className={`${sans.variable} ${display.variable} ${mono.variable} sb-grain min-h-screen bg-sb-bg font-[family-name:var(--font-sb-sans)] text-sb-text antialiased`}
+        className={`${mono.variable} sb-grain min-h-screen bg-sb-bg font-[family-name:var(--font-sb-mono)] text-sb-text antialiased`}
       >
         <AppShell>{children}</AppShell>
       </body>

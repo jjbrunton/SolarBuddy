@@ -483,7 +483,7 @@ export default function ScheduleView() {
             </span>
           ))}
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded border-2" style={{ borderColor: colors.ember }} /> Current
+            <span className="inline-block h-2.5 w-2.5 rounded border-2 border-sb-ember" /> Current
           </span>
           {state.battery_soc !== null ? (
             <span className="flex items-center gap-1">

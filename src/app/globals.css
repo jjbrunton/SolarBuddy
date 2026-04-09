@@ -1,128 +1,126 @@
 @import 'tailwindcss';
 
 /*
- * SolarBuddy — "Agile Almanac" design system.
+ * SolarBuddy — "Terminal Blueprint" design system.
  *
- * Two-pole semantic palette: Ember (solar, stored energy, warmth) vs
- * Frost (grid, import, cold side). Backgrounds are warm charcoal / warm
- * parchment, never blue-black, to move SolarBuddy out of generic SaaS
- * territory. Depth comes from 1px hairline rules and typography, not
- * drop shadows.
+ * Orange (#FF6600) on black. Monospace throughout. Grid-line backgrounds.
+ * Sharp corners. Data-dense, engineering-control-panel aesthetic.
  *
- * All legacy semantic token names (sb-card, sb-accent, sb-solar, sb-grid,
- * sb-load, sb-success, sb-warning, sb-danger, sb-info) are preserved so
- * existing consumers keep working; they simply point at new values.
- * New primary tokens: sb-ember*, sb-frost*, sb-parchment, sb-ink, sb-rule.
+ * Two-pole semantic palette: Ember (solar, stored energy, charge) vs
+ * Frost (grid, import, cold side). Backgrounds are pure dark, never
+ * warm. Depth comes from 1px solid borders and grid alignment.
+ *
+ * All legacy semantic token names preserved for backward compatibility.
  */
 
 @theme {
-  /* Shell surfaces — warm charcoal in dark mode */
-  --color-sb-bg: #100c08;
-  --color-sb-bg-elevated: #17120c;
-  --color-sb-parchment: #100c08;
-  --color-sb-sidebar: rgba(14, 10, 6, 0.92);
-  --color-sb-header: rgba(14, 10, 6, 0.86);
-  --color-sb-card: rgba(24, 18, 12, 0.78);
-  --color-sb-card-hover: rgba(34, 26, 18, 0.88);
-  --color-sb-active: rgba(48, 36, 22, 0.92);
-  --color-sb-surface-muted: rgba(24, 18, 12, 0.5);
+  /* Shell surfaces — pure dark */
+  --color-sb-bg: #0a0a0a;
+  --color-sb-bg-elevated: #111111;
+  --color-sb-parchment: #0a0a0a;
+  --color-sb-sidebar: rgba(8, 8, 8, 0.96);
+  --color-sb-header: rgba(8, 8, 8, 0.92);
+  --color-sb-card: rgba(17, 17, 17, 0.85);
+  --color-sb-card-hover: rgba(24, 24, 24, 0.92);
+  --color-sb-active: rgba(255, 102, 0, 0.12);
+  --color-sb-surface-muted: rgba(17, 17, 17, 0.6);
 
-  /* Hairline rules — depth comes from these, not shadows */
-  --color-sb-border: rgba(239, 231, 212, 0.1);
-  --color-sb-border-strong: rgba(239, 231, 212, 0.22);
-  --color-sb-rule: rgba(239, 231, 212, 0.14);
-  --color-sb-rule-strong: rgba(239, 231, 212, 0.28);
+  /* Borders — structural, not decorative */
+  --color-sb-border: rgba(255, 102, 0, 0.12);
+  --color-sb-border-strong: rgba(255, 102, 0, 0.25);
+  --color-sb-rule: rgba(255, 102, 0, 0.10);
+  --color-sb-rule-strong: rgba(255, 102, 0, 0.22);
 
-  /* Ink — warm cream on dark */
-  --color-sb-text: #efe7d4;
-  --color-sb-ink: #efe7d4;
-  --color-sb-text-muted: #b6a98c;
-  --color-sb-text-subtle: #7f745d;
+  /* Ink — cool neutral on dark */
+  --color-sb-text: #d4d4d4;
+  --color-sb-ink: #d4d4d4;
+  --color-sb-text-muted: #808080;
+  --color-sb-text-subtle: #505050;
 
-  /* Ember (solar, charge, stored energy, positive) */
-  --color-sb-ember: #ffb547;
-  --color-sb-ember-hover: #ffc46b;
-  --color-sb-ember-deep: #e07a2a;
-  --color-sb-ember-char: #3d1f14;
+  /* Ember (solar, charge, stored energy, primary) */
+  --color-sb-ember: #ff6600;
+  --color-sb-ember-hover: #ff8533;
+  --color-sb-ember-deep: #cc5200;
+  --color-sb-ember-char: #1a0a00;
 
   /* Frost (grid, import, cold side) */
-  --color-sb-frost: #7fb3ff;
-  --color-sb-frost-hover: #9fc5ff;
-  --color-sb-frost-deep: #3e6bd6;
-  --color-sb-frost-ice: #0f1d3a;
+  --color-sb-frost: #00aaff;
+  --color-sb-frost-hover: #33bbff;
+  --color-sb-frost-deep: #0077cc;
+  --color-sb-frost-ice: #001a33;
 
-  /* Legacy semantic aliases — repointed to ember/frost */
-  --color-sb-accent: #ffb547;
-  --color-sb-accent-hover: #ffc46b;
-  --color-sb-solar: #ffb547;
-  --color-sb-grid: #7fb3ff;
-  --color-sb-load: #d8a8ff;
-  --color-sb-info: #7fb3ff;
+  /* Legacy semantic aliases */
+  --color-sb-accent: #ff6600;
+  --color-sb-accent-hover: #ff8533;
+  --color-sb-solar: #ff6600;
+  --color-sb-grid: #00aaff;
+  --color-sb-load: #aa66ff;
+  --color-sb-info: #00aaff;
 
   /* Signals */
-  --color-sb-success: #6bb87a;
-  --color-sb-warning: #e8a046;
-  --color-sb-danger: #d95545;
+  --color-sb-success: #00cc66;
+  --color-sb-warning: #ffaa00;
+  --color-sb-danger: #ff3333;
 
   /* Inputs / focus */
-  --color-sb-input: rgba(10, 7, 4, 0.7);
-  --color-sb-input-focus: #ffb547;
+  --color-sb-input: rgba(0, 0, 0, 0.7);
+  --color-sb-input-focus: #ff6600;
 
-  /* Shadows — kept minimal; editorial surfaces lean on hairlines */
-  --shadow-sb-sm: 0 1px 0 rgba(239, 231, 212, 0.04);
-  --shadow-sb-md: 0 1px 0 rgba(239, 231, 212, 0.06);
-  --shadow-sb-glow: 0 0 0 1px rgba(255, 181, 71, 0.22);
+  /* Shadows — minimal; structure comes from borders */
+  --shadow-sb-sm: 0 1px 0 rgba(255, 102, 0, 0.04);
+  --shadow-sb-md: 0 1px 0 rgba(255, 102, 0, 0.06);
+  --shadow-sb-glow: 0 0 0 1px rgba(255, 102, 0, 0.3);
 }
 
 html.light {
-  /* Warm parchment — no blue cast */
-  --color-sb-bg: #f4ecd8;
-  --color-sb-bg-elevated: #fbf5e3;
-  --color-sb-parchment: #f4ecd8;
-  --color-sb-sidebar: rgba(251, 245, 227, 0.94);
-  --color-sb-header: rgba(251, 245, 227, 0.88);
-  --color-sb-card: rgba(255, 250, 236, 0.88);
-  --color-sb-card-hover: rgba(255, 253, 244, 0.96);
-  --color-sb-active: rgba(233, 218, 180, 0.84);
-  --color-sb-surface-muted: rgba(239, 228, 198, 0.56);
+  /* Blueprint variant — light gray with dark ink */
+  --color-sb-bg: #f0f2f5;
+  --color-sb-bg-elevated: #f8f9fb;
+  --color-sb-parchment: #f0f2f5;
+  --color-sb-sidebar: rgba(245, 246, 249, 0.96);
+  --color-sb-header: rgba(245, 246, 249, 0.92);
+  --color-sb-card: rgba(255, 255, 255, 0.88);
+  --color-sb-card-hover: rgba(255, 255, 255, 0.96);
+  --color-sb-active: rgba(255, 102, 0, 0.10);
+  --color-sb-surface-muted: rgba(230, 232, 237, 0.6);
 
-  --color-sb-border: rgba(27, 20, 12, 0.12);
-  --color-sb-border-strong: rgba(27, 20, 12, 0.26);
-  --color-sb-rule: rgba(27, 20, 12, 0.14);
-  --color-sb-rule-strong: rgba(27, 20, 12, 0.3);
+  --color-sb-border: rgba(0, 0, 0, 0.10);
+  --color-sb-border-strong: rgba(0, 0, 0, 0.20);
+  --color-sb-rule: rgba(0, 0, 0, 0.08);
+  --color-sb-rule-strong: rgba(0, 0, 0, 0.18);
 
-  --color-sb-text: #1b140c;
-  --color-sb-ink: #1b140c;
-  --color-sb-text-muted: #5a4a2e;
-  --color-sb-text-subtle: #8c7a52;
+  --color-sb-text: #1a1a1a;
+  --color-sb-ink: #1a1a1a;
+  --color-sb-text-muted: #555555;
+  --color-sb-text-subtle: #888888;
 
-  --color-sb-ember: #c4651a;
-  --color-sb-ember-hover: #a8540e;
-  --color-sb-ember-deep: #7a3a10;
-  --color-sb-ember-char: #2a1608;
+  --color-sb-ember: #e55a00;
+  --color-sb-ember-hover: #cc4e00;
+  --color-sb-ember-deep: #993b00;
+  --color-sb-ember-char: #1a0a00;
 
-  --color-sb-frost: #2c5bb8;
-  --color-sb-frost-hover: #1d4798;
-  --color-sb-frost-deep: #163577;
-  --color-sb-frost-ice: #dce6f8;
+  --color-sb-frost: #0077cc;
+  --color-sb-frost-hover: #005fa3;
+  --color-sb-frost-deep: #004880;
+  --color-sb-frost-ice: #e6f2ff;
 
-  --color-sb-accent: #c4651a;
-  --color-sb-accent-hover: #a8540e;
-  --color-sb-solar: #c4651a;
-  --color-sb-grid: #2c5bb8;
-  --color-sb-load: #7a4cc2;
-  --color-sb-info: #2c5bb8;
+  --color-sb-accent: #e55a00;
+  --color-sb-accent-hover: #cc4e00;
+  --color-sb-solar: #e55a00;
+  --color-sb-grid: #0077cc;
+  --color-sb-load: #7744bb;
+  --color-sb-info: #0077cc;
 
-  --color-sb-success: #2e7a44;
-  --color-sb-warning: #9c6a14;
-  --color-sb-danger: #9c2e20;
+  --color-sb-success: #009950;
+  --color-sb-warning: #cc8800;
+  --color-sb-danger: #cc2222;
 
-  --color-sb-input: rgba(251, 245, 227, 0.96);
-  --color-sb-input-focus: #c4651a;
+  --color-sb-input: rgba(255, 255, 255, 0.96);
+  --color-sb-input-focus: #e55a00;
 
-  --shadow-sb-sm: 0 1px 0 rgba(27, 20, 12, 0.05);
-  --shadow-sb-md: 0 1px 0 rgba(27, 20, 12, 0.08);
-  --shadow-sb-glow: 0 0 0 1px rgba(196, 101, 26, 0.28);
+  --shadow-sb-sm: 0 1px 0 rgba(0, 0, 0, 0.04);
+  --shadow-sb-md: 0 1px 0 rgba(0, 0, 0, 0.06);
+  --shadow-sb-glow: 0 0 0 1px rgba(229, 90, 0, 0.3);
 }
 
 :root {
@@ -136,27 +134,24 @@ html.light {
 body {
   min-height: 100vh;
   background: var(--color-sb-parchment);
-  background-image:
-    radial-gradient(circle at 12% -5%, rgba(255, 181, 71, 0.08), transparent 42%),
-    radial-gradient(circle at 90% 0%, rgba(127, 179, 255, 0.06), transparent 38%);
   color: var(--color-sb-text);
-  font-feature-settings: 'ss01' 1, 'ss02' 1, 'tnum' 1, 'calt' 1;
+  font-feature-settings: 'ss01' 1, 'tnum' 1, 'calt' 1, 'zero' 1;
   font-variant-numeric: tabular-nums;
 }
 
 ::selection {
-  background: rgba(255, 181, 71, 0.28);
-  color: var(--color-sb-text);
+  background: rgba(255, 102, 0, 0.3);
+  color: #ffffff;
 }
 
 html.light ::selection {
-  background: rgba(196, 101, 26, 0.22);
-  color: var(--color-sb-text);
+  background: rgba(229, 90, 0, 0.25);
+  color: #1a1a1a;
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -165,54 +160,50 @@ html.light ::selection {
 
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--color-sb-rule-strong);
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-sb-text-subtle);
+  background: var(--color-sb-ember);
   background-clip: padding-box;
 }
 
-/* ---------- Editorial primitives ---------- */
+/* ---------- Terminal primitives ---------- */
 
 /*
- * sb-eyebrow — small-caps pre-title label. Used by PageHeader and
- * Figure primitives to give every section a consistent typographic entry.
+ * sb-eyebrow — uppercase monospace label. Used by PageHeader and Figure
+ * to give every section a terminal-style section marker.
  */
 .sb-eyebrow {
-  font-family: var(--font-sb-sans), system-ui, sans-serif;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.26em;
+  font-family: var(--font-sb-mono), 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--color-sb-text-subtle);
+  color: var(--color-sb-ember);
 }
 
 /*
- * sb-display — Fraunces variable serif, used for hero numerics and
- * editorial titles. Tabular figures + optical size low + neutral SOFT
- * give a confident almanac feel without tipping into pure fashion serif.
+ * sb-display — monospace display type for hero numerics and page titles.
+ * Large, clean, no-nonsense. Tabular figures for data alignment.
  */
 .sb-display {
-  font-family: var(--font-sb-display), 'Fraunces', 'Times New Roman', serif;
-  font-feature-settings: 'ss01' 1, 'tnum' 1;
-  font-variation-settings: 'opsz' 144, 'SOFT' 30, 'WONK' 0;
-  font-weight: 460;
-  letter-spacing: -0.025em;
+  font-family: var(--font-sb-mono), 'JetBrains Mono', monospace;
+  font-feature-settings: 'ss01' 1, 'tnum' 1, 'zero' 1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .sb-display-italic {
-  font-family: var(--font-sb-display), 'Fraunces', 'Times New Roman', serif;
-  font-variation-settings: 'opsz' 72, 'SOFT' 100, 'WONK' 1;
+  font-family: var(--font-sb-mono), 'JetBrains Mono', monospace;
   font-style: italic;
-  font-weight: 420;
+  font-weight: 500;
 }
 
 /*
- * sb-rule — a 1px horizontal hairline divider. Used instead of card
- * shadows to separate editorial sections.
+ * sb-rule — a 1px horizontal line divider. Terminal-style structural.
  */
 .sb-rule {
   height: 1px;
@@ -227,8 +218,7 @@ html.light ::selection {
 }
 
 /*
- * sb-grain — a very faint SVG paper grain, applied to the body via a
- * fixed pseudo-layer. Warms both themes without colouring content.
+ * sb-grain — replaced with a subtle scanline overlay for CRT/terminal feel.
  */
 .sb-grain::before {
   content: '';
@@ -236,33 +226,59 @@ html.light ::selection {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.06;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.9  0 0 0 0 0.82  0 0 0 0 0.58  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: 0.025;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 102, 0, 0.15) 2px,
+    rgba(255, 102, 0, 0.15) 4px
+  );
 }
 
 html.light .sb-grain::before {
-  opacity: 0.08;
-  mix-blend-mode: multiply;
+  opacity: 0;
 }
 
 /*
- * sb-contour — a faint topographic contour line pattern hinting at
- * solar irradiance maps. Used on page header bands.
+ * sb-grid-bg — subtle blueprint grid background for content areas.
+ */
+.sb-grid-bg {
+  background-image:
+    linear-gradient(var(--color-sb-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-sb-rule) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/*
+ * sb-contour — replaced with a horizontal grid-line pattern for
+ * terminal/blueprint header bands.
  */
 .sb-contour {
-  background-image:
-    repeating-radial-gradient(
-      circle at 85% -20%,
-      transparent 0,
-      transparent 70px,
-      var(--color-sb-rule) 70px,
-      var(--color-sb-rule) 71px
-    );
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 23px,
+    var(--color-sb-rule) 23px,
+    var(--color-sb-rule) 24px
+  );
 }
 
 .sb-shell-panel {
   backdrop-filter: blur(14px);
+}
+
+/* ---------- Terminal cursor blink ---------- */
+
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.sb-cursor::after {
+  content: '_';
+  animation: cursor-blink 1s step-end infinite;
+  color: var(--color-sb-ember);
 }
 
 /* ---------- Animations ---------- */
@@ -295,7 +311,7 @@ html.light .sb-grain::before {
 }
 
 .animate-value-pop {
-  animation: value-pop 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.05);
+  animation: value-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes ticker-rise {
@@ -310,7 +326,7 @@ html.light .sb-grain::before {
 }
 
 .animate-ticker-rise {
-  animation: ticker-rise 0.5s cubic-bezier(0.2, 0.9, 0.25, 1.05) backwards;
+  animation: ticker-rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 @keyframes pulse-glow {

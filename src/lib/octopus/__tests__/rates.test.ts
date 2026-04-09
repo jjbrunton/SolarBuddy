@@ -131,6 +131,7 @@ describe('octopus rates', () => {
       10.5,
       10,
       '2026-04-03T09:15:27.000Z',
+      'octopus',
     );
     vi.useRealTimers();
   });

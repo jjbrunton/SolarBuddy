@@ -12,6 +12,7 @@ describe('dashboard widget registry', () => {
       'current-rate',
       'rate-chart',
       'upcoming-charges',
+      'bill-estimate',
       'solar-forecast',
     ]);
     expect(new Set(ids).size).toBe(ids.length);

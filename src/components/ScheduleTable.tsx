@@ -79,7 +79,7 @@ export default function ScheduleTable() {
                 <td className="py-2 text-zinc-300 capitalize">{s.type ?? 'charge'}</td>
                 <td className="py-2 text-zinc-300">{s.avg_price?.toFixed(2)}p</td>
                 <td className="py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(s.status)}`}>
+                  <span className={`px-2 py-0.5 text-[0.7rem] font-medium uppercase tracking-[0.06em] ${statusColor(s.status)}`}>
                     {s.status}
                   </span>
                 </td>

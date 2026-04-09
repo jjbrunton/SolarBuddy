@@ -32,8 +32,8 @@ interface TickerSlot {
   isCurrent: boolean;
 }
 
-const WINDOW_SIZE = 12; // 6 hours of half-hour slots around "now"
-const WINDOW_LEAD = 2; // slots to show before the current one
+const WINDOW_SIZE = 12;
+const WINDOW_LEAD = 2;
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-GB', {
@@ -47,17 +47,8 @@ function formatPrice(price: number) {
 }
 
 /*
- * TariffTicker — the persistent half-hour heartbeat of the app.
- *
- * Mounted once in AppShell so it sits above every route. Shows a
- * centred window of Agile slots around the current one, with the
- * current slot pinned and highlighted. Each slot shows its time,
- * price, and a small action dot (ember / signal / rule) reflecting
- * what the planner intends to do. Clicking any slot jumps to /rates.
- *
- * Rendering cost is intentionally low: a single fetch on mount + every
- * 60s, same cadence as CurrentRateWidget, and no per-slot re-render
- * beyond the "current" membership check.
+ * TariffTicker — persistent half-hour rate ticker with terminal styling.
+ * Shows a centred window of Agile slots around the current one.
  */
 export function TariffTicker() {
   const { state } = useSSE();
@@ -117,8 +108,6 @@ export function TariffTicker() {
           };
         });
 
-        // Centre the window around the current slot (or the nearest
-        // upcoming one if there is no active slot in the loaded rates).
         const currentIdx = all.findIndex((s) => s.isCurrent);
         const anchor =
           currentIdx >= 0
@@ -141,42 +130,42 @@ export function TariffTicker() {
 
   if (!ready || slots.length === 0) {
     return (
-      <div className="border-b border-sb-rule bg-sb-bg-elevated/50">
-        <div className="flex h-[52px] items-center gap-3 px-4 sm:px-6">
+      <div className="border-b border-sb-border bg-sb-bg-elevated/50">
+        <div className="flex h-[48px] items-center gap-3 px-4 sm:px-6">
           <span className="sb-eyebrow">Tariff</span>
-          <span className="text-xs text-sb-text-subtle">Waiting for rates…</span>
+          <span className="text-[0.7rem] text-sb-text-subtle">Waiting for rates...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="border-b border-sb-rule bg-sb-bg-elevated/50">
-      <div className="relative flex items-center gap-3 px-4 py-2 sm:px-6">
+    <div className="border-b border-sb-border bg-sb-bg-elevated/50">
+      <div className="relative flex items-center gap-3 px-4 py-1.5 sm:px-6">
         <span className="sb-eyebrow shrink-0">Tariff</span>
-        <div className="h-4 w-px bg-sb-rule" />
+        <div className="h-4 w-px bg-sb-rule-strong" />
         <div className="flex min-w-0 flex-1 items-stretch gap-0 overflow-x-auto">
           {slots.map((slot, i) => (
             <Link
               key={slot.validFrom}
               href="/rates"
               aria-label={`${formatTime(slot.validFrom)} ${formatPrice(slot.price)}`}
-              className={`animate-ticker-rise group relative flex min-w-[72px] flex-col justify-center border-r border-sb-rule/60 px-3 py-1.5 text-left transition-colors last:border-r-0 hover:bg-sb-card/60 ${
+              className={`animate-ticker-rise group relative flex min-w-[70px] flex-col justify-center border-r border-sb-border/50 px-3 py-1.5 text-left transition-colors last:border-r-0 hover:bg-sb-card/60 ${
                 slot.isCurrent ? 'bg-sb-ember/8' : ''
               }`}
-              style={{ animationDelay: `${i * 28}ms` }}
+              style={{ animationDelay: `${i * 25}ms` }}
             >
               <div className="flex items-center gap-1.5">
                 <span
-                  className="inline-block h-1.5 w-1.5 rounded-full"
+                  className="inline-block h-1.5 w-1.5"
                   style={{ backgroundColor: ACTION_COLORS[slot.action] }}
                 />
-                <span className="font-[family-name:var(--font-sb-mono)] text-[0.64rem] tracking-[0.06em] text-sb-text-subtle">
+                <span className="text-[0.6rem] tracking-[0.06em] text-sb-text-subtle">
                   {formatTime(slot.validFrom)}
                 </span>
               </div>
               <span
-                className={`sb-display mt-0.5 text-base leading-none ${
+                className={`sb-display mt-0.5 text-sm leading-none ${
                   slot.isCurrent ? 'text-sb-ember' : 'text-sb-text'
                 }`}
               >

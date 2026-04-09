@@ -15,9 +15,9 @@ function getColor(pct: number) {
 }
 
 const sizeClasses = {
-  sm: 'h-1.5',
-  md: 'h-2.5',
-  lg: 'h-4',
+  sm: 'h-1',
+  md: 'h-2',
+  lg: 'h-3',
 };
 
 export function ProgressBar({
@@ -31,14 +31,14 @@ export function ProgressBar({
 
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      <div className={`flex-1 overflow-hidden rounded-full bg-sb-surface-muted ${sizeClasses[size]}`}>
+      <div className={`flex-1 overflow-hidden bg-sb-surface-muted ${sizeClasses[size]}`}>
         <div
-          className={`${sizeClasses[size]} rounded-full transition-all duration-500 ${getColor(pct)}`}
+          className={`${sizeClasses[size]} transition-all duration-500 ${getColor(pct)}`}
           style={{ width: `${pct}%` }}
         />
       </div>
       {showLabel ? (
-        <span className="min-w-[3ch] text-right text-xs font-semibold text-sb-text-muted">
+        <span className="min-w-[3ch] text-right text-[0.7rem] font-semibold text-sb-text-muted">
           {Math.round(pct)}%
         </span>
       ) : null}

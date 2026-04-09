@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react';
 
 /*
- * Editorial chart tooltip — hairline frame, small-caps label, quiet
- * backdrop blur. Paired with `ChartTooltipRow` for diagnostic rows
- * rendered in the mono face.
+ * Terminal chart tooltip — sharp corners, structural border,
+ * monospace values for precise data reading.
  */
 export function ChartTooltip({
   label,
@@ -13,7 +12,7 @@ export function ChartTooltip({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-[0.5rem] border border-sb-rule-strong bg-sb-card/95 px-4 py-3 backdrop-blur-sm">
+    <div className="border border-sb-border-strong bg-sb-card/95 px-4 py-3 backdrop-blur-sm">
       {label && <p className="sb-eyebrow mb-2">{label}</p>}
       <div className="space-y-1">{children}</div>
     </div>
@@ -34,8 +33,8 @@ export function ChartTooltipRow({
   emphasized?: boolean;
 }) {
   const className = emphasized
-    ? 'font-[family-name:var(--font-sb-mono)] text-sm font-semibold'
-    : 'font-[family-name:var(--font-sb-mono)] text-[0.78rem]';
+    ? 'text-[0.78rem] font-semibold'
+    : 'text-[0.72rem]';
 
   return (
     <p

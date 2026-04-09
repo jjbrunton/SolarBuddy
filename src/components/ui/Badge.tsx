@@ -1,17 +1,16 @@
 type BadgeKind = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
 
 /*
- * Editorial chip — ember is the primary state because ember is the
- * brand colour. Success/warning/danger stay in their semantic lanes
- * and only appear for real state changes, never decoration.
+ * Terminal status badge — sharp corners, monospace uppercase,
+ * with a coloured left border accent for quick visual scanning.
  */
 const kindClasses: Record<BadgeKind, string> = {
-  default: 'border-sb-rule bg-sb-surface-muted text-sb-text-muted',
-  primary: 'border-sb-ember/40 bg-sb-ember/12 text-sb-ember',
-  success: 'border-sb-success/40 bg-sb-success/12 text-sb-success',
-  warning: 'border-sb-warning/40 bg-sb-warning/14 text-sb-warning',
-  danger: 'border-sb-danger/40 bg-sb-danger/14 text-sb-danger',
-  info: 'border-sb-frost/40 bg-sb-frost/12 text-sb-frost',
+  default: 'border-sb-text-subtle/40 bg-sb-surface-muted text-sb-text-muted',
+  primary: 'border-sb-ember/50 bg-sb-ember/10 text-sb-ember',
+  success: 'border-sb-success/50 bg-sb-success/10 text-sb-success',
+  warning: 'border-sb-warning/50 bg-sb-warning/10 text-sb-warning',
+  danger: 'border-sb-danger/50 bg-sb-danger/10 text-sb-danger',
+  info: 'border-sb-frost/50 bg-sb-frost/10 text-sb-frost',
 };
 
 interface BadgeProps {
@@ -23,7 +22,7 @@ interface BadgeProps {
 export function Badge({ children, kind = 'default', className = '' }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-[0.2rem] text-[0.66rem] font-semibold uppercase tracking-[0.18em] ${kindClasses[kind]} ${className}`}
+      className={`inline-flex items-center border px-2 py-[0.15rem] text-[0.6rem] font-semibold uppercase tracking-[0.14em] ${kindClasses[kind]} ${className}`}
     >
       {children}
     </span>
