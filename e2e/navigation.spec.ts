@@ -26,7 +26,7 @@ test('core pages render and navigation links work', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'General' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'System' }).click();
+  await page.getByRole('link', { name: 'System', exact: true }).click();
   await expect(page).toHaveURL(/\/system$/);
   await expect(page.getByRole('heading', { name: 'System' })).toBeVisible();
   await expect(page.getByText('Core infrastructure checks for the broker, rates, and scheduler services.')).toBeVisible();
