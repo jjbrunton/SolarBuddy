@@ -88,14 +88,21 @@ export default function SettingsPageView() {
         description="Configure SolarBuddy's connections, tariff, charging strategy, and automation rules."
       />
 
-      <SegmentedTabs items={GROUP_TABS} activeValue={groupValue} onChange={setGroupValue} />
+      {/* Each tab bar is wrapped in its own block so that the inline-flex
+          SegmentedTabs component doesn't flow the group tabs and sub-tabs
+          onto the same visual row. */}
+      <div>
+        <SegmentedTabs items={GROUP_TABS} activeValue={groupValue} onChange={setGroupValue} />
+      </div>
 
       {showSubTabs && (
-        <SegmentedTabs
-          items={activeGroup.subViews.map((s) => ({ label: s.label, value: s.value }))}
-          activeValue={activeSub.value}
-          onChange={(value) => setSubValue((prev) => ({ ...prev, [activeGroup.value]: value }))}
-        />
+        <div>
+          <SegmentedTabs
+            items={activeGroup.subViews.map((s) => ({ label: s.label, value: s.value }))}
+            activeValue={activeSub.value}
+            onChange={(value) => setSubValue((prev) => ({ ...prev, [activeGroup.value]: value }))}
+          />
+        </div>
       )}
 
       <ActiveComponent />
