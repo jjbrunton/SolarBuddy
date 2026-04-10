@@ -787,10 +787,10 @@ export default function ScheduleView() {
                       })()}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap font-[family-name:var(--font-sb-mono)] text-xs text-sb-text-muted">
-                      {slot.pvGenerationKw != null ? `${slot.pvGenerationKw.toFixed(2)} kW` : '\u2014'}
+                      {slot.pvGenerationKw != null ? `${(slot.pvGenerationKw * 0.5).toFixed(2)} kWh` : '\u2014'}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap font-[family-name:var(--font-sb-mono)] text-xs text-sb-text-muted">
-                      {slot.estimatedLoadKw != null ? `${slot.estimatedLoadKw.toFixed(2)} kW` : '\u2014'}
+                      {slot.estimatedLoadKw != null ? `${(slot.estimatedLoadKw * 0.5).toFixed(2)} kWh` : '\u2014'}
                     </td>
                     <td className="px-3 py-3">
                       {slot.overrideAction ? (
