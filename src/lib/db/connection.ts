@@ -293,4 +293,11 @@ function initSchema(db: Database.Database) {
   if (scheduledActionsTable) {
     db.exec("UPDATE scheduled_actions SET action = 'hold' WHERE action = 'do_nothing'");
   }
+
+  // Migrate: bump usage learning window from old 14-day default to 90 days.
+  // Only touches rows that still hold the previous default — explicit user overrides
+  // (any value other than '14') are left untouched.
+  db.exec(
+    "UPDATE settings SET value = '90' WHERE key = 'usage_learning_window_days' AND value = '14'",
+  );
 }

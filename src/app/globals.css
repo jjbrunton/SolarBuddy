@@ -344,6 +344,9 @@ html.light .sb-grain::before {
   .animate-ticker-rise {
     animation: none !important;
   }
+  animate, animateMotion, animateTransform {
+    display: none;
+  }
   * {
     transition-duration: 0.01ms !important;
   }

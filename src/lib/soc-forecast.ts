@@ -20,9 +20,16 @@ export interface SOCForecastParams {
    * a sensible scalar fallback.
    */
   drainWAtSlot?: (slotIndex: number) => number;
+  /** Minimum SOC the inverter will discharge to (0-100). Discharge slots clamp at this floor. */
+  socFloor?: number;
   /** Optional starting SOC and index for modelling from an earlier slot than currentSlotIndex. */
   startSOC?: number;
   startIndex?: number;
+}
+
+export interface SOCSlotForecast {
+  start: number;
+  end: number;
 }
 
 /**
@@ -31,9 +38,9 @@ export interface SOCForecastParams {
  * - discharge: SOC decreases at charge power rate + consumption
  * - hold: SOC stays flat because the inverter is actively preventing discharge;
  *   PV surplus (above home consumption) can still charge the battery
- * Returns an array of SOC values (0-100) aligned to each bar index.
+ * Returns an array of { start, end } SOC values (0-100) aligned to each bar index.
  */
-export function computeSOCForecast(params: SOCForecastParams): number[] {
+export function computeSOCForecast(params: SOCForecastParams): SOCSlotForecast[] {
   const {
     currentSOC,
     currentSlotIndex,
@@ -45,9 +52,12 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
     estimatedConsumptionW,
     perSlotPVGenerationW,
     drainWAtSlot,
+    socFloor: rawSocFloor,
     startSOC,
     startIndex: paramStartIndex,
   } = params;
+
+  const socFloor = rawSocFloor != null && Number.isFinite(rawSocFloor) ? rawSocFloor : 0;
 
   if (totalSlots === 0 || batteryCapacityWh <= 0) return [];
 
@@ -57,56 +67,61 @@ export function computeSOCForecast(params: SOCForecastParams): number[] {
   const drainWhForSlot = (slotIndex: number): number =>
     drainWAtSlot ? drainWAtSlot(slotIndex) * 0.5 : fallbackDrainPerSlotWh;
 
-  const forecast: number[] = new Array(totalSlots);
+  const forecast: SOCSlotForecast[] = new Array(totalSlots);
   const hasStart = startSOC != null && paramStartIndex != null;
   const modelStart = hasStart ? paramStartIndex : currentSlotIndex;
 
   // Fill slots before the model start with the starting SOC
   const fillSOC = hasStart ? startSOC : currentSOC;
   for (let i = 0; i < modelStart && i < totalSlots; i++) {
-    forecast[i] = fillSOC;
+    forecast[i] = { start: fillSOC, end: fillSOC };
   }
 
-  let soc = fillSOC;
-  for (let i = modelStart; i < totalSlots; i++) {
+  const applySlot = (soc: number, i: number): number => {
     const action: PlanAction = slotActions.get(i) ?? 'hold';
     const pvWh = (perSlotPVGenerationW?.get(i) ?? 0) * 0.5;
     const drainPerSlotWh = drainWhForSlot(i);
 
     switch (action) {
       case 'charge': {
-        // Grid charging at configured rate; PV surplus is additive
         const addWh = chargePerSlotWh + Math.max(0, pvWh - drainPerSlotWh);
         const addPercent = (addWh / batteryCapacityWh) * 100;
-        soc = Math.min(100, soc + addPercent);
-        break;
+        return Math.min(100, soc + addPercent);
       }
       case 'discharge': {
-        // Load-following: battery only covers consumption minus PV
         if (pvWh >= drainPerSlotWh) {
-          // PV covers all consumption; surplus charges battery
           const surplusWh = pvWh - drainPerSlotWh;
           const addPercent = (surplusWh / batteryCapacityWh) * 100;
-          soc = Math.min(100, soc + addPercent);
+          return Math.min(100, soc + addPercent);
         } else {
           const netDrainWh = drainPerSlotWh - pvWh;
           const drainPercent = (netDrainWh / batteryCapacityWh) * 100;
-          soc = Math.max(0, soc - drainPercent);
+          return Math.max(socFloor, soc - drainPercent);
         }
-        break;
       }
       case 'hold': {
-        // Hold prevents battery discharge (home load comes from grid);
-        // PV surplus (after covering consumption) still charges battery.
         if (pvWh > drainPerSlotWh) {
           const surplusWh = pvWh - drainPerSlotWh;
           const addPercent = (surplusWh / batteryCapacityWh) * 100;
-          soc = Math.min(100, soc + addPercent);
+          return Math.min(100, soc + addPercent);
         }
-        break;
+        return soc;
       }
     }
-    forecast[i] = Math.round(soc * 10) / 10;
+  };
+
+  // Model from the historical anchor (or currentSlotIndex) forward.
+  let soc = fillSOC;
+  for (let i = modelStart; i < totalSlots; i++) {
+    // Re-anchor to the live battery SOC at the current slot so future
+    // projections start from reality rather than accumulated model error.
+    if (hasStart && i === currentSlotIndex) {
+      soc = currentSOC;
+    }
+    const startSoc = Math.round(soc * 10) / 10;
+    soc = applySlot(soc, i);
+    const endSoc = Math.round(soc * 10) / 10;
+    forecast[i] = { start: startSoc, end: endSoc };
   }
 
   return forecast;

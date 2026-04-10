@@ -122,7 +122,7 @@ export async function computeUsageProfile(
   opts: ComputeUsageProfileOptions = {},
 ): Promise<UsageProfileResult> {
   const settings = getSettings();
-  const windowDays = opts.windowDays ?? (parseInt(settings.usage_learning_window_days, 10) || 14);
+  const windowDays = opts.windowDays ?? (parseInt(settings.usage_learning_window_days, 10) || 90);
   const baseloadPercentile =
     opts.baseloadPercentile ?? (parseFloat(settings.usage_baseload_percentile) || 10);
   const highPeriodMultiplier = parseFloat(settings.usage_high_period_multiplier) || 1.5;

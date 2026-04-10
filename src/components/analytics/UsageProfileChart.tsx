@@ -63,6 +63,11 @@ const DAY_TYPE_FILTERS: Array<{ label: string; value: 'all' | DayType }> = [
   { label: 'Weekend', value: 'weekend' },
 ];
 
+/** Convert watts average over a 30-min slot to kWh for that slot. */
+function wToSlotKwh(w: number): number {
+  return w / 2000;
+}
+
 function slotLabel(slotIndex: number): string {
   const hours = Math.floor(slotIndex / 2);
   const mins = slotIndex % 2 === 0 ? '00' : '30';
@@ -93,19 +98,19 @@ function UsageTooltip({
       <p className="text-xs text-sb-text-muted">Slot {label}</p>
       {typeof data.weekday_median === 'number' && (
         <p className="text-sm text-sb-text">
-          Weekday: {Math.round(data.weekday_median)} W
+          Weekday: {data.weekday_median.toFixed(2)} kWh
           <span className="text-xs text-sb-text-muted">
             {' '}
-            (p25 {Math.round(Number(data.weekday_p25))}–p75 {Math.round(Number(data.weekday_p75))})
+            (p25 {Number(data.weekday_p25).toFixed(2)}–p75 {Number(data.weekday_p75).toFixed(2)})
           </span>
         </p>
       )}
       {typeof data.weekend_median === 'number' && (
         <p className="text-sm" style={{ color: '#4fc3f7' }}>
-          Weekend: {Math.round(data.weekend_median)} W
+          Weekend: {data.weekend_median.toFixed(2)} kWh
           <span className="text-xs text-sb-text-muted">
             {' '}
-            (p25 {Math.round(Number(data.weekend_p25))}–p75 {Math.round(Number(data.weekend_p75))})
+            (p25 {Number(data.weekend_p25).toFixed(2)}–p75 {Number(data.weekend_p75).toFixed(2)})
           </span>
         </p>
       )}
@@ -119,7 +124,6 @@ function UsageTooltip({
 export function UsageProfileChart() {
   const [profile, setProfile] = useState<UsageProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dayFilter, setDayFilter] = useState<'all' | DayType>('all');
 
@@ -131,30 +135,13 @@ export function UsageProfileChart() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/usage-profile');
+      const res = await fetch('/api/usage-profile', { cache: 'no-store' });
       const json = (await res.json()) as UsageProfileResponse;
       setProfile(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load usage profile');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function refreshNow() {
-    setRefreshing(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/usage-profile/refresh', { method: 'POST' });
-      const json = await res.json();
-      if (json.status === 'skipped') {
-        setError(json.reason ?? 'Refresh skipped');
-      }
-      await fetchProfile();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Refresh failed');
-    } finally {
-      setRefreshing(false);
     }
   }
 
@@ -173,15 +160,15 @@ export function UsageProfileChart() {
       return {
         slot,
         label: slotLabel(slot),
-        weekday_median: wd?.median_w ?? null,
-        weekday_p25: wd?.p25_w ?? null,
-        weekday_p75: wd?.p75_w ?? null,
-        weekday_band: wd ? [wd.p25_w, wd.p75_w] : null,
+        weekday_median: wd ? wToSlotKwh(wd.median_w) : null,
+        weekday_p25: wd ? wToSlotKwh(wd.p25_w) : null,
+        weekday_p75: wd ? wToSlotKwh(wd.p75_w) : null,
+        weekday_band: wd ? [wToSlotKwh(wd.p25_w), wToSlotKwh(wd.p75_w)] : null,
         weekday_n: wd?.sample_count ?? 0,
-        weekend_median: we?.median_w ?? null,
-        weekend_p25: we?.p25_w ?? null,
-        weekend_p75: we?.p75_w ?? null,
-        weekend_band: we ? [we.p25_w, we.p75_w] : null,
+        weekend_median: we ? wToSlotKwh(we.median_w) : null,
+        weekend_p25: we ? wToSlotKwh(we.p25_w) : null,
+        weekend_p75: we ? wToSlotKwh(we.p75_w) : null,
+        weekend_band: we ? [wToSlotKwh(we.p25_w), wToSlotKwh(we.p75_w)] : null,
         weekend_n: we?.sample_count ?? 0,
       };
     });
@@ -197,7 +184,7 @@ export function UsageProfileChart() {
   const showWeekday = dayFilter === 'all' || dayFilter === 'weekday';
   const showWeekend = dayFilter === 'all' || dayFilter === 'weekend';
 
-  const baseload = profile?.baseload_w ?? null;
+  const baseloadKwh = profile?.baseload_w != null ? wToSlotKwh(profile.baseload_w) : null;
 
   return (
     <div className="space-y-4">
@@ -205,8 +192,8 @@ export function UsageProfileChart() {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard
             label="Baseload"
-            value={`${Math.round(profile.meta.baseload_w)} W`}
-            subtext={`p${profile.meta.baseload_percentile} of window`}
+            value={`${wToSlotKwh(profile.meta.baseload_w).toFixed(2)} kWh`}
+            subtext={`p${profile.meta.baseload_percentile} per 30 min`}
           />
           <StatCard
             label="Window"
@@ -228,23 +215,13 @@ export function UsageProfileChart() {
       <Card>
         <CardHeader
           title="Learned usage profile"
-          subtitle="Typical half-hour consumption pattern, computed from the configured usage source over the selected learning window."
+          subtitle="Expected kWh load per half-hour slot, computed from the configured usage source over the selected learning window."
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <SegmentedTabs
-              items={DAY_TYPE_FILTERS.map((f) => ({ label: f.label, value: f.value }))}
-              activeValue={dayFilter}
-              onChange={(v) => setDayFilter(v as 'all' | DayType)}
-            />
-            <button
-              type="button"
-              onClick={refreshNow}
-              disabled={refreshing}
-              className="rounded-lg border border-sb-border bg-sb-surface-muted px-3 py-1.5 text-sm text-sb-text hover:border-sb-active disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {refreshing ? 'Refreshing…' : 'Refresh now'}
-            </button>
-          </div>
+          <SegmentedTabs
+            items={DAY_TYPE_FILTERS.map((f) => ({ label: f.label, value: f.value }))}
+            activeValue={dayFilter}
+            onChange={(v) => setDayFilter(v as 'all' | DayType)}
+          />
         </CardHeader>
 
         {loading && !profile ? (
@@ -270,10 +247,10 @@ export function UsageProfileChart() {
                   Weekend median
                 </span>
               )}
-              {baseload !== null && (
+              {baseloadKwh !== null && (
                 <span className="flex items-center gap-1">
                   <span className="inline-block h-0.5 w-4 border-b-2 border-dotted border-sb-text-muted" />{' '}
-                  Baseload ({Math.round(baseload)} W)
+                  Baseload ({baseloadKwh.toFixed(2)} kWh)
                 </span>
               )}
               <span className="flex items-center gap-1">
@@ -291,7 +268,8 @@ export function UsageProfileChart() {
                 />
                 <YAxis
                   tick={{ fill: '#999', fontSize: 11 }}
-                  tickFormatter={(v) => `${Math.round(Number(v))} W`}
+                  tickFormatter={(v) => `${Number(v).toFixed(1)}`}
+                  label={{ value: 'kWh', angle: -90, position: 'insideLeft', fill: '#999', fontSize: 11 }}
                 />
                 <Tooltip content={<UsageTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
 
@@ -339,13 +317,13 @@ export function UsageProfileChart() {
                     />
                   ))}
 
-                {baseload !== null && (
+                {baseloadKwh !== null && (
                   <ReferenceLine
-                    y={baseload}
+                    y={baseloadKwh}
                     stroke="#888"
                     strokeDasharray="2 4"
                     label={{
-                      value: `Baseload ${Math.round(baseload)} W`,
+                      value: `Baseload ${baseloadKwh.toFixed(2)} kWh`,
                       position: 'insideTopRight',
                       fill: '#aaa',
                       fontSize: 11,
@@ -389,7 +367,7 @@ export function UsageProfileChart() {
                   (hp, idx) => (
                     <p key={idx} className="text-sb-text-muted">
                       <span className="text-sb-text">{hp.kind}</span> {hp.start_local}–{hp.end_local}
-                      {' '}· median ~{Math.round(hp.median_w)} W
+                      {' '}· median ~{wToSlotKwh(hp.median_w).toFixed(2)} kWh
                     </p>
                   ),
                 )}
