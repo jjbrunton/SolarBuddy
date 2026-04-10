@@ -250,20 +250,6 @@ html.light .sb-grain::before {
   background-size: 32px 32px;
 }
 
-/*
- * sb-contour — replaced with a horizontal grid-line pattern for
- * terminal/blueprint header bands.
- */
-.sb-contour {
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 23px,
-    var(--color-sb-rule) 23px,
-    var(--color-sb-rule) 24px
-  );
-}
-
 .sb-shell-panel {
   backdrop-filter: blur(14px);
 }

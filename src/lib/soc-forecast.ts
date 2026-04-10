@@ -93,11 +93,16 @@ export function computeSOCForecast(params: SOCForecastParams): SOCSlotForecast[]
           const surplusWh = pvWh - drainPerSlotWh;
           const addPercent = (surplusWh / batteryCapacityWh) * 100;
           return Math.min(100, soc + addPercent);
-        } else {
-          const netDrainWh = drainPerSlotWh - pvWh;
-          const drainPercent = (netDrainWh / batteryCapacityWh) * 100;
-          return Math.max(socFloor, soc - drainPercent);
         }
+        // If SOC is already at or below the floor, the inverter refuses to
+        // discharge (home load comes from the grid) — SOC stays flat rather
+        // than being clamped upward to the floor.
+        if (soc <= socFloor) {
+          return soc;
+        }
+        const netDrainWh = drainPerSlotWh - pvWh;
+        const drainPercent = (netDrainWh / batteryCapacityWh) * 100;
+        return Math.max(socFloor, soc - drainPercent);
       }
       case 'hold': {
         if (pvWh > drainPerSlotWh) {

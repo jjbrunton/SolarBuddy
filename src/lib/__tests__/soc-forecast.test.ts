@@ -40,6 +40,26 @@ describe('computeSOCForecast', () => {
     expect(forecast[1].end).toBe(20);
   });
 
+  it('holds SOC flat when starting below the floor in a discharge slot', () => {
+    // Inverter refuses to discharge below the configured floor, so a discharge
+    // slot entered at SOC 16% with a 20% floor should stay at 16% — not be
+    // clamped upward to the floor (regression for the "discharge → SOC goes
+    // up" bug).
+    const forecast = computeSOCForecast({
+      currentSOC: 16,
+      currentSlotIndex: 0,
+      slotActions: new Map([[0, 'discharge']]),
+      totalSlots: 1,
+      chargeRatePercent: 100,
+      batteryCapacityWh: 5_000,
+      maxChargePowerW: 3_000,
+      estimatedConsumptionW: 500,
+      socFloor: 20,
+    });
+
+    expect(forecast[0]).toEqual({ start: 16, end: 16 });
+  });
+
   it('allows discharge below floor when socFloor is not set', () => {
     const forecast = computeSOCForecast({
       currentSOC: 5,

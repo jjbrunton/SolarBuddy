@@ -18,7 +18,7 @@ export function PageHeader({
   actions,
 }: PageHeaderProps) {
   return (
-    <header className="sb-contour relative flex flex-col gap-4 pt-2 pb-5">
+    <header className="relative flex flex-col gap-4 pt-2 pb-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl">
           <p className="sb-eyebrow">{eyebrow}</p>
