@@ -14,21 +14,30 @@ interface WidgetState {
 
 const STORAGE_KEY = 'sb-dashboard-layout';
 
-function loadLayout(allIds: string[]): WidgetState[] {
+function defaultLayoutFor(widgets: WidgetDefinition[]): WidgetState[] {
+  return widgets.map((w) => ({ id: w.id, visible: w.defaultVisible !== false }));
+}
+
+function loadLayout(widgets: WidgetDefinition[]): WidgetState[] {
+  const allIds = widgets.map((w) => w.id);
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed: WidgetState[] = JSON.parse(stored);
-      // Merge: keep stored order/visibility, add new widgets at the end
+      // Merge: keep stored order/visibility, add new widgets at their
+      // registry-defined default visibility so installs that added hidden
+      // widgets after an upgrade don't suddenly light up.
       const storedIds = new Set(parsed.map((w) => w.id));
       const result = parsed.filter((w) => allIds.includes(w.id));
-      for (const id of allIds) {
-        if (!storedIds.has(id)) result.push({ id, visible: true });
+      for (const widget of widgets) {
+        if (!storedIds.has(widget.id)) {
+          result.push({ id: widget.id, visible: widget.defaultVisible !== false });
+        }
       }
       return result;
     }
   } catch { /* ignore */ }
-  return allIds.map((id) => ({ id, visible: true }));
+  return defaultLayoutFor(widgets);
 }
 
 function saveLayout(layout: WidgetState[]) {
@@ -42,7 +51,7 @@ export function DashboardGrid({ widgets }: { widgets: WidgetDefinition[] }) {
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    setLayout(loadLayout(widgets.map((w) => w.id)));
+    setLayout(loadLayout(widgets));
   }, [widgets]);
 
   const updateLayout = useCallback((next: WidgetState[]) => {
@@ -58,8 +67,7 @@ export function DashboardGrid({ widgets }: { widgets: WidgetDefinition[] }) {
   );
 
   const resetLayout = useCallback(() => {
-    const defaultLayout = widgets.map((w) => ({ id: w.id, visible: true }));
-    updateLayout(defaultLayout);
+    updateLayout(defaultLayoutFor(widgets));
   }, [widgets, updateLayout]);
 
   const widgetMap = new Map(widgets.map((w) => [w.id, w]));
@@ -71,7 +79,7 @@ export function DashboardGrid({ widgets }: { widgets: WidgetDefinition[] }) {
       <PageHeader
         eyebrow="Overview"
         title="System dashboard"
-        description="Pin the most useful operational signals at the top of the app and tune the widget order to match your daily workflow."
+        description="The five most useful signals are pinned by default. Add more widgets or reorder the view via the edit button."
         actions={(
           <Button variant={editing ? 'warning' : 'secondary'} size="sm" onClick={() => setEditing(!editing)}>
             {editing ? <X size={14} /> : <Settings2 size={14} />}
@@ -106,49 +114,55 @@ export function DashboardGrid({ widgets }: { widgets: WidgetDefinition[] }) {
         </div>
       )}
 
-      {/* Render visible widgets */}
-      {visibleWidgets.map((ws, index) => {
-        const def = widgetMap.get(ws.id);
-        if (!def) return null;
-        const Component = def.component;
-        return (
-          <WidgetWrapper
-            key={ws.id}
-            id={ws.id}
-            title={def.label}
-            editing={editing}
-            isFirst={index === 0}
-            isLast={index === visibleWidgets.length - 1}
-            onMoveUp={() => {
-              const layoutIdx = layout.findIndex((w) => w.id === ws.id);
-              // Find previous visible widget in layout
-              for (let i = layoutIdx - 1; i >= 0; i--) {
-                if (layout[i].visible) {
-                  const next = [...layout];
-                  [next[i], next[layoutIdx]] = [next[layoutIdx], next[i]];
-                  updateLayout(next);
-                  break;
-                }
-              }
-            }}
-            onMoveDown={() => {
-              const layoutIdx = layout.findIndex((w) => w.id === ws.id);
-              // Find next visible widget in layout
-              for (let i = layoutIdx + 1; i < layout.length; i++) {
-                if (layout[i].visible) {
-                  const next = [...layout];
-                  [next[layoutIdx], next[i]] = [next[i], next[layoutIdx]];
-                  updateLayout(next);
-                  break;
-                }
-              }
-            }}
-            onHide={() => toggleVisibility(ws.id)}
-          >
-            <Component />
-          </WidgetWrapper>
-        );
-      })}
+      {/* Render visible widgets in a 2-col grid on desktop. Full-size widgets
+          span both columns; half-size widgets flow as 1 column. Mobile is a
+          simple stack. */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {visibleWidgets.map((ws, index) => {
+          const def = widgetMap.get(ws.id);
+          if (!def) return null;
+          const Component = def.component;
+          const spanClass = def.size === 'half' ? '' : 'md:col-span-2';
+          return (
+            <div key={ws.id} className={spanClass}>
+              <WidgetWrapper
+                id={ws.id}
+                title={def.label}
+                editing={editing}
+                isFirst={index === 0}
+                isLast={index === visibleWidgets.length - 1}
+                onMoveUp={() => {
+                  const layoutIdx = layout.findIndex((w) => w.id === ws.id);
+                  // Find previous visible widget in layout
+                  for (let i = layoutIdx - 1; i >= 0; i--) {
+                    if (layout[i].visible) {
+                      const next = [...layout];
+                      [next[i], next[layoutIdx]] = [next[layoutIdx], next[i]];
+                      updateLayout(next);
+                      break;
+                    }
+                  }
+                }}
+                onMoveDown={() => {
+                  const layoutIdx = layout.findIndex((w) => w.id === ws.id);
+                  // Find next visible widget in layout
+                  for (let i = layoutIdx + 1; i < layout.length; i++) {
+                    if (layout[i].visible) {
+                      const next = [...layout];
+                      [next[layoutIdx], next[i]] = [next[i], next[layoutIdx]];
+                      updateLayout(next);
+                      break;
+                    }
+                  }
+                }}
+                onHide={() => toggleVisibility(ws.id)}
+              >
+                <Component />
+              </WidgetWrapper>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

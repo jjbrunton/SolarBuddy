@@ -27,10 +27,14 @@ const PERIODS = [
   { label: '90 Days', value: '90d' },
 ];
 
-const TABS = [
-  { label: 'Cost Savings', value: 'savings' },
-  { label: 'Cost & Profit', value: 'accounting' },
-  { label: 'Battery Profit', value: 'profit' },
+// A single segmented selector swaps the detail panel under one shared stat
+// strip. The old 3-tab layout forced the user to re-read the same period's
+// summary three times over; this keeps the headline numbers pinned and only
+// changes the breakdown below.
+const DETAIL_VIEWS = [
+  { label: 'Cost vs flat', value: 'savings' },
+  { label: 'Import / export', value: 'accounting' },
+  { label: 'Battery profit', value: 'profit' },
 ];
 
 interface SavingsDayData {
@@ -96,7 +100,7 @@ function formatPence(p: number) {
 export default function SavingsPageView() {
   const searchParams = useSearchParams();
   const period = searchParams.get('period') || '7d';
-  const [tab, setTab] = useState('savings');
+  const [detail, setDetail] = useState('savings');
 
   const [savingsSummary, setSavingsSummary] = useState<SavingsSummary | null>(null);
   const [savingsDaily, setSavingsDaily] = useState<SavingsDayData[]>([]);
@@ -142,76 +146,91 @@ export default function SavingsPageView() {
       .finally(() => setProfitLoading(false));
   }, [period]);
 
-  const netColor =
-    accountingSummary && accountingSummary.total_net_cost < 0
-      ? 'text-sb-success'
-      : accountingSummary && accountingSummary.total_net_cost > 0
-        ? 'text-sb-danger'
-        : 'text-sb-text';
+  const netCostValue = accountingSummary?.total_net_cost ?? 0;
+  const netCostColor =
+    netCostValue < 0 ? 'text-sb-success' : netCostValue > 0 ? 'text-sb-text' : 'text-sb-text';
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Analytics"
         title="Savings"
-        description="Track how your battery scheduling strategy performs financially."
+        description="How the scheduling strategy performs financially over the selected period."
         actions={<PeriodSelector periods={PERIODS} selected={period} />}
       />
 
-      <SegmentedTabs items={TABS} activeValue={tab} onChange={setTab} />
+      {/* Unified top strip: four headline numbers pulled from all three
+          datasets. Stays pinned while the user swaps the detail view below. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          label="Net cost"
+          value={accountingSummary ? formatCost(Math.abs(netCostValue)) : '—'}
+          valueColor={netCostColor}
+          subtext={netCostValue < 0 ? 'Profit' : netCostValue > 0 ? 'Cost' : 'Break even'}
+        />
+        <StatCard
+          label="Savings vs flat"
+          value={savingsSummary ? formatPence(savingsSummary.savings_vs_flat) : '—'}
+          valueColor={
+            savingsSummary && savingsSummary.savings_vs_flat >= 0
+              ? 'text-sb-success'
+              : 'text-sb-text'
+          }
+          subtext="at 24.5p/kWh"
+        />
+        <StatCard
+          label="Battery profit"
+          value={profitSummary ? formatPence(Math.abs(profitSummary.total_net_profit)) : '—'}
+          valueColor={
+            profitSummary && profitSummary.total_net_profit >= 0
+              ? 'text-sb-success'
+              : 'text-sb-text'
+          }
+          subtext={
+            profitSummary
+              ? profitSummary.total_net_profit >= 0
+                ? `${profitSummary.completed_slot_count} slots`
+                : 'Net loss'
+              : undefined
+          }
+        />
+        <StatCard
+          label="Import / export"
+          value={accountingSummary ? `${accountingSummary.total_import_kwh} kWh` : '—'}
+          subtext={
+            accountingSummary
+              ? `${accountingSummary.total_export_kwh} kWh exported`
+              : undefined
+          }
+        />
+      </div>
 
-      {tab === 'savings' && (
-        <>
-          {savingsSummary && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <StatCard
-                label="Total Savings vs Flat"
-                value={formatPence(savingsSummary.savings_vs_flat)}
-                valueColor={savingsSummary.savings_vs_flat >= 0 ? 'text-sb-success' : 'text-sb-danger'}
-                subtext={`vs ${formatPence(savingsSummary.savings_vs_peak)} vs peak`}
-              />
-              <StatCard
-                label="Actual Cost"
-                value={formatPence(savingsSummary.actual_cost)}
-                valueColor="text-sb-warning"
-              />
-              <StatCard
-                label="Flat Rate Would Be"
-                value={formatPence(savingsSummary.flat_rate_cost)}
-                subtext="at 24.5p/kWh"
-              />
-              <StatCard
-                label="Total Import"
-                value={`${savingsSummary.total_import_kwh} kWh`}
-              />
-            </div>
-          )}
+      <SegmentedTabs items={DETAIL_VIEWS} activeValue={detail} onChange={setDetail} />
 
-          <Card>
-            <CardHeader title="Daily cost comparison" subtitle="Actual import cost versus a flat-rate baseline over the selected period." />
-            {savingsLoading && savingsDaily.length === 0 ? (
-              <p className="py-12 text-center text-sb-text-muted">Loading savings data...</p>
-            ) : savingsDaily.length === 0 ? (
-              <EmptyState
-                title="No savings data yet"
-                description="SolarBuddy needs both stored readings and tariff data before it can calculate a meaningful savings comparison."
-              />
-            ) : (
+      {detail === 'savings' && (
+        <Card>
+          <CardHeader
+            title="Cost vs flat rate"
+            subtitle="Actual import cost versus a 24.5p/kWh flat-rate baseline."
+          />
+          {savingsLoading && savingsDaily.length === 0 ? (
+            <p className="py-12 text-center text-sb-text-muted">Loading savings data...</p>
+          ) : savingsDaily.length === 0 ? (
+            <EmptyState
+              title="No savings data yet"
+              description="SolarBuddy needs both stored readings and tariff data before it can calculate a meaningful savings comparison."
+            />
+          ) : (
+            <>
               <SavingsChart data={savingsDaily} />
-            )}
-          </Card>
-
-          {savingsDaily.length > 0 && (
-            <Card>
-              <CardHeader title="Daily breakdown" subtitle="Day-by-day import volume and cost comparison." />
-              <div className="overflow-x-auto">
+              <div className="mt-6 overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-sb-border text-xs uppercase tracking-[0.16em] text-sb-text-subtle">
                       <th className="px-3 py-3">Date</th>
                       <th className="px-3 py-3">Import</th>
-                      <th className="px-3 py-3">Actual Cost</th>
-                      <th className="px-3 py-3">Flat Rate</th>
+                      <th className="px-3 py-3">Actual</th>
+                      <th className="px-3 py-3">Flat rate</th>
                       <th className="px-3 py-3">Savings</th>
                     </tr>
                   </thead>
@@ -220,9 +239,11 @@ export default function SavingsPageView() {
                       <tr key={d.date} className="border-b border-sb-border/50">
                         <td className="px-3 py-3 text-sb-text">{d.date}</td>
                         <td className="px-3 py-3 text-sb-text">{d.import_kwh} kWh</td>
-                        <td className="px-3 py-3 text-sb-warning">{formatPence(d.actual_cost)}</td>
+                        <td className="px-3 py-3 text-sb-text">{formatPence(d.actual_cost)}</td>
                         <td className="px-3 py-3 text-sb-text-muted">{formatPence(d.flat_rate_cost)}</td>
-                        <td className={`px-3 py-3 font-medium ${d.savings >= 0 ? 'text-sb-success' : 'text-sb-danger'}`}>
+                        <td
+                          className={`px-3 py-3 font-medium ${d.savings >= 0 ? 'text-sb-success' : 'text-sb-text'}`}
+                        >
                           {formatPence(d.savings)}
                         </td>
                       </tr>
@@ -230,131 +251,75 @@ export default function SavingsPageView() {
                   </tbody>
                 </table>
               </div>
-            </Card>
+            </>
           )}
-        </>
+        </Card>
       )}
 
-      {tab === 'accounting' && (
-        <>
-          {accountingSummary && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-              <StatCard
-                label="Total Import Cost"
-                value={formatCost(accountingSummary.total_import_cost)}
-                valueColor="text-sb-danger"
-              />
-              <StatCard
-                label="Total Export Revenue"
-                value={formatCost(accountingSummary.total_export_revenue)}
-                valueColor="text-sb-success"
-              />
-              <StatCard
-                label="Net Cost"
-                value={formatCost(Math.abs(accountingSummary.total_net_cost))}
-                subtext={accountingSummary.total_net_cost < 0 ? 'Profit' : accountingSummary.total_net_cost > 0 ? 'Cost' : 'Break even'}
-                valueColor={netColor}
-              />
-              <StatCard
-                label="Total Import"
-                value={`${accountingSummary.total_import_kwh} kWh`}
-                valueColor="text-sb-danger"
-              />
-              <StatCard
-                label="Total Export"
-                value={`${accountingSummary.total_export_kwh} kWh`}
-                valueColor="text-sb-success"
-              />
-            </div>
+      {detail === 'accounting' && (
+        <Card>
+          <CardHeader
+            title="Import / export breakdown"
+            subtitle="Daily import cost versus export revenue."
+          />
+          {accountingLoading && accountingDaily.length === 0 ? (
+            <p className="py-12 text-center text-sb-text-muted">Loading accounting data...</p>
+          ) : accountingDaily.length === 0 ? (
+            <EmptyState
+              title="No accounting data yet"
+              description="Cost and revenue data will appear once energy import and export readings have been recorded."
+            />
+          ) : (
+            <AccountingChart data={accountingDaily} />
           )}
-
-          <Card>
-            <CardHeader title="Daily cost breakdown" subtitle="Import costs, export revenue, and running net cost per day." />
-            {accountingLoading && accountingDaily.length === 0 ? (
-              <p className="py-12 text-center text-sb-text-muted">Loading accounting data...</p>
-            ) : accountingDaily.length === 0 ? (
-              <EmptyState
-                title="No accounting data yet"
-                description="Cost and revenue data will appear once energy import and export readings have been recorded."
-              />
-            ) : (
-              <AccountingChart data={accountingDaily} />
-            )}
-          </Card>
-        </>
+        </Card>
       )}
 
-      {tab === 'profit' && (
-        <>
-          {profitSummary && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <StatCard
-                label="Charge Cost"
-                value={formatPence(Math.abs(profitSummary.total_charge_cost))}
-                valueColor="text-sb-danger"
-                subtext={`Expected: ${formatPence(Math.abs(profitSummary.total_expected_charge_cost))}`}
-              />
-              <StatCard
-                label="Discharge Revenue"
-                value={formatPence(profitSummary.total_discharge_revenue)}
-                valueColor="text-sb-success"
-                subtext={`Expected: ${formatPence(profitSummary.total_expected_discharge_revenue)}`}
-              />
-              <StatCard
-                label="Net Profit"
-                value={formatPence(Math.abs(profitSummary.total_net_profit))}
-                subtext={profitSummary.total_net_profit >= 0 ? 'Profit' : 'Loss'}
-                valueColor={profitSummary.total_net_profit >= 0 ? 'text-sb-success' : 'text-sb-danger'}
-              />
-              <StatCard
-                label="Variance"
-                value={formatPence(Math.abs(profitSummary.variance))}
-                subtext={profitSummary.variance >= 0 ? 'Better than expected' : 'Worse than expected'}
-                valueColor={profitSummary.variance >= 0 ? 'text-sb-success' : 'text-sb-warning'}
-              />
-            </div>
-          )}
-
-          <Card>
-            <CardHeader title="Daily battery profit" subtitle="Charge costs, discharge revenue, and net profit per day from scheduled battery operations." />
-            {profitLoading && profitDaily.length === 0 ? (
-              <p className="py-12 text-center text-sb-text-muted">Loading battery profit data...</p>
-            ) : profitDaily.length === 0 ? (
-              <EmptyState
-                title="No battery profit data yet"
-                description="Profit tracking begins once scheduled charge and discharge slots complete with telemetry readings available."
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-sb-border text-xs uppercase tracking-[0.16em] text-sb-text-subtle">
-                      <th className="px-3 py-3">Date</th>
-                      <th className="px-3 py-3">Charge Cost</th>
-                      <th className="px-3 py-3">Discharge Rev</th>
-                      <th className="px-3 py-3">Net Profit</th>
-                      <th className="px-3 py-3">Slots</th>
+      {detail === 'profit' && (
+        <Card>
+          <CardHeader
+            title="Battery profit"
+            subtitle="Charge costs, discharge revenue, and net profit per day from scheduled operations."
+          />
+          {profitLoading && profitDaily.length === 0 ? (
+            <p className="py-12 text-center text-sb-text-muted">Loading battery profit data...</p>
+          ) : profitDaily.length === 0 ? (
+            <EmptyState
+              title="No battery profit data yet"
+              description="Profit tracking begins once scheduled charge and discharge slots complete with telemetry readings available."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-sb-border text-xs uppercase tracking-[0.16em] text-sb-text-subtle">
+                    <th className="px-3 py-3">Date</th>
+                    <th className="px-3 py-3">Charge cost</th>
+                    <th className="px-3 py-3">Discharge rev.</th>
+                    <th className="px-3 py-3">Net profit</th>
+                    <th className="px-3 py-3">Slots</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profitDaily.map((d) => (
+                    <tr key={d.date} className="border-b border-sb-border/50">
+                      <td className="px-3 py-3 text-sb-text">{d.date}</td>
+                      <td className="px-3 py-3 text-sb-text">{formatPence(Math.abs(d.charge_cost))}</td>
+                      <td className="px-3 py-3 text-sb-text">{formatPence(d.discharge_revenue)}</td>
+                      <td
+                        className={`px-3 py-3 font-medium ${d.net_profit >= 0 ? 'text-sb-success' : 'text-sb-text'}`}
+                      >
+                        {formatPence(Math.abs(d.net_profit))}
+                        {d.net_profit < 0 ? ' loss' : ''}
+                      </td>
+                      <td className="px-3 py-3 text-sb-text-muted">{d.slot_count}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {profitDaily.map((d) => (
-                      <tr key={d.date} className="border-b border-sb-border/50">
-                        <td className="px-3 py-3 text-sb-text">{d.date}</td>
-                        <td className="px-3 py-3 text-sb-danger">{formatPence(Math.abs(d.charge_cost))}</td>
-                        <td className="px-3 py-3 text-sb-success">{formatPence(d.discharge_revenue)}</td>
-                        <td className={`px-3 py-3 font-medium ${d.net_profit >= 0 ? 'text-sb-success' : 'text-sb-danger'}`}>
-                          {formatPence(Math.abs(d.net_profit))}
-                          {d.net_profit < 0 ? ' loss' : ''}
-                        </td>
-                        <td className="px-3 py-3 text-sb-text-muted">{d.slot_count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       )}
     </div>
   );

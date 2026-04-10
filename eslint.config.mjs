@@ -22,6 +22,7 @@ export default defineConfig([
   globalIgnores([
     '.claude/**',
     '.next/**',
+    '.tmp/**',
     'out/**',
     'build/**',
     'coverage/**',

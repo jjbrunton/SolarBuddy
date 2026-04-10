@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Figure } from '@/components/ui/Figure';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { RefreshCw, Play, Pencil, X, Save } from 'lucide-react';
+import { RefreshCw, Play, Pencil, X, Save, Layers } from 'lucide-react';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { sliceTimeWindowsFromCurrentPeriod } from '@/lib/chart-window';
@@ -118,6 +118,10 @@ export default function RatesView() {
   const [pvForecasts, setPvForecasts] = useState<PVForecastSlot[]>([]);
   const [pvEnabled, setPvEnabled] = useState(false);
   const [pvConfidence, setPvConfidence] = useState<PVConfidence>('estimate');
+  // Advanced overlays (SOC forecast line + PV generation area + right SOC
+  // axis) are hidden by default. The essential read is "price + action" —
+  // power users can flip these on via the toolbar toggle.
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const {
     selectedIndices,
@@ -375,6 +379,14 @@ export default function RatesView() {
         description="Review the current Agile price horizon, compare it to the scheduler output, and set manual slot overrides directly on the chart."
         actions={(
           <>
+            <Button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              variant={showAdvanced ? 'secondary' : 'ghost'}
+              size="sm"
+            >
+              <Layers size={14} />
+              {showAdvanced ? 'Hide overlays' : 'Show overlays'}
+            </Button>
             <Button onClick={() => setEditMode(!editMode)} variant={editMode ? 'warning' : 'secondary'} size="sm">
               {editMode ? <X size={14} /> : <Pencil size={14} />}
               {editMode ? 'Cancel' : 'Edit slots'}
@@ -417,35 +429,34 @@ export default function RatesView() {
       <Card>
         <CardHeader
           title="Agile rates (p/kWh)"
-          subtitle="Manual overrides appear in teal and take precedence over the planner for SOC forecasting."
+          subtitle="Manual overrides take precedence over the planner. Use Show overlays to add the SOC forecast and PV generation lines."
         />
-        <div className="mb-3 flex flex-wrap gap-4 text-xs text-sb-text-muted">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded bg-sb-accent" /> Rate
-          </span>
+        {/* Compact legend: only the four essential series by default.
+            Predicted SOC + PV Forecast are gated on the advanced toggle. */}
+        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-sb-text-muted">
           {(['charge', 'discharge', 'hold'] as PlanAction[]).map((action) => (
             <span key={action} className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: ACTION_COLORS[action] }} /> {ACTION_LABELS[action]}
+              <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: ACTION_COLORS[action] }} /> {ACTION_LABELS[action]}
             </span>
           ))}
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: OVERRIDE_EMBER }} /> Manual Override
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: OVERRIDE_EMBER }} /> Override
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded border-2 border-sb-ember" /> Current
+            <span className="inline-block h-2.5 w-2.5 rounded-sm border-2 border-sb-ember" /> Current
           </span>
-          {state.battery_soc !== null && (
+          {showAdvanced && state.battery_soc !== null && (
             <span className="flex items-center gap-1">
               <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-sb-text-muted" /> Predicted SOC
             </span>
           )}
-          {pvEnabled && pvForecasts.length > 0 && (
+          {showAdvanced && pvEnabled && pvForecasts.length > 0 && (
             <span className="flex items-center gap-1">
               <span
-                className="inline-block h-2.5 w-2.5 rounded"
+                className="inline-block h-2.5 w-2.5 rounded-sm"
                 style={{ backgroundColor: colors.solar, opacity: 0.3 }}
               />
-              PV Forecast
+              PV forecast
             </span>
           )}
         </div>
@@ -473,17 +484,19 @@ export default function RatesView() {
                   tickFormatter={formatSlotTimeLabel}
                 />
                 <YAxis yAxisId="price" tick={{ fill: colors.muted, fontSize: 11 }} />
-                <YAxis
-                  yAxisId="soc"
-                  orientation="right"
-                  domain={[0, 100]}
-                  tick={{ fill: colors.muted, fontSize: 11 }}
-                  tickFormatter={(v: number) => `${v}%`}
-                  width={45}
-                />
+                {showAdvanced && (
+                  <YAxis
+                    yAxisId="soc"
+                    orientation="right"
+                    domain={[0, 100]}
+                    tick={{ fill: colors.muted, fontSize: 11 }}
+                    tickFormatter={(v: number) => `${v}%`}
+                    width={45}
+                  />
+                )}
                 {!editMode && <Tooltip content={<RateTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />}
                 <ReferenceLine yAxisId="price" y={0} stroke={colors.border} />
-                {pvEnabled && pvForecasts.length > 0 && (
+                {showAdvanced && pvEnabled && pvForecasts.length > 0 && (
                   <Area
                     yAxisId="price"
                     type="monotone"
@@ -506,7 +519,7 @@ export default function RatesView() {
                     />
                   ))}
                 </Bar>
-                {state.battery_soc !== null && (
+                {showAdvanced && state.battery_soc !== null && (
                   <Line
                     yAxisId="soc"
                     type="linear"

@@ -4,7 +4,7 @@ import path from 'path';
 export default defineConfig({
   test: {
     globals: true,
-    exclude: ['node_modules', '.next', 'dist', 'e2e/**'],
+    exclude: ['node_modules', '.next', '.tmp/**', '.claude/worktrees/**', 'dist', 'e2e/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

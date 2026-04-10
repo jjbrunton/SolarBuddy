@@ -22,14 +22,17 @@
   --color-sb-header: rgba(8, 8, 8, 0.92);
   --color-sb-card: rgba(17, 17, 17, 0.85);
   --color-sb-card-hover: rgba(24, 24, 24, 0.92);
-  --color-sb-active: rgba(255, 102, 0, 0.12);
+  --color-sb-active: rgba(255, 102, 0, 0.10);
   --color-sb-surface-muted: rgba(17, 17, 17, 0.6);
 
-  /* Borders — structural, not decorative */
-  --color-sb-border: rgba(255, 102, 0, 0.12);
-  --color-sb-border-strong: rgba(255, 102, 0, 0.25);
-  --color-sb-rule: rgba(255, 102, 0, 0.10);
-  --color-sb-rule-strong: rgba(255, 102, 0, 0.22);
+  /* Borders — neutral structural lines. Ember tints used to bleed into
+     every frame, making the whole UI feel orange. Borders now read as
+     cool structure and ember is reserved for accents (text, active
+     markers, hero numerics). */
+  --color-sb-border: rgba(255, 255, 255, 0.08);
+  --color-sb-border-strong: rgba(255, 255, 255, 0.14);
+  --color-sb-rule: rgba(255, 255, 255, 0.06);
+  --color-sb-rule-strong: rgba(255, 255, 255, 0.12);
 
   /* Ink — cool neutral on dark */
   --color-sb-text: #d4d4d4;
@@ -84,10 +87,10 @@ html.light {
   --color-sb-active: rgba(255, 102, 0, 0.10);
   --color-sb-surface-muted: rgba(230, 232, 237, 0.6);
 
-  --color-sb-border: rgba(0, 0, 0, 0.10);
-  --color-sb-border-strong: rgba(0, 0, 0, 0.20);
-  --color-sb-rule: rgba(0, 0, 0, 0.08);
-  --color-sb-rule-strong: rgba(0, 0, 0, 0.18);
+  --color-sb-border: rgba(0, 0, 0, 0.08);
+  --color-sb-border-strong: rgba(0, 0, 0, 0.16);
+  --color-sb-rule: rgba(0, 0, 0, 0.06);
+  --color-sb-rule-strong: rgba(0, 0, 0, 0.14);
 
   --color-sb-text: #1a1a1a;
   --color-sb-ink: #1a1a1a;
@@ -226,13 +229,13 @@ html.light ::selection {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.025;
+  opacity: 0.012;
   background-image: repeating-linear-gradient(
     0deg,
     transparent,
     transparent 2px,
-    rgba(255, 102, 0, 0.15) 2px,
-    rgba(255, 102, 0, 0.15) 4px
+    rgba(255, 255, 255, 0.25) 2px,
+    rgba(255, 255, 255, 0.25) 4px
   );
 }
 
