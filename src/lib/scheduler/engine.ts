@@ -756,7 +756,8 @@ function buildPlannedSlots(
           estimatedConsumptionW: fallbackConsumptionW,
           drainWAtSlot,
           perSlotPVGenerationW,
-        }).map((value) => Math.round(value * 10) / 10);
+          socFloor: parseFloat(settings.discharge_soc_floor) || 0,
+        }).map((slot) => Math.round(slot.end * 10) / 10);
 
   const perSlotEnergyKwh = ((parseFloat(settings.max_charge_power_kw) || 3.6) * ((parseFloat(settings.charge_rate) || 100) / 100)) * HALF_HOUR_HOURS;
 

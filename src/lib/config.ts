@@ -148,7 +148,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Usage pattern learning
   usage_learning_enabled: 'true',
   usage_source: 'octopus',
-  usage_learning_window_days: '14',
+  usage_learning_window_days: '90',
   usage_baseload_percentile: '10',
   usage_high_period_multiplier: '1.5',
   usage_high_period_min_slots: '2',

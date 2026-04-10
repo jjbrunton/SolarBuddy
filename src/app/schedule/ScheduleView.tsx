@@ -12,7 +12,8 @@ import { RefreshCw, Play, Trash2, Zap, BatteryLow, Pause, X, ChevronLeft, Chevro
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { sliceTimeWindowsFromCurrentPeriod } from '@/lib/chart-window';
-import { computeSOCForecast } from '@/lib/soc-forecast';
+import { computeSOCForecast, type SOCSlotForecast } from '@/lib/soc-forecast';
+import { formatCost } from '@/lib/forecast';
 import { formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import {
   buildSchedulePlanSlots,
@@ -30,6 +31,13 @@ import {
 } from '@/lib/plan-actions';
 import { alignPVForecastToSlots, type PVConfidence } from '@/lib/pv-forecast-utils';
 import type { PVForecastSlot } from '@/lib/solcast/client';
+
+interface UsageBucketSlim {
+  day_type: 'weekday' | 'weekend';
+  slot_index: number;
+  median_w: number;
+  sample_count: number;
+}
 
 interface Rate {
   valid_from: string;
@@ -59,9 +67,12 @@ interface Override {
 }
 
 type PlanSlot = ScheduleHistorySlot & {
-  forecastSOC?: number;
+  forecastSOC?: SOCSlotForecast;
+  /** End-of-slot forecast SOC for chart line rendering. */
+  forecastSOCEnd?: number;
   actualSOC?: number;
   pvGenerationKw?: number;
+  estimatedLoadKw?: number;
 };
 
 const ACTION_ICON: Record<PlanAction, typeof Zap> = {
@@ -74,8 +85,9 @@ function SlotTooltip({ active, payload, label }: { active?: boolean; payload?: {
   if (!active || !payload?.length) return null;
   const price = payload.find((p) => p.dataKey === 'price');
   const actual = payload.find((p) => p.dataKey === 'actualSOC');
-  const forecast = payload.find((p) => p.dataKey === 'forecastSOC');
+  const forecast = payload.find((p) => p.dataKey === 'forecastSOCEnd');
   const pv = payload.find((p) => p.dataKey === 'pvGenerationKw');
+  const load = payload.find((p) => p.dataKey === 'estimatedLoadKw');
   return (
     <div className="rounded-[0.5rem] border border-sb-rule-strong bg-sb-card/95 px-4 py-3 backdrop-blur-sm">
       <p className="sb-eyebrow">{label ? formatSlotTooltipLabel(label) : ''}</p>
@@ -87,6 +99,7 @@ function SlotTooltip({ active, payload, label }: { active?: boolean; payload?: {
       )}
       <div className="mt-2 space-y-0.5 font-[family-name:var(--font-sb-mono)] text-[0.7rem] text-sb-text-muted">
         {pv && pv.value != null && <p>PV       {pv.value.toFixed(2)} kW</p>}
+        {load && load.value != null && <p>Load     {load.value.toFixed(2)} kW</p>}
         {actual && actual.value != null && <p>Actual   {actual.value}%</p>}
         {forecast && forecast.value != null && <p>Predict  {forecast.value}%</p>}
       </div>
@@ -123,10 +136,12 @@ export default function ScheduleView() {
     battery_capacity_kwh: string;
     max_charge_power_kw: string;
     estimated_consumption_w: string;
+    discharge_soc_floor: string;
   } | null>(null);
   const [pvForecasts, setPvForecasts] = useState<PVForecastSlot[]>([]);
   const [pvEnabled, setPvEnabled] = useState(false);
   const [pvConfidence, setPvConfidence] = useState<PVConfidence>('estimate');
+  const [usageBuckets, setUsageBuckets] = useState<UsageBucketSlim[]>([]);
 
   const todayDay = getTodayScheduleDayKey(effectiveNow);
 
@@ -172,6 +187,14 @@ export default function ScheduleView() {
       } else {
         setPvForecasts([]);
       }
+
+      try {
+        const usageRes = await fetch('/api/usage-profile');
+        const usageJson = await usageRes.json();
+        setUsageBuckets(usageJson.status === 'ok' ? usageJson.buckets : []);
+      } catch {
+        setUsageBuckets([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load plan data');
     } finally {
@@ -214,6 +237,16 @@ export default function ScheduleView() {
     return () => { cancelled = true; };
   }, [selectedDay]);
 
+  const usageLookup = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of usageBuckets) {
+      if (b.sample_count > 0) {
+        map.set(`${b.day_type}:${b.slot_index}`, b.median_w);
+      }
+    }
+    return map;
+  }, [usageBuckets]);
+
   const pvAligned = useMemo(() => {
     if (!pvEnabled || pvForecasts.length === 0 || slots.length === 0) {
       return { pvChartValues: [] as (number | undefined)[] };
@@ -227,17 +260,30 @@ export default function ScheduleView() {
   }, [pvEnabled, pvForecasts, slots, pvConfidence]);
 
   const slotsWithSOC = useMemo(() => {
-    const withPv = (slot: PlanSlot, index: number): PlanSlot => {
-      const watts = pvAligned.pvChartValues[index];
+    const fallbackConsumptionW = settings ? parseFloat(settings.estimated_consumption_w) || 500 : 500;
+
+    const getEstimatedLoadW = (slotValidFrom: string): number => {
+      if (usageLookup.size === 0) return fallbackConsumptionW;
+      const d = new Date(slotValidFrom);
+      const dow = d.getDay();
+      const dayType = dow === 0 || dow === 6 ? 'weekend' : 'weekday';
+      const slotIdx = d.getHours() * 2 + (d.getMinutes() >= 30 ? 1 : 0);
+      return usageLookup.get(`${dayType}:${slotIdx}`) ?? fallbackConsumptionW;
+    };
+
+    const withExtras = (slot: PlanSlot, index: number): PlanSlot => {
+      const pvWatts = pvAligned.pvChartValues[index];
+      const loadW = getEstimatedLoadW(slot.validFrom);
       return {
         ...slot,
-        pvGenerationKw: watts != null ? watts / 1000 : undefined,
+        pvGenerationKw: pvWatts != null ? pvWatts / 1000 : undefined,
+        estimatedLoadKw: loadW / 1000,
       };
     };
 
     if (slots.length === 0 || state.battery_soc === null || !settings) {
       return slots.map((slot, index) => ({
-        ...withPv(slot, index),
+        ...withExtras(slot, index),
         actualSOC: actualSOCMap.get(toSlotKey(slot.validFrom)) ?? undefined,
       }));
     }
@@ -256,6 +302,18 @@ export default function ScheduleView() {
       if (actual != null) { startSOC = actual; startIndex = i; break; }
     }
 
+    const drainWAtSlot = usageLookup.size > 0
+      ? (slotIndex: number): number => {
+          const slot = slots[slotIndex];
+          return slot ? getEstimatedLoadW(slot.validFrom) : fallbackConsumptionW;
+        }
+      : undefined;
+
+    const pvMap = new Map<number, number>();
+    pvAligned.pvChartValues.forEach((w, i) => {
+      if (w != null) pvMap.set(i, w);
+    });
+
     const forecast = computeSOCForecast({
       currentSOC: state.battery_soc,
       currentSlotIndex: currentIndex >= 0 ? currentIndex : 0,
@@ -264,17 +322,21 @@ export default function ScheduleView() {
       chargeRatePercent: parseFloat(settings.charge_rate) || 100,
       batteryCapacityWh: (parseFloat(settings.battery_capacity_kwh) || 5.12) * 1000,
       maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
-      estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
+      estimatedConsumptionW: fallbackConsumptionW,
+      drainWAtSlot,
+      perSlotPVGenerationW: pvMap.size > 0 ? pvMap : undefined,
+      socFloor: parseFloat(settings.discharge_soc_floor) || 0,
       startSOC,
       startIndex,
     });
 
     return slots.map((slot, index) => ({
-      ...withPv(slot, index),
+      ...withExtras(slot, index),
       forecastSOC: forecast[index] ?? undefined,
+      forecastSOCEnd: forecast[index]?.end,
       actualSOC: actualSOCMap.get(toSlotKey(slot.validFrom)) ?? undefined,
     }));
-  }, [slots, state.battery_soc, settings, actualSOCMap, pvAligned]);
+  }, [slots, state.battery_soc, settings, actualSOCMap, pvAligned, usageLookup]);
 
   const visibleSlots = useMemo(() => {
     if (!selectedDay) {
@@ -391,6 +453,16 @@ export default function ScheduleView() {
       avg: Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100,
     };
   }, [chartSlots]);
+
+  const tableSlots = useMemo(() => {
+    if (!viewingToday) return visibleSlots;
+    return sliceTimeWindowsFromCurrentPeriod(
+      visibleSlots,
+      (slot) => slot.validFrom,
+      (slot) => slot.validTo,
+      effectiveNow,
+    );
+  }, [effectiveNow, viewingToday, visibleSlots]);
 
   const hasOverrides = visibleSlots.some((slot) => slot.overrideAction !== null);
 
@@ -514,6 +586,11 @@ export default function ScheduleView() {
               <span className="inline-block h-2.5 w-2.5 rounded" style={{ backgroundColor: colors.solar, opacity: 0.5 }} /> Solar forecast
             </span>
           ) : null}
+          {chartSlots.some((s) => s.estimatedLoadKw != null) ? (
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-sb-danger" /> Est. load
+            </span>
+          ) : null}
         </div>
 
         {loading && slots.length === 0 ? (
@@ -571,6 +648,19 @@ export default function ScheduleView() {
                   isAnimationActive={false}
                 />
               ) : null}
+              {chartSlots.some((s) => s.estimatedLoadKw != null) ? (
+                <Line
+                  yAxisId="pv"
+                  type="stepAfter"
+                  dataKey="estimatedLoadKw"
+                  stroke={colors.danger}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ) : null}
               <Bar yAxisId="price" dataKey="price" radius={[2, 2, 0, 0]}>
                 {chartSlots.map((entry) => (
                   <Cell
@@ -586,7 +676,7 @@ export default function ScheduleView() {
                 <Line
                   yAxisId="soc"
                   type="linear"
-                  dataKey="forecastSOC"
+                  dataKey="forecastSOCEnd"
                   stroke={colors.muted}
                   strokeWidth={2}
                   strokeDasharray="4 3"
@@ -608,7 +698,7 @@ export default function ScheduleView() {
         )}
       </Card>
 
-      {visibleSlots.length > 0 ? (
+      {tableSlots.length > 0 ? (
         <Card>
           <CardHeader
             title="Slot details"
@@ -623,13 +713,15 @@ export default function ScheduleView() {
                   <th className="px-3 py-3 font-medium">Time</th>
                   <th className="px-3 py-3 font-medium">Price</th>
                   <th className="px-3 py-3 font-medium">Plan</th>
-                  <th className="px-3 py-3 font-medium">Reason</th>
+                  <th className="px-3 py-3 font-medium">Est. SoC</th>
+                  <th className="px-3 py-3 font-medium">Est. PV</th>
+                  <th className="px-3 py-3 font-medium">Est. Load</th>
                   <th className="px-3 py-3 font-medium">Override</th>
                   <th className="px-3 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleSlots.map((slot) => (
+                {tableSlots.map((slot) => (
                   <tr
                     key={slot.validFrom}
                     data-current={slot.isCurrent || undefined}
@@ -650,12 +742,55 @@ export default function ScheduleView() {
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <Badge kind={ACTION_BADGE_KIND[slot.plannedAction]}>
-                        {ACTION_LABELS[slot.plannedAction]}
-                      </Badge>
+                      <span
+                        className="relative cursor-help"
+                        onMouseEnter={(e) => {
+                          const tip = e.currentTarget.querySelector<HTMLElement>('[data-reason-tip]');
+                          if (tip) tip.style.opacity = '1';
+                        }}
+                        onMouseLeave={(e) => {
+                          const tip = e.currentTarget.querySelector<HTMLElement>('[data-reason-tip]');
+                          if (tip) tip.style.opacity = '0';
+                        }}
+                      >
+                        <Badge kind={ACTION_BADGE_KIND[slot.plannedAction]}>
+                          {ACTION_LABELS[slot.plannedAction]}
+                        </Badge>
+                        <span
+                          data-reason-tip
+                          className="pointer-events-none absolute bottom-full left-0 z-20 mb-2 w-56 rounded-md border border-sb-rule-strong bg-sb-card/95 px-3 py-2 text-xs leading-relaxed text-sb-text-muted shadow-lg backdrop-blur-sm transition-opacity"
+                          style={{ opacity: 0 }}
+                        >
+                          {slot.reason}
+                        </span>
+                      </span>
                     </td>
-                    <td className="px-3 py-3 text-xs leading-5 text-sb-text-muted">
-                      {slot.reason}
+                    <td className="px-3 py-3 whitespace-nowrap font-[family-name:var(--font-sb-mono)] text-xs text-sb-text-muted">
+                      {slot.forecastSOC != null
+                        ? slot.forecastSOC.start !== slot.forecastSOC.end
+                          ? `${slot.forecastSOC.start}% \u2192 ${slot.forecastSOC.end}%`
+                          : `${slot.forecastSOC.end}%`
+                        : '\u2014'}
+                      {(() => {
+                        if (!slot.forecastSOC || !settings || slot.forecastSOC.start === slot.forecastSOC.end) return null;
+                        const deltaPercent = slot.forecastSOC.end - slot.forecastSOC.start;
+                        const batteryKwh = parseFloat(settings.battery_capacity_kwh) || 5.12;
+                        const energyKwh = Math.abs(deltaPercent) / 100 * batteryKwh;
+                        const costPence = energyKwh * slot.price;
+                        if (Math.abs(costPence) < 0.05) return null;
+                        const isCharging = deltaPercent > 0;
+                        return (
+                          <span className={isCharging ? 'ml-1 text-sb-danger' : 'ml-1 text-sb-success'}>
+                            ({isCharging ? '' : '-'}{formatCost(Math.abs(costPence))})
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap font-[family-name:var(--font-sb-mono)] text-xs text-sb-text-muted">
+                      {slot.pvGenerationKw != null ? `${slot.pvGenerationKw.toFixed(2)} kW` : '\u2014'}
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap font-[family-name:var(--font-sb-mono)] text-xs text-sb-text-muted">
+                      {slot.estimatedLoadKw != null ? `${slot.estimatedLoadKw.toFixed(2)} kW` : '\u2014'}
                     </td>
                     <td className="px-3 py-3">
                       {slot.overrideAction ? (

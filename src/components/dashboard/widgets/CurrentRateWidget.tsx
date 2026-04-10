@@ -79,11 +79,11 @@ function getStatusCopy(status: CurrentRateStatus, currentPrice: number, averageP
     case 'best':
       return 'This is the cheapest active Agile slot currently loaded.';
     case 'cheap':
-      return `${difference}p below the loaded average rate.`;
+      return `${difference}p below the average rate.`;
     case 'expensive':
-      return `${difference}p above the loaded average rate.`;
+      return `${difference}p above the average rate.`;
     default:
-      return 'Close to the loaded average rate.';
+      return 'Close to the average rate.';
   }
 }
 
@@ -187,13 +187,13 @@ export default function CurrentRateWidget() {
           </div>
 
           <div className="border-b border-sb-rule px-4 py-4 sm:border-b-0 sm:border-r sm:border-sb-rule">
-            <p className="sb-eyebrow">Loaded Low</p>
+            <p className="sb-eyebrow">Best Rate</p>
             <p className="sb-display mt-2 text-2xl text-sb-ember">{formatPrice(summary.minPrice)}p</p>
             <p className="mt-1 text-[0.7rem] text-sb-text-muted">Best available slot</p>
           </div>
 
           <div className="px-4 py-4">
-            <p className="sb-eyebrow">Loaded Average</p>
+            <p className="sb-eyebrow">Avg. Rate</p>
             <p className="sb-display mt-2 text-2xl text-sb-text">{formatPrice(summary.averagePrice)}p</p>
             <p className="mt-1 text-[0.7rem] text-sb-text-muted">Across fetched rates</p>
           </div>

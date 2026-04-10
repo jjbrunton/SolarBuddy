@@ -62,6 +62,7 @@ export default function RateChartWidget() {
     battery_capacity_kwh: string;
     max_charge_power_kw: string;
     estimated_consumption_w: string;
+    discharge_soc_floor: string;
   } | null>(null);
   const [pvForecasts, setPvForecasts] = useState<PVForecastSlot[]>([]);
   const [pvEnabled, setPvEnabled] = useState(false);
@@ -173,10 +174,11 @@ export default function RateChartWidget() {
       maxChargePowerW: (parseFloat(settings.max_charge_power_kw) || 3.6) * 1000,
       estimatedConsumptionW: parseFloat(settings.estimated_consumption_w) || 500,
       perSlotPVGenerationW: pvAligned.perSlotPVGenerationW,
+      socFloor: parseFloat(settings.discharge_soc_floor) || 0,
     });
     return rates.map((r, i) => ({
       ...r,
-      forecastSOC: forecast[i] ?? undefined,
+      forecastSOC: forecast[i]?.end,
       pvGenerationKw: pvAligned.pvChartValues[i] != null ? pvAligned.pvChartValues[i]! / 1000 : undefined,
     }));
   }, [rates, state.battery_soc, currentSlotIndex, settings, pvAligned]);
