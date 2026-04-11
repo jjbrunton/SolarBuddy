@@ -775,13 +775,19 @@ export default function ScheduleView() {
                         if (!slot.forecastSOC || !settings || slot.forecastSOC.start === slot.forecastSOC.end) return null;
                         const deltaPercent = slot.forecastSOC.end - slot.forecastSOC.start;
                         const batteryKwh = parseFloat(settings.battery_capacity_kwh) || 5.12;
-                        const energyKwh = Math.abs(deltaPercent) / 100 * batteryKwh;
-                        const costPence = energyKwh * slot.price;
-                        if (Math.abs(costPence) < 0.05) return null;
-                        const isCharging = deltaPercent > 0;
+                        // Signed: + for charging (energy in), - for discharging (energy out).
+                        // Multiplied by the import price this yields the net cost to the user:
+                        // positive = pays, negative = earns/saves. Handles negative-price slots
+                        // where charging is actually a credit.
+                        const signedEnergyKwh = (deltaPercent / 100) * batteryKwh;
+                        const netCostPence = signedEnergyKwh * slot.price;
+                        if (Math.abs(netCostPence) < 0.05) return null;
+                        const isSaving = netCostPence < 0;
+                        const absValue = Math.abs(netCostPence);
+                        const formatted = absValue < 1 ? `${absValue.toFixed(1)}p` : formatCost(absValue);
                         return (
-                          <span className={isCharging ? 'ml-1 text-sb-danger' : 'ml-1 text-sb-success'}>
-                            ({isCharging ? '' : '-'}{formatCost(Math.abs(costPence))})
+                          <span className={isSaving ? 'ml-1 text-sb-success' : 'ml-1 text-sb-danger'}>
+                            ({isSaving ? '-' : ''}{formatted})
                           </span>
                         );
                       })()}
