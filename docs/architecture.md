@@ -28,6 +28,10 @@ flowchart LR
   ENGINE --> EXEC["Execution timers"]
   EXEC --> CMD["MQTT inverter commands"]
   CMD --> MQTT
+  STATE --> HA["Home Assistant publisher"]
+  DB --> HA
+  HA --> HAMQTT["Home Assistant MQTT broker"]
+  HAMQTT --> HA
 ```
 
 ## Deployment Model
@@ -99,7 +103,18 @@ flowchart LR
 - If Octopus consumption is unavailable, insufficient, or errors, the refresh automatically falls back to local `readings.load_power` samples.
 - The computed profile is persisted to `usage_profile` and `usage_profile_meta`, and read by scheduler forecasting helpers in [`src/lib/usage/repository.ts`](../src/lib/usage/repository.ts).
 
-### 5. Charge Execution
+### 5. Home Assistant Publisher
+
+- [`src/lib/home-assistant/`](../src/lib/home-assistant/) owns an optional second MQTT client that publishes SolarBuddy state and controls to Home Assistant via the standard MQTT Discovery protocol.
+- The publisher is disabled by default and connects only when `homeassistant_enabled=true` in settings. It uses a separate `globalThis.__solarbuddy_ha_mqtt` singleton so it never interferes with the Solar Assistant MQTT client.
+- Entities are defined in [`src/lib/home-assistant/entities.ts`](../src/lib/home-assistant/entities.ts) as a single source of truth. Discovery payload builders live in [`src/lib/home-assistant/discovery.ts`](../src/lib/home-assistant/discovery.ts).
+- State publishing is coalesced: a 1-second debounce over `onStateChange` flushes telemetry sensors with per-entity numeric tolerances, and a 60-second periodic tick refreshes tariff- and plan-driven sensors. A full snapshot is published on broker connect and whenever Home Assistant's birth topic (`<discovery_prefix>/status = online`) fires so HA restarts recover cleanly.
+- Command topics are routed by [`src/lib/home-assistant/command-handler.ts`](../src/lib/home-assistant/command-handler.ts) directly to library functions — `saveSettings`, `requestReplan`, `reconcileInverterState`, `fetchAndStoreRates`, and the shared override repository in [`src/lib/db/override-repository.ts`](../src/lib/db/override-repository.ts). There are no HTTP round-trips to SolarBuddy's own routes from the handler.
+- The lifecycle entry point [`syncHomeAssistantSetting()`](../src/lib/home-assistant/runtime.ts) is called once from `src/instrumentation.ts` on boot and again from `src/app/api/settings/route.ts` whenever any `homeassistant_*` setting changes. It is signature-compared to avoid needless reconnects during Next.js dev-mode HMR.
+- HA traffic does NOT share the `mqtt_logs` SQLite table (which is scoped to Solar Assistant broker debugging); instead it logs through `console.log` and `appendEvent({ category: 'home-assistant' })` so operator-visible events appear in the Activity feed.
+- See [`docs/home-assistant.md`](home-assistant.md) for the operator-facing setup guide and entity catalog.
+
+### 6. Charge Execution
 
 - [`src/lib/scheduler/executor.ts`](../src/lib/scheduler/executor.ts) translates planned windows into `setTimeout` timers.
 - A mode-aware command boundary under `src/lib/inverter/commands.ts` routes executor/watchdog actions either to live MQTT commands or to the virtual command adapter.

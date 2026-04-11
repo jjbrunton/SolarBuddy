@@ -88,6 +88,14 @@ export interface Settings {
   nordpool_peak_adder: string;
   nordpool_peak_start: string;
   nordpool_peak_end: string;
+  // Home Assistant integration
+  homeassistant_enabled: string;
+  homeassistant_host: string;
+  homeassistant_port: string;
+  homeassistant_username: string;
+  homeassistant_password: string;
+  homeassistant_discovery_prefix: string;
+  homeassistant_base_topic: string;
 }
 
 const tabs = [

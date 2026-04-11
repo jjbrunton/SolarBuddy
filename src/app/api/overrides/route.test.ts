@@ -1,22 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prepareMock, allMock, runMock, transactionMock, reconcileInverterStateMock } = vi.hoisted(() => {
-  const runMock = vi.fn();
-  const allMock = vi.fn();
-  return {
-    prepareMock: vi.fn((query: string) => ({ all: allMock, run: runMock })),
-    allMock,
-    runMock,
-    transactionMock: vi.fn((callback: () => void) => () => callback()),
-    reconcileInverterStateMock: vi.fn(),
-  };
-});
+const {
+  listTodayOverridesMock,
+  replaceTodayOverridesMock,
+  upsertTodayOverrideMock,
+  deleteTodayOverrideSlotMock,
+  clearTodayOverridesMock,
+  reconcileInverterStateMock,
+} = vi.hoisted(() => ({
+  listTodayOverridesMock: vi.fn(),
+  replaceTodayOverridesMock: vi.fn(),
+  upsertTodayOverrideMock: vi.fn(),
+  deleteTodayOverrideSlotMock: vi.fn(),
+  clearTodayOverridesMock: vi.fn(),
+  reconcileInverterStateMock: vi.fn(),
+}));
 
-vi.mock('@/lib/db', () => ({
-  getDb: () => ({
-    prepare: prepareMock,
-    transaction: transactionMock,
-  }),
+vi.mock('@/lib/db/override-repository', () => ({
+  listTodayOverrides: listTodayOverridesMock,
+  replaceTodayOverrides: replaceTodayOverridesMock,
+  upsertTodayOverride: upsertTodayOverrideMock,
+  deleteTodayOverrideSlot: deleteTodayOverrideSlotMock,
+  clearTodayOverrides: clearTodayOverridesMock,
 }));
 
 vi.mock('@/lib/scheduler/watchdog', () => ({
@@ -28,17 +33,15 @@ import { DELETE, GET, PATCH, POST } from './route';
 describe('/api/overrides', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-03T10:15:00Z'));
   });
 
-  it('returns today overrides', async () => {
-    allMock.mockReturnValue([{ slot_start: 'a' }]);
+  it('returns today overrides from the repository', async () => {
+    listTodayOverridesMock.mockReturnValue([{ slot_start: 'a' }]);
 
     const response = await GET();
 
     expect(await response.json()).toEqual({ overrides: [{ slot_start: 'a' }] });
-    expect(allMock).toHaveBeenCalledWith('2026-04-03');
+    expect(listTodayOverridesMock).toHaveBeenCalledTimes(1);
   });
 
   it('validates the replacement payload', async () => {
@@ -54,23 +57,21 @@ describe('/api/overrides', () => {
     expect(await response.json()).toEqual({ ok: false, error: 'slots must be an array' });
   });
 
-  it('replaces overrides and defaults invalid actions to charge', async () => {
+  it('replaces overrides via the repository helper', async () => {
+    replaceTodayOverridesMock.mockReturnValue(2);
+    const slots = [
+      { slot_start: 's1', slot_end: 'e1', action: 'hold' },
+      { slot_start: 's2', slot_end: 'e2', action: 'invalid' },
+    ];
     const response = await POST(
       new Request('http://localhost/api/overrides', {
         method: 'POST',
-        body: JSON.stringify({
-          slots: [
-            { slot_start: 's1', slot_end: 'e1', action: 'hold' },
-            { slot_start: 's2', slot_end: 'e2', action: 'invalid' },
-          ],
-        }),
+        body: JSON.stringify({ slots }),
         headers: { 'content-type': 'application/json' },
       }),
     );
 
-    expect(runMock).toHaveBeenNthCalledWith(1, '2026-04-03');
-    expect(runMock).toHaveBeenNthCalledWith(2, '2026-04-03', 's1', 'e1', 'hold', '2026-04-03T10:15:00.000Z');
-    expect(runMock).toHaveBeenNthCalledWith(3, '2026-04-03', 's2', 'e2', 'charge', '2026-04-03T10:15:00.000Z');
+    expect(replaceTodayOverridesMock).toHaveBeenCalledWith(slots);
     expect(reconcileInverterStateMock).toHaveBeenCalledWith('manual overrides replaced');
     expect(await response.json()).toEqual({ ok: true, count: 2 });
   });
@@ -93,21 +94,20 @@ describe('/api/overrides', () => {
         headers: { 'content-type': 'application/json' },
       }),
     );
-    expect(runMock).toHaveBeenNthCalledWith(1, '2026-04-03', 's1');
-    expect(runMock).toHaveBeenNthCalledWith(2, '2026-04-03', 's1', 'e1', 'discharge', '2026-04-03T10:15:00.000Z');
+    expect(upsertTodayOverrideMock).toHaveBeenCalledWith('s1', 'e1', 'discharge');
     expect(reconcileInverterStateMock).toHaveBeenCalledWith('manual override updated');
     expect(await success.json()).toEqual({ ok: true });
   });
 
   it('deletes a single slot or clears all overrides', async () => {
     const single = await DELETE(new Request('http://localhost/api/overrides?slot_start=s1'));
-    expect(runMock).toHaveBeenCalledWith('2026-04-03', 's1');
+    expect(deleteTodayOverrideSlotMock).toHaveBeenCalledWith('s1');
     expect(reconcileInverterStateMock).toHaveBeenCalledWith('manual override removed');
     expect(await single.json()).toEqual({ ok: true });
 
     vi.clearAllMocks();
     const all = await DELETE(new Request('http://localhost/api/overrides'));
-    expect(runMock).toHaveBeenCalledWith('2026-04-03');
+    expect(clearTodayOverridesMock).toHaveBeenCalledTimes(1);
     expect(reconcileInverterStateMock).toHaveBeenCalledWith('manual overrides cleared');
     expect(await all.json()).toEqual({ ok: true });
   });

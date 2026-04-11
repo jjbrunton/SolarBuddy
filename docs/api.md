@@ -44,6 +44,13 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | --- | --- | --- |
 | `POST` | `/api/notifications/test` | Send a test notification to the specified channel (`discord` or `telegram`) using the current saved settings. Returns `{ ok }` on success or `{ ok, error }` on failure. |
 
+## Home Assistant Integration
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/home-assistant/status` | Return the current Home Assistant publisher status: `{ enabled, connected, host, lastError, publishedEntities }`. Used by the Settings UI status panel. |
+| `POST` | `/api/home-assistant/test` | Open a throwaway MQTT connection with the current settings, publish and retract a test discovery config, and return `{ ok }` or `{ ok: false, error }`. Does not affect the live publisher. |
+
 ## Telemetry and Event Streams
 
 | Method | Route | Purpose |

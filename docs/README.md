@@ -15,6 +15,7 @@ This directory is the documentation entry point for SolarBuddy. Use it alongside
 - [Runbooks](runbooks.md) provides operator and maintainer procedures for backup, restore, and release checks.
 - [GitHub Repository Settings](github-settings.md) lists the GitHub-side controls that maintainers should enable outside Git.
 - [Design System](design-system.md) defines the shared visual language, tokens, UI primitives, and page anatomy for the application.
+- [Home Assistant Integration](home-assistant.md) documents the MQTT Discovery publisher, entity catalog, and automation examples.
 
 ## Canonical Starting Points
 
@@ -29,6 +30,7 @@ This directory is the documentation entry point for SolarBuddy. Use it alongside
 - Sandbox runtime and preset scenarios: [Virtual Inverter](virtual-inverter.md)
 - GitHub-side branch and security controls: [GitHub Repository Settings](github-settings.md)
 - Shared UI strategy and styling conventions: [Design System](design-system.md)
+- Home Assistant publisher setup, entities, and automations: [Home Assistant Integration](home-assistant.md)
 
 ## Documentation Maintenance
 

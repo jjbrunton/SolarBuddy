@@ -32,6 +32,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 - [Testing Strategy](docs/testing-strategy.md)
 - [AI-Assisted Workflow](docs/ai-workflow.md)
 - [Virtual Inverter](docs/virtual-inverter.md)
+- [Home Assistant Integration](docs/home-assistant.md)
 - [Release Process](docs/release-process.md)
 - [Design System](docs/design-system.md)
 - [Contributing](CONTRIBUTING.md)
@@ -40,6 +41,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 ## Features
 
 - Real-time inverter monitoring via Solar Assistant (MQTT)
+- Optional Home Assistant integration via MQTT Discovery — publishes sensors, switches, selects and buttons to HA and accepts commands from HA automations ([docs/home-assistant.md](docs/home-assistant.md))
 - Optional Virtual Inverter mode with preset sandbox scenarios for safe end-to-end testing without touching live hardware
 - Browser-side fallback for live telemetry: the UI restores the last known inverter state after a reload and shows a global status banner while waiting for fresh MQTT data
 - Live MQTT traffic log on the System Logs page for broker troubleshooting

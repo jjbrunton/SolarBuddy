@@ -96,6 +96,14 @@ export interface AppSettings {
   nordpool_peak_adder: string;
   nordpool_peak_start: string;
   nordpool_peak_end: string;
+  // Home Assistant integration (separate MQTT broker, publishes HA discovery entities)
+  homeassistant_enabled: string;
+  homeassistant_host: string;
+  homeassistant_port: string;
+  homeassistant_username: string;
+  homeassistant_password: string;
+  homeassistant_discovery_prefix: string;
+  homeassistant_base_topic: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -191,6 +199,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   nordpool_peak_adder: '12.5',
   nordpool_peak_start: '16:00',
   nordpool_peak_end: '19:00',
+  // Home Assistant integration
+  homeassistant_enabled: 'false',
+  homeassistant_host: '',
+  homeassistant_port: '1883',
+  homeassistant_username: '',
+  homeassistant_password: '',
+  homeassistant_discovery_prefix: 'homeassistant',
+  homeassistant_base_topic: 'solarbuddy',
 };
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];

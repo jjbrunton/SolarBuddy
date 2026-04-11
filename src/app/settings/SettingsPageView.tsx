@@ -11,6 +11,7 @@ import SolarSettingsView from './solar/SolarSettingsView';
 import ScheduledActionsView from './scheduled-actions/ScheduledActionsView';
 import SettingsVirtualInverterView from './SettingsVirtualInverterView';
 import NotificationsSettingsView from './notifications/NotificationsSettingsView';
+import HomeAssistantSettingsView from './home-assistant/HomeAssistantSettingsView';
 
 // Settings used to render eight flat tabs in a single row. That exposed
 // every setting at once and forced the user to guess which bucket anything
@@ -43,6 +44,7 @@ const GROUPS: SettingGroup[] = [
       { label: 'MQTT', value: 'mqtt', component: MqttSettingsView },
       { label: 'Octopus Energy', value: 'octopus', component: OctopusSettingsView },
       { label: 'Notifications', value: 'notifications', component: NotificationsSettingsView },
+      { label: 'Home Assistant', value: 'home-assistant', component: HomeAssistantSettingsView },
     ],
   },
   {
