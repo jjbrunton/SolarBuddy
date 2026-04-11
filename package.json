@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "release:dry-run": "docker build -t solarbuddy:dry-run .",
+    "release:dry-run": "docker build --build-arg BUILD_COMMIT=$(git rev-parse HEAD) --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) -t solarbuddy:dry-run .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --dir src integration.test.ts",

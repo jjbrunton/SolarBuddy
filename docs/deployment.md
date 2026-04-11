@@ -26,7 +26,10 @@ The repository includes a multi-stage `Dockerfile` that:
 Example local build and run:
 
 ```bash
-docker build -t solarbuddy .
+docker build \
+  --build-arg BUILD_COMMIT="$(git rev-parse HEAD)" \
+  --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t solarbuddy .
 docker run --rm -p 3000:3000 \
   -e DB_PATH=/app/data/solarbuddy.db \
   -v "$(pwd)/data:/app/data" \
@@ -34,6 +37,25 @@ docker run --rm -p 3000:3000 \
 ```
 
 Published releases can also ship a prebuilt container image via GitHub Container Registry. Self-hosters may choose either the published image or the repository `Dockerfile`, but the runtime contract stays the same.
+
+### Build metadata (important)
+
+The `Dockerfile` accepts two build args that are baked into the running image and surfaced from `GET /api/health`:
+
+| Build arg | Purpose |
+| --- | --- |
+| `BUILD_COMMIT` | Full git SHA of the source tree being built. |
+| `BUILD_TIME` | ISO-8601 UTC timestamp of the build (`date -u +%Y-%m-%dT%H:%M:%SZ`). |
+
+Deploy pipelines **must** pass both build args. `.dockerignore` excludes `.git` to keep image size down, so the fallback to `git rev-parse HEAD` inside the builder stage has no repo to read and will report `"unknown"` — which makes it impossible to verify from the outside which commit is running. A health response like
+
+```json
+{ "ok": true, "build": { "commit": "unknown", "commitShort": "unknown", "builtAt": "..." } }
+```
+
+means the build args were not forwarded by your deploy pipeline; it is not a build failure.
+
+For Dokploy, GitHub Actions, and similar, configure the build step to inject the values from the host git state before invoking `docker build`.
 
 ## Runtime Environment
 

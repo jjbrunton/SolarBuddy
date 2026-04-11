@@ -13,6 +13,19 @@ FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Build metadata — passed in via `docker build --build-arg`. Without
+# these, /api/health will report commit="unknown" because .git is
+# excluded by .dockerignore. Deploy pipelines should set them from the
+# host git state, e.g.
+#   docker build \
+#     --build-arg BUILD_COMMIT=$(git rev-parse HEAD) \
+#     --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+#     -t solarbuddy .
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
