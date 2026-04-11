@@ -17,12 +17,13 @@
 import type { EntityComponent } from './topics';
 import type { InverterState } from '../types';
 import type { CurrentRateSummary } from '../octopus/current-rate-summary';
-import type { ResolvedSlotAction } from '../scheduler/resolve';
+import type { ResolvedSlotAction, UpcomingEvents } from '../scheduler/resolve';
 
 export interface PublishSnapshot {
   state: InverterState;
   rateSummary: CurrentRateSummary | null;
   resolvedAction: ResolvedSlotAction | null;
+  upcomingEvents: UpcomingEvents | null;
 }
 
 export interface EntityDefinition {
@@ -200,6 +201,38 @@ export const READ_ONLY_ENTITIES: EntityDefinition[] = [
     name: 'Current Action Reason',
     icon: 'mdi:information-outline',
     readState: (s) => stringOrNull(s.resolvedAction?.detail ?? null),
+  },
+  {
+    key: 'next_action',
+    component: 'sensor',
+    name: 'Next Action',
+    icon: 'mdi:battery-clock',
+    enumOptions: ['charge', 'discharge', 'hold'],
+    readState: (s) => s.upcomingEvents?.nextAction ?? null,
+  },
+  {
+    key: 'next_action_start',
+    component: 'sensor',
+    name: 'Next Action Start',
+    deviceClass: 'timestamp',
+    icon: 'mdi:clock-start',
+    readState: (s) => isoOrNull(s.upcomingEvents?.nextActionStart ?? null),
+  },
+  {
+    key: 'next_charge_start',
+    component: 'sensor',
+    name: 'Next Charge Start',
+    deviceClass: 'timestamp',
+    icon: 'mdi:battery-plus',
+    readState: (s) => isoOrNull(s.upcomingEvents?.nextChargeStart ?? null),
+  },
+  {
+    key: 'next_discharge_start',
+    component: 'sensor',
+    name: 'Next Discharge Start',
+    deviceClass: 'timestamp',
+    icon: 'mdi:battery-minus',
+    readState: (s) => isoOrNull(s.upcomingEvents?.nextDischargeStart ?? null),
   },
   {
     key: 'current_work_mode',

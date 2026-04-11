@@ -48,6 +48,21 @@ export async function saveSettingsAction(
     await syncVirtualInverterSetting();
   }
 
+  // Home Assistant integration: sync the publisher if any HA setting changed.
+  const HOME_ASSISTANT_KEYS = [
+    'homeassistant_enabled',
+    'homeassistant_host',
+    'homeassistant_port',
+    'homeassistant_username',
+    'homeassistant_password',
+    'homeassistant_discovery_prefix',
+    'homeassistant_base_topic',
+  ] as const;
+  if (HOME_ASSISTANT_KEYS.some((key) => (validated as Record<string, string>)[key] !== undefined)) {
+    const { syncHomeAssistantSetting } = await import('@/lib/home-assistant/runtime');
+    await syncHomeAssistantSetting();
+  }
+
   // Trigger schedule replan if any schedule-relevant setting changed
   const { SCHEDULE_RELEVANT_KEYS, requestReplan } = await import('@/lib/scheduler/reevaluate');
   if (Object.keys(validated).some((key) => SCHEDULE_RELEVANT_KEYS.has(key))) {

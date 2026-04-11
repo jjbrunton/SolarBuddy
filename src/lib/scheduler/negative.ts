@@ -1,7 +1,15 @@
 import { AgileRate } from '../octopus/rates';
 import { AppSettings } from '../config';
 import { toSlotKey } from '../slot-key';
-import { calculateSlotsNeeded, ChargeWindow, mergeAdjacentSlots } from './engine';
+import { calculateSlotsNeeded, ChargeWindow, mergeAdjacentSlots, PlanningContext } from './engine';
+
+const HALF_HOUR_HOURS = 0.5;
+const SLOT_MS = 30 * 60 * 1000;
+
+function clampPercentage(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  return Math.min(100, Math.max(0, value));
+}
 
 export function findNegativePriceSlots(
   rates: AgileRate[],
@@ -35,31 +43,80 @@ export function findPreDischargeSlots(
   rates: AgileRate[],
   negativeWindows: ChargeWindow[],
   settings: AppSettings,
+  context: PlanningContext = {},
 ): ChargeWindow[] {
   if (settings.negative_price_pre_discharge !== 'true') return [];
   if (negativeWindows.length === 0) return [];
 
   const rateMap = new Map(rates.map((r) => [toSlotKey(r.valid_from), r]));
+  const claimedKeys = new Set<string>();
   const dischargeSlots: AgileRate[] = [];
 
+  // Energy per pre-discharge slot (load drained while serving the house) and
+  // per negative slot (refill capacity once we recharge from the trough).
+  const drainPerSlotKwh =
+    ((parseFloat(settings.estimated_consumption_w) || 500) / 1000) * HALF_HOUR_HOURS;
+  const chargeRatePct = parseFloat(settings.charge_rate);
+  const effectiveChargeRate =
+    (Number.isFinite(chargeRatePct) ? chargeRatePct : 100) / 100;
+  const chargePerSlotKwh =
+    (parseFloat(settings.max_charge_power_kw) || 3.6) * effectiveChargeRate * HALF_HOUR_HOURS;
+
+  // Optional SOC safety: if we know current SoC, cap drain so we never go
+  // below the discharge floor. The cap only binds for the *first* negative
+  // window in the horizon — subsequent windows are assumed to refill the
+  // battery (the negative run is what makes pre-discharge worth it in the
+  // first place; the same assumption is made elsewhere in the planner).
+  const currentSoc = context.currentSoc ?? null;
+  const dischargeFloor =
+    clampPercentage(parseFloat(settings.discharge_soc_floor)) ?? 0;
+  const batteryCapacityKwh = parseFloat(settings.battery_capacity_kwh) || 0;
+  let initialSocSlotCap = Number.POSITIVE_INFINITY;
+  if (currentSoc !== null && batteryCapacityKwh > 0 && drainPerSlotKwh > 0) {
+    const headroomPct = Math.max(0, currentSoc - dischargeFloor);
+    const headroomKwh = (headroomPct / 100) * batteryCapacityKwh;
+    initialSocSlotCap = Math.floor(headroomKwh / drainPerSlotKwh);
+  }
+  let firstWindowProcessed = false;
+
   for (const window of negativeWindows) {
-    // Find the 30-min slot immediately before this negative window
-    const windowStart = new Date(window.slot_start);
-    const preSlotStart = new Date(windowStart.getTime() - 30 * 60 * 1000);
+    // Per-window refill capacity: how many pre-discharge half-hours can the
+    // negative window energetically offset? One 30-min charge slot at 3.6 kW
+    // (1.8 kWh) refills ~7 slots of typical 500 W load — usually generous.
+    const refillCapacityKwh = window.slots.length * chargePerSlotKwh;
+    const refillSlotCap =
+      drainPerSlotKwh > 0 ? Math.floor(refillCapacityKwh / drainPerSlotKwh) : 0;
 
-    const preRate = rateMap.get(toSlotKey(preSlotStart));
+    const socSlotCap = firstWindowProcessed
+      ? Number.POSITIVE_INFINITY
+      : initialSocSlotCap;
+    const slotCap = Math.min(refillSlotCap, socSlotCap);
 
-    if (preRate && preRate.price_inc_vat >= 0) {
+    let slotsTaken = 0;
+    let cursorMs = new Date(window.slot_start).getTime();
+    while (slotsTaken < slotCap) {
+      cursorMs -= SLOT_MS;
+      const preRate = rateMap.get(toSlotKey(new Date(cursorMs)));
+      if (!preRate) break;
+      // Walked into another negative run — stop. The earlier negative
+      // window will be handled by its own iteration.
+      if (preRate.price_inc_vat < 0) break;
+      // Already claimed by an earlier window's walk-back; stop here so we
+      // don't sandwich a charge window between two pre-discharge runs.
+      if (claimedKeys.has(preRate.valid_from)) break;
+
+      claimedKeys.add(preRate.valid_from);
       dischargeSlots.push(preRate);
+      slotsTaken += 1;
     }
+
+    firstWindowProcessed = true;
   }
 
   if (dischargeSlots.length === 0) return [];
 
-  // Deduplicate (in case multiple negative windows share a pre-slot)
-  const unique = [...new Map(dischargeSlots.map((s) => [s.valid_from, s])).values()];
-  unique.sort((a, b) => a.valid_from.localeCompare(b.valid_from));
-  return mergeAdjacentSlots(unique, 'discharge');
+  dischargeSlots.sort((a, b) => a.valid_from.localeCompare(b.valid_from));
+  return mergeAdjacentSlots(dischargeSlots, 'discharge');
 }
 
 export function findNegativeRunDischargeSlots(

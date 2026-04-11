@@ -22,7 +22,7 @@
 import { onStateChange, getState } from '../state';
 import type { InverterState } from '../types';
 import { getSettings } from '../config';
-import { getResolvedSlotAction } from '../scheduler/watchdog';
+import { getResolvedSlotAction, getUpcomingEvents } from '../scheduler/watchdog';
 import { summarizeCurrentRate, type CurrentRateSummary } from '../octopus/current-rate-summary';
 import { getStoredRates, type AgileRate } from '../octopus/rates';
 import { getVirtualNow, getVirtualRates, isVirtualModeEnabled } from '../virtual-inverter/runtime';
@@ -83,7 +83,14 @@ function buildSnapshot(): PublishSnapshot {
     // publish `None` for the action sensors until a plan exists.
     resolvedAction = null;
   }
-  return { state, rateSummary, resolvedAction };
+  let upcomingEvents: PublishSnapshot['upcomingEvents'] = null;
+  try {
+    upcomingEvents = getUpcomingEvents(now, resolvedAction?.action ?? null);
+  } catch {
+    // Same defensive swallow — `None` for the next-* sensors until a plan exists.
+    upcomingEvents = null;
+  }
+  return { state, rateSummary, resolvedAction, upcomingEvents };
 }
 
 /**

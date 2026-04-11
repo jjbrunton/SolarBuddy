@@ -8,6 +8,21 @@ const baseSettings = {
   negative_price_pre_discharge: 'false',
 } as AppSettings;
 
+// Settings used by the multi-slot walk-back tests. Defaults give a generous
+// energy budget (3.6 kW charge × 0.5 h = 1.8 kWh per refill slot, 500 W load
+// = 0.25 kWh per drained slot → ~7 pre-discharge slots offset by one negative
+// slot) so the walk-back is bounded by adjacency, not energy.
+const enabledSettings = {
+  ...DEFAULT_SETTINGS,
+  negative_price_charging: 'true',
+  negative_price_pre_discharge: 'true',
+  battery_capacity_kwh: '10',
+  max_charge_power_kw: '3.6',
+  charge_rate: '100',
+  estimated_consumption_w: '500',
+  discharge_soc_floor: '20',
+} as AppSettings;
+
 function rate(valid_from: string, valid_to: string, price: number): AgileRate {
   return { valid_from, valid_to, price_inc_vat: price, price_exc_vat: price };
 }
@@ -81,6 +96,134 @@ describe('findPreDischargeSlots', () => {
     // Window 1 starts at 01:30, pre-slot is 01:00 (positive) — included
     // Window 2 starts at 03:00, pre-slot is 02:30 (positive) — included
     expect(discharge.every((d) => d.slots.every((s) => s.price_inc_vat >= 0))).toBe(true);
+  });
+
+  it('walks back through multiple consecutive positive slots before a negative window', () => {
+    // Two positive slots ramping into a long negative window. The energy
+    // budget (10 kWh battery, 500 W load, 16 negative slots) is generous,
+    // so both positive slots should be claimed.
+    const ramp: AgileRate[] = [
+      rate('2026-04-11T20:30:00Z', '2026-04-11T21:00:00Z', 1.89),
+      rate('2026-04-11T21:00:00Z', '2026-04-11T21:30:00Z', 2.35),
+      rate('2026-04-11T21:30:00Z', '2026-04-11T22:00:00Z', -1.04),
+      rate('2026-04-11T22:00:00Z', '2026-04-11T22:30:00Z', -1.30),
+      rate('2026-04-11T22:30:00Z', '2026-04-11T23:00:00Z', -3.93),
+    ];
+    const negWindows = findNegativePriceSlots(ramp, enabledSettings);
+    const discharge = findPreDischargeSlots(ramp, negWindows, enabledSettings, {
+      currentSoc: 51,
+    });
+
+    expect(discharge).toHaveLength(1);
+    expect(discharge[0].type).toBe('discharge');
+    expect(discharge[0].slots).toHaveLength(2);
+    expect(discharge[0].slots.map((s) => s.valid_from)).toEqual([
+      '2026-04-11T20:30:00Z',
+      '2026-04-11T21:00:00Z',
+    ]);
+  });
+
+  it('stops walking back when the SOC headroom above the discharge floor is exhausted', () => {
+    // Three positive slots before a negative window, but currentSoc=25 with
+    // a 20% floor leaves only 5% × 10 kWh = 0.5 kWh of headroom = 2 slots
+    // worth of drain (0.25 kWh each). The third slot must NOT be claimed.
+    const ramp: AgileRate[] = [
+      rate('2026-04-11T19:30:00Z', '2026-04-11T20:00:00Z', 3.0),
+      rate('2026-04-11T20:00:00Z', '2026-04-11T20:30:00Z', 2.0),
+      rate('2026-04-11T20:30:00Z', '2026-04-11T21:00:00Z', 1.0),
+      rate('2026-04-11T21:00:00Z', '2026-04-11T21:30:00Z', -2.0),
+      rate('2026-04-11T21:30:00Z', '2026-04-11T22:00:00Z', -3.0),
+    ];
+    const negWindows = findNegativePriceSlots(ramp, enabledSettings);
+    const discharge = findPreDischargeSlots(ramp, negWindows, enabledSettings, {
+      currentSoc: 25,
+    });
+
+    expect(discharge).toHaveLength(1);
+    expect(discharge[0].slots).toHaveLength(2);
+    // Should claim the two slots immediately before the negative window
+    // (20:00 and 20:30), NOT the earliest (19:30).
+    expect(discharge[0].slots.map((s) => s.valid_from)).toEqual([
+      '2026-04-11T20:00:00Z',
+      '2026-04-11T20:30:00Z',
+    ]);
+  });
+
+  it('does not double-claim slots when two negative windows would walk into each other', () => {
+    // window A: 02:00–02:30 (negative). Pre-slot 01:30 is positive.
+    // window B: 03:00–03:30 (negative). Pre-slots 02:30 (negative — stops),
+    // hmm — better: gap of two positive slots between A's end and B's start.
+    //   01:30 +5  ← A's pre-slot
+    //   02:00 -2  A
+    //   02:30 +4  B walks back into here
+    //   03:00 +3  B's first pre-slot (immediately before B)
+    //   03:30 -1  B
+    const interleaved: AgileRate[] = [
+      rate('2026-04-01T01:30:00Z', '2026-04-01T02:00:00Z', 5),
+      rate('2026-04-01T02:00:00Z', '2026-04-01T02:30:00Z', -2),
+      rate('2026-04-01T02:30:00Z', '2026-04-01T03:00:00Z', 4),
+      rate('2026-04-01T03:00:00Z', '2026-04-01T03:30:00Z', 3),
+      rate('2026-04-01T03:30:00Z', '2026-04-01T04:00:00Z', -1),
+    ];
+    const negWindows = findNegativePriceSlots(interleaved, enabledSettings);
+    expect(negWindows).toHaveLength(2);
+
+    const discharge = findPreDischargeSlots(
+      interleaved,
+      negWindows,
+      enabledSettings,
+      { currentSoc: 100 },
+    );
+
+    // Window A (start 02:00) walks back: 01:30 ✓ (positive). Stops at start.
+    // Window B (start 03:30) walks back: 03:00 ✓, 02:30 ✓, then hits the
+    // negative slot at 02:00 and stops. Three discharge slots total, two
+    // separate windows after merging (01:30 isolated, 02:30+03:00 adjacent).
+    const allClaimed = discharge.flatMap((w) => w.slots.map((s) => s.valid_from));
+    expect(allClaimed.sort()).toEqual([
+      '2026-04-01T01:30:00Z',
+      '2026-04-01T02:30:00Z',
+      '2026-04-01T03:00:00Z',
+    ]);
+    // No duplicates
+    expect(new Set(allClaimed).size).toBe(allClaimed.length);
+  });
+
+  it('respects the per-window refill capacity even when many positive slots precede', () => {
+    // Single 30-min negative slot can only refill ~7 pre-discharge slots
+    // (1.8 kWh charge / 0.25 kWh drain). Provide 10 positive slots before
+    // and verify only 7 are claimed.
+    const slotStamps = [
+      ['2026-04-01T00:00:00Z', '2026-04-01T00:30:00Z'],
+      ['2026-04-01T00:30:00Z', '2026-04-01T01:00:00Z'],
+      ['2026-04-01T01:00:00Z', '2026-04-01T01:30:00Z'],
+      ['2026-04-01T01:30:00Z', '2026-04-01T02:00:00Z'],
+      ['2026-04-01T02:00:00Z', '2026-04-01T02:30:00Z'],
+      ['2026-04-01T02:30:00Z', '2026-04-01T03:00:00Z'],
+      ['2026-04-01T03:00:00Z', '2026-04-01T03:30:00Z'],
+      ['2026-04-01T03:30:00Z', '2026-04-01T04:00:00Z'],
+      ['2026-04-01T04:00:00Z', '2026-04-01T04:30:00Z'],
+      ['2026-04-01T04:30:00Z', '2026-04-01T05:00:00Z'],
+    ] as const;
+    const positives = slotStamps.map(([from, to]) => rate(from, to, 5));
+    const negSlot = rate(
+      '2026-04-01T05:00:00Z',
+      '2026-04-01T05:30:00Z',
+      -2,
+    );
+    const allRates = [...positives, negSlot];
+
+    const negWindows = findNegativePriceSlots(allRates, enabledSettings);
+    const discharge = findPreDischargeSlots(allRates, negWindows, enabledSettings, {
+      currentSoc: 100,
+    });
+
+    expect(discharge).toHaveLength(1);
+    // refillSlotCap = floor(1 * 1.8 / 0.25) = 7
+    expect(discharge[0].slots).toHaveLength(7);
+    // Should be the 7 most recent positive slots (closest to the negative)
+    expect(discharge[0].slots[0].valid_from).toBe('2026-04-01T01:30:00Z');
+    expect(discharge[0].slots[6].valid_from).toBe('2026-04-01T04:30:00Z');
   });
 });
 

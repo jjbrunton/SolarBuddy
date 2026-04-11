@@ -47,6 +47,10 @@ All entities live under a single Home Assistant device `SolarBuddy` with identif
 | `sensor.solarbuddy_rate_status` | sensor | enum | `negative` / `best` / `cheap` / `average` / `expensive` |
 | `sensor.solarbuddy_current_action` | sensor | enum | `charge` / `discharge` / `hold` — the planner's current resolved action |
 | `sensor.solarbuddy_current_action_reason` | sensor | text | Human-readable explanation from the resolver |
+| `sensor.solarbuddy_next_action` | sensor | enum | `charge` / `discharge` / `hold` — the next planned action that differs from the current one |
+| `sensor.solarbuddy_next_action_start` | sensor | timestamp | When the next planned action begins |
+| `sensor.solarbuddy_next_charge_start` | sensor | timestamp | Start of the next planned charge run (skipping the current one if charging) |
+| `sensor.solarbuddy_next_discharge_start` | sensor | timestamp | Start of the next planned discharge run (skipping the current one if discharging) |
 | `sensor.solarbuddy_current_work_mode` | sensor | text | Inverter work mode read-back |
 | `sensor.solarbuddy_last_updated` | sensor | timestamp | Last state update timestamp |
 | `sensor.solarbuddy_runtime_mode` | sensor | enum | `real` / `virtual` — shows when Virtual Inverter mode is active |
@@ -91,7 +95,7 @@ On connect, SolarBuddy publishes every discovery config (retained) and a full in
 Solar Assistant publishes telemetry to MQTT many times per second. Re-publishing every delta directly to Home Assistant would waste broker bandwidth and create noisy history graphs. SolarBuddy applies two rules:
 
 1. **1-second debounced flush** — all telemetry-driven entities (battery_soc, pv_power, grid_power, etc.) are coalesced into a single publish burst at most once per second. Numeric tolerances (e.g. 5W for power, 1% for SOC, 0.5°C for temperatures) suppress nuisance deltas.
-2. **60-second periodic tick** — tariff-driven and planner-driven entities (`current_rate`, `next_rate`, `rate_status`, `current_action`, `current_action_reason`) are refreshed once per minute, plus opportunistically whenever the shared state store changes.
+2. **60-second periodic tick** — tariff-driven and planner-driven entities (`current_rate`, `next_rate`, `rate_status`, `current_action`, `current_action_reason`, `next_action`, `next_action_start`, `next_charge_start`, `next_discharge_start`) are refreshed once per minute, plus opportunistically whenever the shared state store changes.
 
 On broker reconnect or on Home Assistant birth, SolarBuddy forces a full snapshot (every entity, including unchanged ones) so HA sees the latest values immediately.
 
