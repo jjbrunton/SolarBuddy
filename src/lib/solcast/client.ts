@@ -65,7 +65,22 @@ function readFreshForecastCache(): PVForecastSlot[] | null {
 function writeForecastCache(forecasts: PVForecastSlot[]) {
   if (forecasts.length === 0) return;
   const db = getDb();
-  const upsert = db.prepare(`
+
+  // See storePVForecast for rationale: forecast.solar slot boundaries drift
+  // a few minutes between fetches, so a keyed upsert leaves stale
+  // overlapping rows behind. Delete any row whose window overlaps the new
+  // forecast's window before inserting the fresh rows.
+  let minValidFrom = forecasts[0].valid_from;
+  let maxValidTo = forecasts[0].valid_to;
+  for (const slot of forecasts) {
+    if (slot.valid_from < minValidFrom) minValidFrom = slot.valid_from;
+    if (slot.valid_to > maxValidTo) maxValidTo = slot.valid_to;
+  }
+
+  const deleteOverlapping = db.prepare(
+    'DELETE FROM pv_forecasts WHERE valid_from < ? AND valid_to > ?',
+  );
+  const insert = db.prepare(`
     INSERT INTO pv_forecasts (valid_from, valid_to, pv_estimate_w, pv_estimate10_w, pv_estimate90_w, fetched_at)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(valid_from) DO UPDATE SET
@@ -77,8 +92,9 @@ function writeForecastCache(forecasts: PVForecastSlot[]) {
   `);
   const now = new Date().toISOString();
   const transaction = db.transaction((slots: PVForecastSlot[]) => {
+    deleteOverlapping.run(maxValidTo, minValidFrom);
     for (const slot of slots) {
-      upsert.run(
+      insert.run(
         slot.valid_from,
         slot.valid_to,
         slot.pv_estimate_w,
