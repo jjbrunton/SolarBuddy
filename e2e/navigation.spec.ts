@@ -6,10 +6,16 @@ test('health endpoint responds successfully', async ({ request }) => {
   expect(response.ok()).toBeTruthy();
   await expect(response).toBeOK();
 
-  expect(await response.json()).toEqual({
+  const payload = await response.json();
+  expect(payload).toMatchObject({
     ok: true,
     service: 'solarbuddy',
     timestamp: expect.any(String),
+    build: {
+      commit: expect.any(String),
+      commitShort: expect.any(String),
+      builtAt: expect.any(String),
+    },
   });
 });
 
