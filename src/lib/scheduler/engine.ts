@@ -560,7 +560,13 @@ export function buildSchedulePlan(
   // run can still trigger a pre-slot discharge when the feature is enabled
   // independently. findPreDischargeSlots already refuses to emit a discharge when
   // the preceding slot is itself negative, so there's no risk of double-discharging.
-  const preDischargeWindows = findPreDischargeSlots(rates, rawNegativeWindows, settings);
+  // Context is forwarded so the walk-back can respect the SOC discharge floor.
+  const preDischargeWindows = findPreDischargeSlots(
+    rates,
+    rawNegativeWindows,
+    settings,
+    context,
+  );
 
   const suppressedKeys = findSuppressedPreCheapestKeys(baseWindows, rates, settings);
   const peakPrepWindows = filterSuppressedWindows(
