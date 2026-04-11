@@ -7,6 +7,12 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    ignore:
+      # eslint 10 removes context.getFilename(), which the eslint-plugin-react
+      # pinned by eslint-config-next still calls. Hold the major until Next.js
+      # ships a compatible eslint-config-next. Minor/patch bumps still flow.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dev-dependencies:
         dependency-type: "development"
