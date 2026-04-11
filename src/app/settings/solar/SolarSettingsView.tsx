@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MapPin, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -8,12 +8,59 @@ import { useSettings, Field, inputClass, SaveButton, SettingsSection } from '@/c
 
 type GeoStatus = 'idle' | 'locating' | 'error';
 
+/**
+ * Validate pv_kwp for obvious unit mistakes (entering watts instead of kWp).
+ * Domestic arrays are typically 1–20 kWp; anything above 100 is almost
+ * certainly a unit error (e.g. "2525" meaning 2525 W = 2.525 kWp).
+ */
+function validatePvKwp(value: string): { level: 'ok' | 'warn' | 'error'; message: string | null } {
+  const trimmed = value.trim();
+  if (trimmed === '') return { level: 'ok', message: null };
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { level: 'error', message: 'Enter a positive number in kWp (e.g. 4.0).' };
+  }
+  if (parsed > 100) {
+    const suggested = (parsed / 1000).toFixed(3).replace(/\.?0+$/, '');
+    return {
+      level: 'warn',
+      message: `${parsed} kWp is unusually large for a rooftop array. Did you mean ${suggested} kWp? (${parsed} W = ${suggested} kWp)`,
+    };
+  }
+  if (parsed > 30) {
+    return {
+      level: 'warn',
+      message: 'Larger than a typical domestic array (most are under 20 kWp). Double-check this is kWp and not watts.',
+    };
+  }
+  return { level: 'ok', message: null };
+}
+
+const PV_FORECAST_FIELDS = [
+  'pv_latitude',
+  'pv_longitude',
+  'pv_declination',
+  'pv_azimuth',
+  'pv_kwp',
+  'pv_forecast_enabled',
+] as const;
+
 export default function SolarSettingsView() {
-  const { settings, update, save, saving, message } = useSettings();
+  const { settings, update, persistSettings, saving, message } = useSettings();
   const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle');
   const [geoError, setGeoError] = useState<string | null>(null);
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'fetching'>('idle');
   const [fetchMessage, setFetchMessage] = useState<string | null>(null);
+  // Snapshot of the forecast-affecting fields as of the last load/save, used
+  // to detect when a save should trigger an automatic forecast refresh.
+  const lastSavedForecastFields = useRef<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (settings && lastSavedForecastFields.current === null) {
+      const snapshot: Record<string, string> = {};
+      for (const key of PV_FORECAST_FIELDS) snapshot[key] = settings[key];
+      lastSavedForecastFields.current = snapshot;
+    }
+  }, [settings]);
 
   const handleGeolocate = () => {
     if (!navigator.geolocation) {
@@ -58,9 +105,34 @@ export default function SolarSettingsView() {
     setFetchStatus('idle');
   };
 
+  const handleSave = async () => {
+    if (!settings) return;
+    // Detect whether any forecast-affecting field changed since last save.
+    const previous = lastSavedForecastFields.current;
+    const forecastFieldsChanged = previous
+      ? PV_FORECAST_FIELDS.some((key) => previous[key] !== settings[key])
+      : false;
+
+    const result = await persistSettings(settings);
+    if (!result.ok) return;
+
+    // Refresh the snapshot for the next change-detection pass.
+    const snapshot: Record<string, string> = {};
+    for (const key of PV_FORECAST_FIELDS) snapshot[key] = settings[key];
+    lastSavedForecastFields.current = snapshot;
+
+    // If PV fields changed and the forecast is enabled, force a fresh fetch
+    // so the cached watts reflect the new configuration immediately instead
+    // of waiting up to 2 hours for the next cron cycle.
+    if (forecastFieldsChanged && settings.pv_forecast_enabled === 'true') {
+      await handleFetchForecast();
+    }
+  };
+
   if (!settings) return <Card><p className="text-sb-text-muted">Loading settings...</p></Card>;
 
   const forecastEnabled = settings.pv_forecast_enabled === 'true';
+  const kwpValidation = validatePvKwp(settings.pv_kwp);
 
   return (
     <div className="space-y-6">
@@ -130,7 +202,7 @@ export default function SolarSettingsView() {
                     placeholder="-0.1278"
                   />
                 </Field>
-                <Field label="Panel capacity (kWp)" description="Total installed PV capacity in kilowatts peak">
+                <Field label="Panel capacity (kWp)" description="Total installed PV capacity in kilowatts peak. For a 2525 W array, enter 2.525.">
                   <input
                     className={inputClass}
                     type="text"
@@ -138,7 +210,17 @@ export default function SolarSettingsView() {
                     value={settings.pv_kwp}
                     onChange={(e) => update('pv_kwp', e.target.value)}
                     placeholder="4.0"
+                    aria-invalid={kwpValidation.level !== 'ok' ? true : undefined}
                   />
+                  {kwpValidation.message ? (
+                    <p
+                      className={`mt-1.5 text-xs leading-5 ${
+                        kwpValidation.level === 'error' ? 'text-sb-danger' : 'text-sb-warning'
+                      }`}
+                    >
+                      {kwpValidation.message}
+                    </p>
+                  ) : null}
                 </Field>
                 <Field label="Declination (tilt)" description="Panel angle from horizontal in degrees (0–90). Default 35.">
                   <input
@@ -178,7 +260,7 @@ export default function SolarSettingsView() {
         </SettingsSection>
       </Card>
 
-      <SaveButton saving={saving} message={message} onSave={save} />
+      <SaveButton saving={saving} message={message} onSave={handleSave} />
     </div>
   );
 }
