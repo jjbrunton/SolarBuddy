@@ -92,8 +92,24 @@ describe('/api/forecast', () => {
 
     const response = await POST(new Request('http://localhost/api/forecast', { method: 'POST' }));
 
-    expect(fetchPVForecastMock).toHaveBeenCalledWith('51.5', '-0.1', '35', '0', '4.2');
+    expect(fetchPVForecastMock).toHaveBeenCalledWith('51.5', '-0.1', '35', '0', '4.2', false);
     expect(storePVForecastMock).toHaveBeenCalledWith([{ period_end: 'a' }]);
+    expect(await response.json()).toEqual({ ok: true, count: 1 });
+  });
+
+  it('bypasses the freshness gate and forces a refetch when force=true', async () => {
+    // Cache is "fresh" (30 min old) — normally this would skip the fetch.
+    getLatestForecastAgeMock.mockReturnValue(30);
+    fetchPVForecastMock.mockResolvedValue([{ period_end: 'b' }]);
+
+    const response = await POST(
+      new Request('http://localhost/api/forecast?force=true', { method: 'POST' }),
+    );
+
+    // force=true must be propagated all the way down to fetchPVForecast so
+    // its internal 4-hour cache is bypassed too.
+    expect(fetchPVForecastMock).toHaveBeenCalledWith('51.5', '-0.1', '35', '0', '4.2', true);
+    expect(storePVForecastMock).toHaveBeenCalledWith([{ period_end: 'b' }]);
     expect(await response.json()).toEqual({ ok: true, count: 1 });
   });
 

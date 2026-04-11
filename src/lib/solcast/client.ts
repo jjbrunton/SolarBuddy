@@ -99,9 +99,11 @@ function writeForecastCache(forecasts: PVForecastSlot[]) {
  * Fetch PV forecast from api.forecast.solar (free, no auth required).
  * Returns hourly watt estimates converted to half-hour slots.
  *
- * Cache-first: if the DB has PV forecast rows fresher than 4 hours, they're
- * returned directly without hitting the API. Otherwise a fresh request is
- * made and the result is persisted to the cache.
+ * Cache-first (default): if the DB has PV forecast rows fresher than 4 hours,
+ * they're returned directly without hitting the API. Otherwise a fresh request
+ * is made and the result is persisted to the cache. Pass `force=true` to
+ * bypass the cache and always re-fetch — required after a config change
+ * (e.g. pv_kwp correction) so the stale rows get overwritten with new values.
  *
  * API: GET https://api.forecast.solar/estimate/{lat}/{lon}/{dec}/{az}/{kwp}
  * - lat/lon: location
@@ -115,11 +117,16 @@ export async function fetchPVForecast(
   declination: string,
   azimuth: string,
   kwp: string,
+  force = false,
 ): Promise<PVForecastSlot[]> {
-  const cached = readFreshForecastCache();
-  if (cached) {
-    console.log(`[PVForecast] Using cached forecast (${cached.length} slots)`);
-    return cached;
+  if (!force) {
+    const cached = readFreshForecastCache();
+    if (cached) {
+      console.log(`[PVForecast] Using cached forecast (${cached.length} slots)`);
+      return cached;
+    }
+  } else {
+    console.log('[PVForecast] Forced refresh — bypassing internal cache');
   }
 
   const url = `https://api.forecast.solar/estimate/${latitude}/${longitude}/${declination}/${azimuth}/${kwp}`;

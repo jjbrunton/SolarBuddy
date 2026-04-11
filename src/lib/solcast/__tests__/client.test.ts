@@ -142,4 +142,41 @@ describe('fetchPVForecast', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(second).toEqual(first);
   });
+
+  it('bypasses the internal cache when force=true', async () => {
+    // Seed a "fresh" cache so a non-forced call would short-circuit.
+    cacheState.latest = new Date().toISOString();
+    cacheState.rows = [
+      {
+        valid_from: '2026-04-03T10:00:00.000Z',
+        valid_to: '2026-04-03T10:30:00.000Z',
+        pv_estimate_w: 9999, // stale / wrong value that must NOT be returned
+        pv_estimate10_w: 8000,
+        pv_estimate90_w: 11000,
+        fetched_at: cacheState.latest,
+      },
+    ];
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: {
+            watts: {
+              '2026-04-03T10:00:00Z': 0,
+              '2026-04-03T11:00:00Z': 1000,
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const forced = await fetchPVForecast('51.5', '-0.1', '35', '0', '4.2', true);
+
+    // The API must have been hit even though the cache was fresh, and the
+    // returned rows must be the fresh interpolated values, not the seeded
+    // stale ones.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(forced.every((slot) => slot.pv_estimate_w !== 9999)).toBe(true);
+  });
 });

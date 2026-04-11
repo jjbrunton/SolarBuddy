@@ -50,6 +50,7 @@ export async function POST(request: Request) {
       settings.pv_declination || '35',
       settings.pv_azimuth || '0',
       settings.pv_kwp,
+      force,
     );
 
     if (forecasts.length > 0) {
