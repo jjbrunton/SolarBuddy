@@ -5,6 +5,7 @@ const {
   getStateMock,
   getSettingsMock,
   getResolvedSlotActionMock,
+  getUpcomingEventsMock,
   summarizeCurrentRateMock,
   getStoredRatesMock,
   getVirtualNowMock,
@@ -16,6 +17,7 @@ const {
   getStateMock: vi.fn(),
   getSettingsMock: vi.fn(),
   getResolvedSlotActionMock: vi.fn(),
+  getUpcomingEventsMock: vi.fn(),
   summarizeCurrentRateMock: vi.fn(),
   getStoredRatesMock: vi.fn(() => [] as unknown[]),
   getVirtualNowMock: vi.fn(() => new Date('2026-04-10T12:00:00.000Z')),
@@ -35,6 +37,7 @@ vi.mock('../../config', () => ({
 
 vi.mock('../../scheduler/watchdog', () => ({
   getResolvedSlotAction: getResolvedSlotActionMock,
+  getUpcomingEvents: getUpcomingEventsMock,
 }));
 
 vi.mock('../../octopus/current-rate-summary', () => ({
@@ -141,6 +144,12 @@ describe('home-assistant state publisher', () => {
       slotStart: '2026-04-10T12:00:00.000Z',
       slotEnd: '2026-04-10T12:30:00.000Z',
     });
+    getUpcomingEventsMock.mockReturnValue({
+      nextAction: 'hold',
+      nextActionStart: '2026-04-10T13:00:00.000Z',
+      nextChargeStart: '2026-04-10T23:30:00.000Z',
+      nextDischargeStart: '2026-04-10T17:00:00.000Z',
+    });
     summarizeCurrentRateMock.mockReturnValue({
       current: { valid_from: '2026-04-10T12:00:00.000Z', valid_to: '2026-04-10T12:30:00.000Z', price_inc_vat: 21.5 },
       next: { valid_from: '2026-04-10T12:30:00.000Z', valid_to: '2026-04-10T13:00:00.000Z', price_inc_vat: 18.0 },
@@ -175,6 +184,41 @@ describe('home-assistant state publisher', () => {
     expect(watchdog?.payload).toBe('ON');
     const strategy = calls.find((c) => c.topic === 'solarbuddy/select/charging_strategy/state');
     expect(strategy?.payload).toBe('night_fill');
+
+    control.stop();
+  });
+
+  it('publishes upcoming-event sensors and forwards the current action to the resolver', () => {
+    const { publisher, calls } = makePublisher();
+    const control = startStatePublisher(publisher, topics);
+    control.publishFullSnapshot();
+
+    const nextAction = calls.find((c) => c.topic === 'solarbuddy/sensor/next_action/state');
+    expect(nextAction?.payload).toBe('hold');
+    const nextActionStart = calls.find((c) => c.topic === 'solarbuddy/sensor/next_action_start/state');
+    expect(nextActionStart?.payload).toBe('2026-04-10T13:00:00.000Z');
+    const nextCharge = calls.find((c) => c.topic === 'solarbuddy/sensor/next_charge_start/state');
+    expect(nextCharge?.payload).toBe('2026-04-10T23:30:00.000Z');
+    const nextDischarge = calls.find((c) => c.topic === 'solarbuddy/sensor/next_discharge_start/state');
+    expect(nextDischarge?.payload).toBe('2026-04-10T17:00:00.000Z');
+
+    // The publisher must pass the resolved current action through so the
+    // walker can skip the current contiguous run.
+    expect(getUpcomingEventsMock).toHaveBeenCalledWith(expect.any(Date), 'charge');
+
+    control.stop();
+  });
+
+  it('publishes None for upcoming-event sensors when the resolver throws', () => {
+    const { publisher, calls } = makePublisher();
+    getUpcomingEventsMock.mockImplementationOnce(() => {
+      throw new Error('no plan');
+    });
+    const control = startStatePublisher(publisher, topics);
+    control.publishFullSnapshot();
+
+    const nextCharge = calls.find((c) => c.topic === 'solarbuddy/sensor/next_charge_start/state');
+    expect(nextCharge?.payload).toBe('None');
 
     control.stop();
   });

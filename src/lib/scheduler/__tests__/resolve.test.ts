@@ -158,7 +158,7 @@ vi.mock('../../virtual-inverter/runtime', () => ({
   isVirtualModeEnabled: () => false,
 }));
 
-import { resolveSlotAction, resolveSlotActionRange } from '../resolve';
+import { resolveSlotAction, resolveSlotActionRange, resolveUpcomingEvents } from '../resolve';
 
 describe('resolveSlotAction', () => {
   const now = new Date('2026-04-01T10:10:00Z');
@@ -704,5 +704,74 @@ describe('resolveSlotActionRange', () => {
     expect(result.rangeStart).toBe('2026-04-01T10:00:00Z');
     expect(result.rangeEnd).toBe('2026-04-01T10:30:00Z');
     expect(result.slotsInRange).toBe(1);
+  });
+});
+
+describe('resolveUpcomingEvents', () => {
+  const now = new Date('2026-04-01T10:10:00Z');
+
+  beforeEach(() => {
+    overrideRow = null;
+    autoOverrideRows = [];
+    planSlotRow = null;
+    planSlotRows = [];
+    scheduledActionResult = null;
+    scheduledActionLookup = null;
+  });
+
+  it('returns null fields when there are no upcoming plan slots', () => {
+    const result = resolveUpcomingEvents(now, null);
+    expect(result).toEqual({
+      nextAction: null,
+      nextActionStart: null,
+      nextChargeStart: null,
+      nextDischargeStart: null,
+    });
+  });
+
+  it('skips the leading run of slots matching the current action when finding nextAction', () => {
+    planSlotRows = [
+      // Two contiguous charge slots — the current run.
+      { slot_start: '2026-04-01T10:00:00Z', slot_end: '2026-04-01T10:30:00Z', action: 'charge', reason: null },
+      { slot_start: '2026-04-01T10:30:00Z', slot_end: '2026-04-01T11:00:00Z', action: 'charge', reason: null },
+      // Then a discharge slot — should be reported as nextAction.
+      { slot_start: '2026-04-01T11:00:00Z', slot_end: '2026-04-01T11:30:00Z', action: 'discharge', reason: null },
+      { slot_start: '2026-04-01T11:30:00Z', slot_end: '2026-04-01T12:00:00Z', action: 'hold', reason: null },
+      // And a later charge run.
+      { slot_start: '2026-04-01T23:00:00Z', slot_end: '2026-04-01T23:30:00Z', action: 'charge', reason: null },
+    ];
+
+    const result = resolveUpcomingEvents(now, 'charge');
+
+    expect(result.nextAction).toBe('discharge');
+    expect(result.nextActionStart).toBe('2026-04-01T11:00:00Z');
+    expect(result.nextDischargeStart).toBe('2026-04-01T11:00:00Z');
+    expect(result.nextChargeStart).toBe('2026-04-01T23:00:00Z');
+  });
+
+  it('does not skip when currentAction is null (e.g. no resolved action yet)', () => {
+    planSlotRows = [
+      { slot_start: '2026-04-01T10:00:00Z', slot_end: '2026-04-01T10:30:00Z', action: 'charge', reason: null },
+      { slot_start: '2026-04-01T10:30:00Z', slot_end: '2026-04-01T11:00:00Z', action: 'discharge', reason: null },
+    ];
+
+    const result = resolveUpcomingEvents(now, null);
+
+    expect(result.nextAction).toBe('charge');
+    expect(result.nextActionStart).toBe('2026-04-01T10:00:00Z');
+    expect(result.nextChargeStart).toBe('2026-04-01T10:00:00Z');
+    expect(result.nextDischargeStart).toBe('2026-04-01T10:30:00Z');
+  });
+
+  it('reports null next-charge / next-discharge when no such slot exists in the upcoming window', () => {
+    planSlotRows = [
+      { slot_start: '2026-04-01T10:00:00Z', slot_end: '2026-04-01T10:30:00Z', action: 'hold', reason: null },
+      { slot_start: '2026-04-01T10:30:00Z', slot_end: '2026-04-01T11:00:00Z', action: 'discharge', reason: null },
+    ];
+
+    const result = resolveUpcomingEvents(now, 'hold');
+
+    expect(result.nextChargeStart).toBeNull();
+    expect(result.nextDischargeStart).toBe('2026-04-01T10:30:00Z');
   });
 });

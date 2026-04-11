@@ -23,9 +23,11 @@ import { getVirtualNow } from '../virtual-inverter/runtime';
 import {
   resolveSlotAction,
   resolveSlotActionRange,
+  resolveUpcomingEvents,
   type ResolvedSlotAction,
   type ResolvedSlotRange,
   type SlotActionSource,
+  type UpcomingEvents,
 } from './resolve';
 
 const WATCHDOG_INTERVAL_MS = 30_000;
@@ -167,6 +169,18 @@ export function getResolvedSlotAction(
   state: Pick<InverterState, 'battery_soc' | 'pv_power' | 'grid_power' | 'load_power' | 'battery_power'> = getState(),
 ): ResolvedSlotAction {
   return resolveSlotAction(now, state, getSettings());
+}
+
+/**
+ * Returns the next planned action and the start of the next charge/discharge
+ * runs after the current one. Used by the HA publisher so dashboards and
+ * automations can anticipate the planner without re-implementing the walk.
+ */
+export function getUpcomingEvents(
+  now: Date = new Date(),
+  currentAction: PlanAction | null,
+): UpcomingEvents {
+  return resolveUpcomingEvents(now, currentAction);
 }
 
 /**

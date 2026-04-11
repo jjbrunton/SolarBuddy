@@ -228,6 +228,76 @@ export function resolveSlotAction(
   };
 }
 
+export interface UpcomingEvents {
+  /**
+   * The next plan action that differs from `currentAction`. `null` when every
+   * remaining slot in the plan matches the current action (or no plan exists).
+   */
+  nextAction: PlanAction | null;
+  /** ISO start of the slot at which `nextAction` begins. */
+  nextActionStart: string | null;
+  /**
+   * ISO start of the next charge slot that is *not* part of the current
+   * contiguous run. If currently charging, this is the start of the next
+   * charge run after the current one ends.
+   */
+  nextChargeStart: string | null;
+  /** Same as `nextChargeStart` but for `discharge` slots. */
+  nextDischargeStart: string | null;
+}
+
+/**
+ * Walks the upcoming plan slots starting from `now` and computes a small set
+ * of "what's next" timestamps used by the Home Assistant publisher and any
+ * other consumer that wants to surface upcoming planner intent.
+ *
+ * The walk skips the leading run of slots whose action matches `currentAction`
+ * so "next charge" / "next discharge" mean "the next *new* run", not the
+ * current one. This matches user intuition: while charging, "next charge" is
+ * the *following* charge window, not now.
+ *
+ * Pure plan view — manual/auto overrides and scheduled actions are not
+ * considered, since those are short-lived corrections that don't represent
+ * the planned schedule the user wants to anticipate.
+ */
+export function resolveUpcomingEvents(
+  now: Date,
+  currentAction: PlanAction | null,
+): UpcomingEvents {
+  const upcoming = getUpcomingPlanSlots(now.toISOString());
+
+  let i = 0;
+  // Skip the current contiguous run of matching-action slots so "next" means
+  // the next change, not the slot we're already in.
+  if (currentAction !== null) {
+    while (i < upcoming.length && upcoming[i].action === currentAction) {
+      i++;
+    }
+  }
+
+  let nextAction: PlanAction | null = null;
+  let nextActionStart: string | null = null;
+  let nextChargeStart: string | null = null;
+  let nextDischargeStart: string | null = null;
+
+  for (let k = i; k < upcoming.length; k++) {
+    const slot = upcoming[k];
+    if (nextAction === null) {
+      nextAction = slot.action;
+      nextActionStart = slot.slot_start;
+    }
+    if (nextChargeStart === null && slot.action === 'charge') {
+      nextChargeStart = slot.slot_start;
+    }
+    if (nextDischargeStart === null && slot.action === 'discharge') {
+      nextDischargeStart = slot.slot_start;
+    }
+    if (nextChargeStart !== null && nextDischargeStart !== null) break;
+  }
+
+  return { nextAction, nextActionStart, nextChargeStart, nextDischargeStart };
+}
+
 const DEFAULT_SLOT_MS = 30 * 60 * 1000;
 
 function addIso(iso: string, ms: number): string {
