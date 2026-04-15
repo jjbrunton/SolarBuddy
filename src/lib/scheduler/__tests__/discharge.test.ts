@@ -81,6 +81,57 @@ describe('findSmartDischargeSlots', () => {
     expect(windows[1].slots.every((slot) => slot.price_inc_vat >= 35)).toBe(true);
   });
 
+  it('applies the discharge price threshold to export value when export rates are provided', () => {
+    const importRates: AgileRate[] = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 8),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 28),
+      rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 27),
+    ];
+    const exportRates: AgileRate[] = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 8),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 12),
+      rate('2026-04-01T11:00:00Z', '2026-04-01T11:30:00Z', 22),
+    ];
+
+    const windows = findSmartDischargeSlots(importRates, {
+      ...baseSettings,
+      estimated_consumption_w: '500',
+      discharge_price_threshold: '20',
+    }, {
+      currentSoc: 80,
+      now: new Date('2026-04-01T09:50:00Z'),
+      exportRates,
+    });
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0].slot_start).toBe('2026-04-01T11:00:00Z');
+  });
+
+  it('prioritises candidate ordering by export value when export rates diverge from import rates', () => {
+    const importRates: AgileRate[] = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 30),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 20),
+    ];
+    const exportRates: AgileRate[] = [
+      rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 10),
+      rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 25),
+    ];
+
+    const windows = findSmartDischargeSlots(importRates, {
+      ...baseSettings,
+      estimated_consumption_w: '500',
+      discharge_soc_floor: '25',
+      discharge_price_threshold: '0',
+    }, {
+      currentSoc: 30,
+      now: new Date('2026-04-01T09:50:00Z'),
+      exportRates,
+    });
+
+    expect(windows).toHaveLength(1);
+    expect(windows[0].slot_start).toBe('2026-04-01T10:30:00Z');
+  });
+
   it('returns empty when the planner is disabled or no telemetry is available', () => {
     expect(findSmartDischargeSlots(rates, {
       ...baseSettings,
@@ -165,7 +216,7 @@ describe('findSmartDischargeSlots', () => {
 });
 
 describe('marginal cost gate', () => {
-  it('rejects discharge when export price is below the nearest preceding charge price', () => {
+  it('rejects discharge when export value is below the weighted stored-energy cost', () => {
     const rates: AgileRate[] = [
       rate('2026-04-01T10:00:00Z', '2026-04-01T10:30:00Z', 15),
       rate('2026-04-01T10:30:00Z', '2026-04-01T11:00:00Z', 14),
@@ -189,7 +240,7 @@ describe('marginal cost gate', () => {
       now: new Date('2026-04-01T09:50:00Z'),
     });
 
-    // The 14p slot should NOT be a discharge (below 15p preceding charge)
+    // The 14p slot should NOT be a discharge (below stored charge cost)
     expect(plan.dischargeWindows.every((w) =>
       w.slots.every((s) => s.price_inc_vat !== 14),
     )).toBe(true);
@@ -277,6 +328,35 @@ describe('marginal cost gate', () => {
 
     const rejected = plan._debug?.candidateResults?.find((r) => r.price === 14.51);
     expect(rejected?.rejected).toBe('marginal_cost');
+  });
+
+  it('can discharge when a recent expensive top-up is diluted by earlier cheap charge energy', () => {
+    const rates: AgileRate[] = [
+      rate('2026-04-01T00:00:00Z', '2026-04-01T00:30:00Z', 5),
+      rate('2026-04-01T00:30:00Z', '2026-04-01T01:00:00Z', 5),
+      rate('2026-04-01T01:00:00Z', '2026-04-01T01:30:00Z', 20),
+      rate('2026-04-01T01:30:00Z', '2026-04-01T02:00:00Z', 18),
+    ];
+
+    const plannedCharges = [
+      { slot_start: rates[0].valid_from, slot_end: rates[0].valid_to, avg_price: 5, slots: [rates[0]] },
+      { slot_start: rates[1].valid_from, slot_end: rates[1].valid_to, avg_price: 5, slots: [rates[1]] },
+      { slot_start: rates[2].valid_from, slot_end: rates[2].valid_to, avg_price: 20, slots: [rates[2]] },
+    ];
+
+    const plan = buildSmartDischargePlan(rates, {
+      ...baseSettings,
+      charge_hours: '3',
+      estimated_consumption_w: '500',
+      discharge_soc_floor: '20',
+      discharge_price_threshold: '0',
+    }, plannedCharges, [], {
+      currentSoc: 80,
+      now: new Date('2026-03-31T23:50:00Z'),
+    });
+
+    expect(plan.dischargeWindows).toHaveLength(1);
+    expect(plan.dischargeWindows[0].slot_start).toBe('2026-04-01T01:30:00Z');
   });
 });
 

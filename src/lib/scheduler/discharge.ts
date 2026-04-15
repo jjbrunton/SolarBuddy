@@ -15,6 +15,13 @@ import {
 } from './engine';
 
 const HALF_HOUR_HOURS = 0.5;
+const DEFAULT_DISCHARGE_EFFICIENCY = 0.92;
+const DEFAULT_BATTERY_WEAR_PENCE_PER_KWH = 1.0;
+
+interface DischargeEconomics {
+  dischargeEfficiency: number;
+  batteryWearPencePerKwh: number;
+}
 
 interface SlotModel {
   key: string;
@@ -80,6 +87,9 @@ export interface SmartDischargeDebug {
   candidateResults?: Array<{
     key: string;
     price: number;
+    exportPrice: number;
+    effectiveExportPrice: number;
+    marginalCost: number | null;
     rejected: 'backfill' | 'floor' | 'value' | 'marginal_cost' | null;
   }>;
 }
@@ -117,6 +127,7 @@ export function buildSmartDischargePlan(
   if (energy === null) {
     return empty('invalid energy model');
   }
+  const economics = resolveDischargeEconomics();
 
   const now = context.now ?? new Date();
   const slots = buildSlotModels(rates, settings, now, exportRates, pvForecast);
@@ -158,7 +169,7 @@ export function buildSmartDischargePlan(
 
   const dischargeFloorWh = percentageToWh(reserveSoc, energy.batteryCapacityWh);
   let currentSim = simulatePlan(slots, plan, currentSoc, energy, dischargeFloorWh);
-  let currentValue = calculatePlanValue(plan, slots, energy, currentSim);
+  let currentValue = calculatePlanValue(plan, slots, energy, currentSim, economics);
   const smartDischargeKeys = new Set<string>();
 
   const candidates = slots
@@ -168,6 +179,9 @@ export function buildSmartDischargePlan(
       !plan.dischargeKeys.has(slot.key),
     )
     .sort((a, b) => {
+      if (b.exportPrice !== a.exportPrice) {
+        return b.exportPrice - a.exportPrice;
+      }
       if (b.rate.price_inc_vat !== a.rate.price_inc_vat) {
         return b.rate.price_inc_vat - a.rate.price_inc_vat;
       }
@@ -191,35 +205,76 @@ export function buildSmartDischargePlan(
       candidate.startMs,
     );
     if (!refill.feasible) {
-      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'backfill' });
-      continue;
-    }
-
-    // Reject if the discharge export price doesn't cover the cost of the
-    // energy most recently charged into the battery.  This prevents
-    // economically questionable patterns like charge@14.74p → discharge@14.51p.
-    const precedingCost = nearestPrecedingChargePrice(tentative, slots, candidate.startMs);
-    if (precedingCost > 0 && candidate.exportPrice <= precedingCost) {
-      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'marginal_cost' });
+      debug.candidateResults.push({
+        key: candidate.key,
+        price: candidate.rate.price_inc_vat,
+        exportPrice: candidate.exportPrice,
+        effectiveExportPrice: effectiveDischargePrice(candidate.exportPrice, economics),
+        marginalCost: null,
+        rejected: 'backfill',
+      });
       continue;
     }
 
     const simulation = simulatePlan(slots, tentative, currentSoc, energy, dischargeFloorWh);
+    const simByKey = new Map(simulation.map((point) => [point.key, point]));
+    // Gate discharge against the weighted average cost of purchased energy
+    // still held in the battery (rather than just the nearest prior charge).
+    const marginalCost = estimateStoredEnergyUnitCostBefore(
+      tentative,
+      slots,
+      energy,
+      candidate.startMs,
+      simByKey,
+    );
+    const effectiveExportPrice = effectiveDischargePrice(candidate.exportPrice, economics);
+    if (marginalCost > 0 && effectiveExportPrice <= marginalCost) {
+      debug.candidateResults.push({
+        key: candidate.key,
+        price: candidate.rate.price_inc_vat,
+        exportPrice: candidate.exportPrice,
+        effectiveExportPrice,
+        marginalCost,
+        rejected: 'marginal_cost',
+      });
+      continue;
+    }
 
     // Reject if the slot would discharge nothing (SOC already at floor)
-    const candidateSim = simulation.find((p) => p.key === candidate.key);
+    const candidateSim = simByKey.get(candidate.key);
     if (!candidateSim || candidateSim.actualDischargeWh <= 0) {
-      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'floor' });
+      debug.candidateResults.push({
+        key: candidate.key,
+        price: candidate.rate.price_inc_vat,
+        exportPrice: candidate.exportPrice,
+        effectiveExportPrice,
+        marginalCost,
+        rejected: 'floor',
+      });
       continue;
     }
 
-    const tentativeValue = calculatePlanValue(tentative, slots, energy, simulation);
+    const tentativeValue = calculatePlanValue(tentative, slots, energy, simulation, economics);
     if (tentativeValue <= currentValue) {
-      debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: 'value' });
+      debug.candidateResults.push({
+        key: candidate.key,
+        price: candidate.rate.price_inc_vat,
+        exportPrice: candidate.exportPrice,
+        effectiveExportPrice,
+        marginalCost,
+        rejected: 'value',
+      });
       continue;
     }
 
-    debug.candidateResults.push({ key: candidate.key, price: candidate.rate.price_inc_vat, rejected: null });
+    debug.candidateResults.push({
+      key: candidate.key,
+      price: candidate.rate.price_inc_vat,
+      exportPrice: candidate.exportPrice,
+      effectiveExportPrice,
+      marginalCost,
+      rejected: null,
+    });
     plan.chargeKeys = tentative.chargeKeys;
     plan.dischargeKeys = tentative.dischargeKeys;
     plan.extraChargeKeys = tentative.extraChargeKeys;
@@ -241,7 +296,15 @@ export function findSmartDischargeSlots(
   settings: AppSettings,
   context: PlanningContext = {},
 ): ChargeWindow[] {
-  return buildSmartDischargePlan(rates, settings, [], [], context).dischargeWindows;
+  return buildSmartDischargePlan(
+    rates,
+    settings,
+    [],
+    [],
+    context,
+    context.exportRates,
+    context.pvForecast,
+  ).dischargeWindows;
 }
 
 export function calculateDischargeSlotsAvailable(
@@ -314,11 +377,12 @@ function buildSlotModels(
       const startMs = new Date(rate.valid_from).getTime();
       const endMs = new Date(rate.valid_to).getTime();
       const passesChargeThreshold = priceThreshold <= 0 || rate.price_inc_vat <= priceThreshold;
+      const exportPrice = exportRateMap.get(rate.valid_from) ?? rate.price_inc_vat;
 
       return {
         key: rate.valid_from,
         rate,
-        exportPrice: exportRateMap.get(rate.valid_from) ?? rate.price_inc_vat,
+        exportPrice,
         pvEstimateWh: pvMap.get(rate.valid_from) ?? 0,
         startMs,
         endMs,
@@ -327,7 +391,7 @@ function buildSlotModels(
           !isInChargeWindow(rate.valid_from, peakStart, peakEnd) &&
           passesChargeThreshold,
         dischargeCandidate:
-          dischargePriceThreshold <= 0 || rate.price_inc_vat >= dischargePriceThreshold,
+          dischargePriceThreshold <= 0 || exportPrice >= dischargePriceThreshold,
       };
     });
 }
@@ -492,6 +556,7 @@ function calculatePlanValue(
   slots: SlotModel[],
   energy: EnergyModel,
   simulation?: SimulationPoint[],
+  economics: DischargeEconomics = resolveDischargeEconomics(),
 ): number {
   let total = 0;
   const simByKey = simulation ? new Map(simulation.map((p) => [p.key, p])) : null;
@@ -505,7 +570,7 @@ function calculatePlanValue(
       // (preserves the "battery output = house load" approximation).
       const dischargeWh =
         simByKey?.get(slot.key)?.actualDischargeWh ?? energy.drainWhAtMs(slot.startMs);
-      total += (dischargeWh / 1000) * slot.exportPrice;
+      total += (dischargeWh / 1000) * effectiveDischargePrice(slot.exportPrice, economics);
     }
   }
 
@@ -566,29 +631,61 @@ function resolveEnergyModel(settings: Pick<AppSettings, 'battery_capacity_kwh' |
   };
 }
 
+function estimateStoredEnergyUnitCostBefore(
+  plan: ActionPlan,
+  slots: SlotModel[],
+  energy: EnergyModel,
+  beforeMs: number,
+  simulationByKey: Map<string, SimulationPoint>,
+): number {
+  let storedPurchasedKwh = 0;
+  let storedPurchasedCostPence = 0;
+
+  for (const slot of slots) {
+    if (slot.endMs > beforeMs) {
+      break;
+    }
+
+    if (plan.chargeKeys.has(slot.key)) {
+      const chargedKwh = energy.chargePerSlotWh / 1000;
+      if (chargedKwh <= 0) continue;
+      storedPurchasedKwh += chargedKwh;
+      storedPurchasedCostPence += chargedKwh * slot.rate.price_inc_vat;
+      continue;
+    }
+
+    if (!plan.dischargeKeys.has(slot.key) || storedPurchasedKwh <= 0) {
+      continue;
+    }
+
+    const dischargedWh =
+      simulationByKey.get(slot.key)?.actualDischargeWh ?? energy.drainWhAtMs(slot.startMs);
+    const dischargedKwh = Math.max(0, dischargedWh / 1000);
+    if (dischargedKwh <= 0) continue;
+
+    const consumedPurchasedKwh = Math.min(dischargedKwh, storedPurchasedKwh);
+    const currentUnitCost = storedPurchasedCostPence / storedPurchasedKwh;
+    storedPurchasedKwh -= consumedPurchasedKwh;
+    storedPurchasedCostPence -= consumedPurchasedKwh * currentUnitCost;
+  }
+
+  if (storedPurchasedKwh <= 0) return 0;
+  return storedPurchasedCostPence / storedPurchasedKwh;
+}
+
 function percentageToWh(percentage: number, batteryCapacityWh: number): number {
   return batteryCapacityWh * (percentage / 100);
 }
 
-/**
- * Price (p/kWh) of the charge slot closest before (or at) a given time.
- * Returns 0 when no preceding charge exists — the energy predates the plan
- * horizon and is effectively free.
- */
-function nearestPrecedingChargePrice(
-  plan: ActionPlan,
-  slots: SlotModel[],
-  beforeMs: number,
-): number {
-  let best: SlotModel | null = null;
-  for (const slot of slots) {
-    if (!plan.chargeKeys.has(slot.key)) continue;
-    if (slot.endMs > beforeMs) continue;
-    if (!best || slot.startMs > best.startMs) {
-      best = slot;
-    }
-  }
-  return best?.rate.price_inc_vat ?? 0;
+function resolveDischargeEconomics(): DischargeEconomics {
+  return {
+    dischargeEfficiency: DEFAULT_DISCHARGE_EFFICIENCY,
+    batteryWearPencePerKwh: DEFAULT_BATTERY_WEAR_PENCE_PER_KWH,
+  };
+}
+
+function effectiveDischargePrice(exportPrice: number, economics: DischargeEconomics): number {
+  return (exportPrice * economics.dischargeEfficiency) - economics.batteryWearPencePerKwh;
 }
 
 function clampPercentage(value: number): number | null {
