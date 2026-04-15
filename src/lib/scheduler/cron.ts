@@ -8,9 +8,7 @@ import { storePVForecast, getStoredPVForecast, getLatestForecastAge } from '../s
 import { syncInverterTime } from '../inverter/time-sync';
 import { checkForTariffChange } from '../octopus/tariff-monitor';
 import { getState } from '../state';
-import { fetchNordpoolDayAhead } from '../nordpool/client';
-import { convertToAgileRates, parseHour } from '../nordpool/converter';
-import { storeImportRates } from '../db/rate-repository';
+import { refreshNordpoolForecast } from '../nordpool/refresh';
 import { buildSchedulePlan, getChargingStrategy, type ChargeWindow } from './engine';
 import { scheduleExecution } from './executor';
 import { persistSchedulePlan } from '../db/schedule-repository';
@@ -460,44 +458,10 @@ export function startCronJobs() {
   // Nordpool N2EX day-ahead forecast: fetch at 11:15, 11:30, 11:45 UK time.
   // Provides estimated Agile rates ~5 hours before Octopus publishes.
   nordpoolJob = cron.schedule('15,30,45 11 * * *', async () => {
-    const settings = getSettings();
-    if (settings.nordpool_forecast_enabled !== 'true' || settings.tariff_type !== 'agile') return;
-
-    try {
-      // Fetch tomorrow's day-ahead prices
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateStr = tomorrow.toISOString().slice(0, 10);
-
-      const slots = await fetchNordpoolDayAhead(dateStr);
-      if (slots.length === 0) {
-        console.log(`[Nordpool] No prices available yet for ${dateStr}, will retry`);
-        return;
-      }
-
-      const rates = convertToAgileRates(slots, {
-        distributionMultiplier: parseFloat(settings.nordpool_distribution_multiplier) || 2.2,
-        peakAdder: parseFloat(settings.nordpool_peak_adder) || 12.5,
-        peakStartHour: parseHour(settings.nordpool_peak_start || '16:00'),
-        peakEndHour: parseHour(settings.nordpool_peak_end || '19:00'),
-      });
-
-      storeImportRates(rates, 'nordpool');
-      appendEvent({
-        level: 'success',
-        category: 'nordpool',
-        message: `Nordpool forecast: stored ${rates.length} estimated Agile rates for ${dateStr}`,
-      });
-
+    const result = await refreshNordpoolForecast();
+    if (result.status === 'ok') {
       // Trigger replan with the new forecast rates
       replanFromStoredRates();
-    } catch (err) {
-      console.error('[Nordpool] Day-ahead fetch failed:', err);
-      appendEvent({
-        level: 'warning',
-        category: 'nordpool',
-        message: `Nordpool forecast failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      });
     }
   });
 

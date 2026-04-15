@@ -14,6 +14,8 @@ export default function OctopusSettingsView() {
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [accountInfo, setAccountInfo] = useState<VerifiedOctopusAccountInfo | null>(null);
+  const [refreshingNordpool, setRefreshingNordpool] = useState(false);
+  const [nordpoolStatus, setNordpoolStatus] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (
@@ -83,6 +85,36 @@ export default function OctopusSettingsView() {
       setAccountInfo(null);
     }
     setVerifying(false);
+  };
+
+  const refreshNordpool = async () => {
+    setRefreshingNordpool(true);
+    setNordpoolStatus(null);
+    try {
+      const res = await fetch('/api/rates/nordpool/refresh', { method: 'POST' });
+      const json = await res.json();
+      if (json.status === 'ok') {
+        setNordpoolStatus({
+          ok: true,
+          message: `Stored ${json.count} estimated rates for ${json.date}.`,
+        });
+      } else if (json.status === 'skipped') {
+        const reasons: Record<string, string> = {
+          disabled: 'Forecast is disabled — enable it and save first.',
+          not_agile: 'Forecast only runs when the tariff shape is Agile.',
+          no_prices: `No day-ahead prices published yet for ${json.date}. Try again later.`,
+        };
+        setNordpoolStatus({ ok: false, message: reasons[json.reason] ?? `Skipped: ${json.reason}` });
+      } else {
+        setNordpoolStatus({ ok: false, message: json.message ?? json.error ?? 'Refresh failed.' });
+      }
+    } catch (err) {
+      setNordpoolStatus({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Refresh failed.',
+      });
+    }
+    setRefreshingNordpool(false);
   };
 
   const tariffType = settings.tariff_type || 'agile';
@@ -324,6 +356,26 @@ export default function OctopusSettingsView() {
                     onChange={(e) => update('nordpool_peak_end', e.target.value)}
                   />
                 </Field>
+              </div>
+            ) : null}
+
+            {settings.nordpool_forecast_enabled === 'true' ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Button onClick={refreshNordpool} disabled={refreshingNordpool} variant="secondary">
+                  {refreshingNordpool ? 'Refreshing…' : 'Refresh forecast now'}
+                </Button>
+                {nordpoolStatus ? (
+                  <span
+                    className={`text-sm ${nordpoolStatus.ok ? 'text-sb-text-muted' : 'text-sb-danger'}`}
+                  >
+                    {nordpoolStatus.message}
+                  </span>
+                ) : (
+                  <span className="text-sm text-sb-text-muted">
+                    Fetches tomorrow’s day-ahead prices and replans immediately. Save any
+                    setting changes first.
+                  </span>
+                )}
               </div>
             ) : null}
           </SettingsSection>

@@ -24,6 +24,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `POST` | `/api/octopus/verify` | Verify Octopus account details and infer tariff metadata. |
 | `GET` | `/api/rates` | Return stored Agile rates, optionally filtered by query range. |
 | `POST` | `/api/rates` | Fetch the latest Agile rates from Octopus and store them. |
+| `POST` | `/api/rates/nordpool/refresh` | Manually trigger the Nordpool N2EX day-ahead forecast: fetch tomorrow's prices, convert to estimated Agile rates using the configured multiplier and peak adder, and replan. Only runs when `nordpool_forecast_enabled` is `true` and the tariff shape is Agile. |
 | `GET` | `/api/forecast` | Return stored PV forecast data, optionally filtered by query range, plus forecast age in minutes. |
 | `POST` | `/api/forecast` | Fetch fresh PV forecast data from Solcast when the cached forecast is stale enough to refresh. |
 | `GET` | `/api/schedule` | Return recent schedule history for the Charge Plan page, including persisted charge/discharge windows and the canonical slot-by-slot battery plan for roughly the last 30 days plus any future stored horizon. |
