@@ -54,7 +54,7 @@ docker build -t solarbuddy .
 
 `npm run lint` uses the official Next.js ESLint flat config for App Router projects.
 
-`npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report plus `coverage/lcov.info` for backend and API code under `src/lib/` and `src/app/api/`, `npm run build` performs the production compile plus TypeScript validation, and `npm run test:smoke` boots the production server and verifies key routes against a temporary SQLite database.
+`npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report plus machine-readable summary output for backend and API code under `src/lib/` and `src/app/api/`, `npm run build` performs the production compile plus TypeScript validation, and `npm run test:smoke` boots the production server and verifies key routes against a temporary SQLite database.
 
 `npm run test:integration` runs the dedicated integration suites (`*.integration.test.ts`) under `src/`. These tests use fixed fixtures and in-memory SQLite to verify cross-module behavior such as scheduler persistence, API+DB lifecycle flows, and SSE event/log pipelines without calling live external services.
 
@@ -71,7 +71,8 @@ docker build -t solarbuddy .
 The repository includes a GitHub Actions workflow at [`../.github/workflows/validation.yml`](../.github/workflows/validation.yml) that validates both pushes and pull requests.
 
 - The validation workflow runs `npm run docs:check`, `npm run lint`, and `npm test`.
-- The validation workflow also runs `npm run test:coverage` and uploads the resulting `lcov` report to Codecov for the repository coverage badge and historical tracking.
+- The validation workflow also runs `npm run test:coverage`, generates a markdown summary for the GitHub job page, and uploads the full HTML coverage report as the `coverage-report` workflow artifact.
+- On successful pushes to `main`, the validation workflow publishes a repo-hosted SVG badge plus the latest summary files to the `badge-data` branch. The README coverage badge reads from that branch.
 - The validation workflow runs `npm run build`, `npm run test:smoke`, and `npm run test:e2e`.
 - The repository also includes `dependency-review.yml`, `codeql.yml`, and `release.yml` for dependency policy, static analysis, and release artifact publishing.
 - CI uses the Node version from [`.nvmrc`](../.nvmrc) so local work, container builds, and GitHub Actions stay aligned.

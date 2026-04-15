@@ -11,18 +11,19 @@ Use this document as the maintainer checklist when creating a new repository cop
 - Require the `Validation`, `Dependency Review`, and `CodeQL` checks before merging.
 - Restrict force pushes and branch deletion on `main`.
 - Limit release creation and repository administration to trusted maintainers.
+- Leave the workflow-managed `badge-data` branch unprotected, or at least do not require pull requests on it, so GitHub Actions can refresh the coverage badge.
 
 ## Security Features
 
 - Enable secret scanning if the repository plan supports it.
 - Enable push protection if the repository plan supports it.
 - Review Dependabot alerts and CodeQL alerts regularly.
-- Install and enable the Codecov GitHub App for the repository if you want pull-request coverage annotations and badge history in the hosted Codecov UI.
 
 ## Release Permissions
 
 - Ensure GitHub Actions can publish packages to GHCR for this repository.
 - Keep the `GITHUB_TOKEN` package permissions available for the `Release` workflow.
+- Set GitHub Actions workflow permissions to allow `GITHUB_TOKEN` write access so the validation workflow can publish the coverage badge to the `badge-data` branch.
 - Ensure the published GHCR package remains public so the README package link and pull instructions work for self-hosters without authentication.
 - Prefer tagged releases over force-moving tags.
 

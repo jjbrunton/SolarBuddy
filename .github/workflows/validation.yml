@@ -2,11 +2,12 @@ name: Validation
 
 on:
   push:
+    branches-ignore:
+      - badge-data
   pull_request:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: validation-${{ github.workflow }}-${{ github.ref }}
@@ -19,6 +20,8 @@ jobs:
   test:
     name: Docs and tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Check out repository
@@ -45,12 +48,71 @@ jobs:
       - name: Generate coverage report
         run: npm run test:coverage
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@af09b5e394c93991b95a5e7646aeb90c1917f78f # v5.5.1
+      - name: Generate coverage badge and summary
+        run: node ./scripts/update-coverage-artifacts.mjs
+
+      - name: Publish coverage summary
+        run: cat coverage/coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          use_oidc: true
-          files: ./coverage/lcov.info
-          fail_ci_if_error: true
+          name: coverage-report
+          path: coverage
+          if-no-files-found: error
+
+      - name: Publish coverage badge branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          badge_branch="badge-data"
+          worktree_dir="$(mktemp -d)"
+
+          cleanup() {
+            git worktree remove "$worktree_dir" --force >/dev/null 2>&1 || true
+          }
+
+          trap cleanup EXIT
+
+          if git ls-remote --exit-code --heads origin "$badge_branch" >/dev/null 2>&1; then
+            git fetch origin "$badge_branch:$badge_branch"
+            git worktree add "$worktree_dir" "$badge_branch"
+          else
+            git worktree add --detach "$worktree_dir"
+            (
+              cd "$worktree_dir"
+              git switch --orphan "$badge_branch"
+              git rm -rf . >/dev/null 2>&1 || true
+              mkdir -p badges
+              cp "$GITHUB_WORKSPACE/public/badges/coverage.svg" badges/coverage.svg
+              cp "$GITHUB_WORKSPACE/coverage/coverage-summary.json" coverage-summary.json
+              cp "$GITHUB_WORKSPACE/coverage/coverage-summary.md" coverage-summary.md
+              git add badges/coverage.svg coverage-summary.json coverage-summary.md
+              git commit -m "Initialize coverage badge branch"
+              git push origin "$badge_branch"
+            )
+            exit 0
+          fi
+
+          mkdir -p "$worktree_dir/badges"
+          cp public/badges/coverage.svg "$worktree_dir/badges/coverage.svg"
+          cp coverage/coverage-summary.json "$worktree_dir/coverage-summary.json"
+          cp coverage/coverage-summary.md "$worktree_dir/coverage-summary.md"
+
+          (
+            cd "$worktree_dir"
+            git add badges/coverage.svg coverage-summary.json coverage-summary.md
+            if git diff --cached --quiet; then
+              echo "Coverage badge is already current."
+              exit 0
+            fi
+            git commit -m "Update coverage badge"
+            git push origin "$badge_branch"
+          )
 
   build:
     name: Build, smoke test, and E2E

@@ -73,6 +73,6 @@ Changes in these areas should add or update tests in the same pull request:
 
 - GitHub Actions runs the validation workflow on pushes and pull requests.
 - The validation workflow now runs docs sync, lint, unit tests, backend/API coverage generation, a production build, smoke checks, and Playwright E2E tests.
-- Coverage uploads flow to Codecov from the generated `coverage/lcov.info` report so the public coverage badge tracks the same backend/API scope documented in this repository.
+- The validation workflow publishes a markdown coverage summary in the GitHub job view, uploads the full HTML report as the `coverage-report` artifact, and refreshes the README badge from the generated summary on pushes to `main`.
 - GitHub Actions also runs CodeQL and dependency review checks.
 - Releases should be cut only from a green `main`.

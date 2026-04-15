@@ -4,7 +4,7 @@
 [![CodeQL](https://github.com/jjbrunton/SolarBuddy/actions/workflows/codeql.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/codeql.yml)
 [![Dependency Review](https://github.com/jjbrunton/SolarBuddy/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/dependency-review.yml)
 [![Release](https://github.com/jjbrunton/SolarBuddy/actions/workflows/release.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/release.yml)
-[![Coverage](https://codecov.io/gh/jjbrunton/SolarBuddy/graph/badge.svg)](https://app.codecov.io/gh/jjbrunton/SolarBuddy)
+[![Coverage](https://raw.githubusercontent.com/jjbrunton/SolarBuddy/badge-data/badges/coverage.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml)
 ![GitHub Release](https://img.shields.io/github/v/release/jjbrunton/SolarBuddy)
 ![GitHub last commit](https://img.shields.io/github/last-commit/jjbrunton/SolarBuddy)
 ![GitHub Repo stars](https://img.shields.io/github/stars/jjbrunton/SolarBuddy)
@@ -201,7 +201,7 @@ Coverage currently focuses on non-UI code under `src/lib/` and `src/app/api/`.
 
 GitHub Actions validates commits and pull requests with the workflows under [`.github/workflows/`](.github/workflows/): validation, dependency review, and CodeQL. The validation workflow uses the same repo-facing commands documented in [docs/development.md](docs/development.md) and [docs/testing-strategy.md](docs/testing-strategy.md).
 
-The repository also publishes backend/API coverage to Codecov from the validation workflow, exposes a public GHCR package at `ghcr.io/jjbrunton/solarbuddy`, and is licensed under [Apache 2.0](LICENSE).
+The repository publishes backend/API coverage as a GitHub Actions artifact and a repository-hosted badge from the validation workflow, exposes a public GHCR package at `ghcr.io/jjbrunton/solarbuddy`, and is licensed under [Apache 2.0](LICENSE).
 
 For local setup and verification workflow details, see [docs/development.md](docs/development.md).
 
