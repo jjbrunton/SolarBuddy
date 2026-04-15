@@ -1,7 +1,17 @@
 {
   "name": "solarbuddy",
+  "description": "A self-hosted dashboard for managing solar battery charging and discharge with Octopus Energy Agile tariff integration.",
   "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/jjbrunton/SolarBuddy#readme",
+  "bugs": {
+    "url": "https://github.com/jjbrunton/SolarBuddy/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jjbrunton/SolarBuddy.git"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

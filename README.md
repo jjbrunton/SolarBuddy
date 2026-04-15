@@ -1,6 +1,16 @@
 # SolarBuddy
 
 [![Validation](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml)
+[![CodeQL](https://github.com/jjbrunton/SolarBuddy/actions/workflows/codeql.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/codeql.yml)
+[![Dependency Review](https://github.com/jjbrunton/SolarBuddy/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/dependency-review.yml)
+[![Release](https://github.com/jjbrunton/SolarBuddy/actions/workflows/release.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/release.yml)
+[![Coverage](https://codecov.io/gh/jjbrunton/SolarBuddy/graph/badge.svg)](https://app.codecov.io/gh/jjbrunton/SolarBuddy)
+![GitHub Release](https://img.shields.io/github/v/release/jjbrunton/SolarBuddy)
+![GitHub last commit](https://img.shields.io/github/last-commit/jjbrunton/SolarBuddy)
+![GitHub Repo stars](https://img.shields.io/github/stars/jjbrunton/SolarBuddy)
+![GitHub License](https://img.shields.io/github/license/jjbrunton/SolarBuddy)
+[![Node 22](https://img.shields.io/badge/node-22-339933?logo=node.js&logoColor=white)](https://github.com/jjbrunton/SolarBuddy/blob/main/.nvmrc)
+[![GHCR](https://img.shields.io/badge/GHCR-ghcr.io%2Fjjbrunton%2Fsolarbuddy-2496ED?logo=docker&logoColor=white)](https://github.com/jjbrunton/SolarBuddy/pkgs/container/solarbuddy)
 
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jjbrunton)
 
@@ -37,6 +47,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 - [Design System](docs/design-system.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
+- [License](LICENSE)
 
 ## Features
 
@@ -125,7 +136,9 @@ All settings are managed through the web UI under **Settings**:
 - `Max Charge Slots` is now a cap rather than a fixed target. When live battery SOC and charge-power settings are available, SolarBuddy trims the plan to only the slots needed to reach the target SOC.
 - `Smart Discharge` now simulates the published tariff horizon slot by slot, so it can charge cheaply first, discharge later in expensive slots, and still preserve the configured reserve SOC floor.
 - In `Opportunistic Top-up` with `Smart Discharge` enabled, SolarBuddy now caps base charge-slot selection using expected demand in high-value discharge periods, so it avoids over-filling when the battery already has enough energy above the reserve floor.
-- `Discharge Price Threshold` is an optional minimum price for automatic discharge windows. If it is greater than `0`, SolarBuddy only discharges in slots at or above that price.
+- `Discharge Price Threshold` is an optional minimum value for automatic discharge windows. If export rates are loaded, SolarBuddy applies this threshold to the export price for each slot; otherwise it falls back to the import slot price.
+- Smart Discharge candidate ranking now uses slot export value (falling back to import price when export rates are unavailable) so discharge priority tracks what energy is actually worth at that time.
+- Smart Discharge value checks now use a conservative discharge economics model (discharge-efficiency and per-kWh battery wear cost) and compare candidate discharge value against a weighted average cost of purchased energy currently stored in the battery.
 - Usage-profile learning now prefers Octopus import-consumption intervals when `Usage Profile Source` is set to `Octopus`. If Octopus credentials or meter identifiers are missing, or Octopus usage retrieval fails, SolarBuddy falls back to local telemetry-derived usage until Octopus data becomes available again.
 - When a profitable discharge would otherwise cause SolarBuddy to miss a later SOC target, it can add extra cheap charge slots within the configured charge-slot budget to keep the plan feasible.
 - The scheduler now persists a canonical slot-by-slot battery plan in `plan_slots` with `charge`, `discharge`, or `hold` for every future tariff slot in the published horizon. Charge and discharge windows in `schedules` are derived from that plan for execution and history views.
@@ -188,6 +201,8 @@ Coverage currently focuses on non-UI code under `src/lib/` and `src/app/api/`.
 
 GitHub Actions validates commits and pull requests with the workflows under [`.github/workflows/`](.github/workflows/): validation, dependency review, and CodeQL. The validation workflow uses the same repo-facing commands documented in [docs/development.md](docs/development.md) and [docs/testing-strategy.md](docs/testing-strategy.md).
 
+The repository also publishes backend/API coverage to Codecov from the validation workflow, exposes a public GHCR package at `ghcr.io/jjbrunton/solarbuddy`, and is licensed under [Apache 2.0](LICENSE).
+
 For local setup and verification workflow details, see [docs/development.md](docs/development.md).
 
 ## Releases
@@ -196,6 +211,7 @@ SolarBuddy is an open source, self-hosted application. There is no shared hosted
 
 - `main` is the integration branch
 - GitHub Releases publish container artifacts to GHCR
+- The published container image is available at `ghcr.io/jjbrunton/solarbuddy`
 - Self-hosters can deploy from the published image or build from source with the included `Dockerfile`
 
 See [docs/release-process.md](docs/release-process.md) and [docs/deployment.md](docs/deployment.md) for the release and self-hosting contract.

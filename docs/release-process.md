@@ -20,9 +20,11 @@ SolarBuddy does not auto-deploy to a hosted production environment. Releases pro
 ## Published Artifacts
 
 - Versioned container image tags in GHCR
+- Public package page at `ghcr.io/jjbrunton/solarbuddy`
 - Image digest for immutable pulls
 - SBOM generated during the build
 - Build provenance attestation attached to the pushed image
+- OCI image metadata including source repository, description, and license
 
 ## Maintainer Checklist
 
@@ -33,5 +35,6 @@ SolarBuddy does not auto-deploy to a hosted production environment. Releases pro
 ## Self-Hoster Guidance
 
 - Prefer pulling a tagged image digest for repeatable installs.
+- The GHCR package page surfaces the image source, description, and Apache 2.0 license metadata from the published image.
 - Use [`deployment.md`](deployment.md) for runtime configuration and persistence requirements.
 - Back up the SQLite database before upgrading.

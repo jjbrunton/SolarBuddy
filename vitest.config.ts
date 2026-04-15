@@ -7,7 +7,7 @@ export default defineConfig({
     exclude: ['node_modules', '.next', '.tmp/**', '.claude/worktrees/**', 'dist', 'e2e/**'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html'],
+      reporter: ['text', 'html', 'lcov'],
       include: ['src/lib/**/*.ts', 'src/app/api/**/*.ts'],
       exclude: ['src/**/*.test.{ts,tsx}', 'src/**/__tests__/**', 'src/**/*.d.ts'],
     },

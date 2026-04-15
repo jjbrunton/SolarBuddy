@@ -2,6 +2,8 @@
 
 SolarBuddy is an open source, self-hosted application. Contributions are welcome, but changes to scheduler behavior, MQTT command flows, persistence, and operator-facing workflows should stay well-documented and well-tested.
 
+Unless explicitly stated otherwise, contributions are accepted under the repository's [Apache 2.0 license](LICENSE).
+
 ## Development Workflow
 
 1. Read [`README.md`](README.md) and the relevant docs in [`docs/`](docs/README.md).

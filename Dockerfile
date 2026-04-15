@@ -33,6 +33,12 @@ RUN npm run build
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
+LABEL org.opencontainers.image.title="SolarBuddy"
+LABEL org.opencontainers.image.description="A self-hosted dashboard for managing solar battery charging and discharge with Octopus Energy Agile tariff integration."
+LABEL org.opencontainers.image.url="https://github.com/jjbrunton/SolarBuddy"
+LABEL org.opencontainers.image.source="https://github.com/jjbrunton/SolarBuddy"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
@@ -53,4 +59,3 @@ USER nextjs
 EXPOSE 3000
 
 CMD ["node", "server.js"]
-

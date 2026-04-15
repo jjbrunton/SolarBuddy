@@ -29,6 +29,7 @@ Most runtime configuration is managed through the web UI under **Settings**:
    - `Night Fill` uses the overnight window and the max-slot cap.
    - `Opportunistic Top-up` plans across the currently published tariff horizon and uses live telemetry to avoid forcing grid charging while solar surplus is available.
    - `Smart Discharge` simulates the future charge/discharge horizon, so it can add cheap recharge slots when needed before scheduling later expensive discharge windows.
+   - `Smart Discharge` grades discharge candidates by export value (with import-price fallback), applies `Discharge Price Threshold` against that same value, and rejects candidates that fail conservative efficiency/wear-adjusted profitability checks.
    - The scheduler now persists a canonical `plan_slots` timeline with `charge`, `discharge`, and `hold` actions, then derives execution windows into `schedules`.
    - `hold` is no longer just a UI label. The watchdog maps it to an explicit inverter state intended to prevent battery discharge during that slot.
 
@@ -53,7 +54,7 @@ docker build -t solarbuddy .
 
 `npm run lint` uses the official Next.js ESLint flat config for App Router projects.
 
-`npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report for backend and API code under `src/lib/` and `src/app/api/`, `npm run build` performs the production compile plus TypeScript validation, and `npm run test:smoke` boots the production server and verifies key routes against a temporary SQLite database.
+`npm test` runs the Vitest suite defined by the repository, `npm run test:coverage` generates the V8 coverage report plus `coverage/lcov.info` for backend and API code under `src/lib/` and `src/app/api/`, `npm run build` performs the production compile plus TypeScript validation, and `npm run test:smoke` boots the production server and verifies key routes against a temporary SQLite database.
 
 `npm run test:integration` runs the dedicated integration suites (`*.integration.test.ts`) under `src/`. These tests use fixed fixtures and in-memory SQLite to verify cross-module behavior such as scheduler persistence, API+DB lifecycle flows, and SSE event/log pipelines without calling live external services.
 
@@ -70,6 +71,7 @@ docker build -t solarbuddy .
 The repository includes a GitHub Actions workflow at [`../.github/workflows/validation.yml`](../.github/workflows/validation.yml) that validates both pushes and pull requests.
 
 - The validation workflow runs `npm run docs:check`, `npm run lint`, and `npm test`.
+- The validation workflow also runs `npm run test:coverage` and uploads the resulting `lcov` report to Codecov for the repository coverage badge and historical tracking.
 - The validation workflow runs `npm run build`, `npm run test:smoke`, and `npm run test:e2e`.
 - The repository also includes `dependency-review.yml`, `codeql.yml`, and `release.yml` for dependency policy, static analysis, and release artifact publishing.
 - CI uses the Node version from [`.nvmrc`](../.nvmrc) so local work, container builds, and GitHub Actions stay aligned.
