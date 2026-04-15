@@ -81,7 +81,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 - `/api/overrides` now doubles as an actuator trigger for the live slot: after override writes complete, the scheduler watchdog recalculates the desired inverter state and sends MQTT commands when the inverter is not already compliant.
 - When Virtual Inverter mode is enabled, `/api/status`, `/api/events`, `/api/rates`, `/api/forecast`, `/api/schedule`, `/api/simulate`, and `/api/system` become mode-aware and return scenario-backed data while keeping their response shapes compatible with live mode.
 - `POST /api/rates` and `POST /api/forecast` do not call external services in virtual mode; they return the active scenario fixtures instead.
-- Usage profile refresh prefers Octopus consumption intervals when `usage_source` is `octopus` and Octopus meter credentials are available. If Octopus data is unavailable, refresh falls back to local `readings.load_power` samples.
+- Usage profile refresh always uses local inverter telemetry (`readings.load_power`) to learn actual household consumption, unaffected by solar generation offset.
 
 ## `/api/schedule` Response Notes
 

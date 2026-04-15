@@ -33,7 +33,6 @@ export interface Settings {
   battery_capacity_kwh: string;
   max_charge_power_kw: string;
   estimated_consumption_w: string;
-  usage_source: string;
   negative_price_charging: string;
   negative_price_pre_discharge: string;
   smart_discharge: string;

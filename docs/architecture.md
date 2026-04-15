@@ -98,9 +98,7 @@ flowchart LR
 
 ### Usage Profile Learning
 
-- [`src/lib/usage/compute.ts`](../src/lib/usage/compute.ts) refreshes the learned half-hour consumption profile daily.
-- When `usage_source` is `octopus`, usage refresh first attempts to load meter consumption from [`src/lib/octopus/consumption.ts`](../src/lib/octopus/consumption.ts) using the configured API key, MPAN, and meter serial.
-- If Octopus consumption is unavailable, insufficient, or errors, the refresh automatically falls back to local `readings.load_power` samples.
+- [`src/lib/usage/compute.ts`](../src/lib/usage/compute.ts) refreshes the learned half-hour consumption profile daily from local inverter telemetry (`readings.load_power`). This captures actual household consumption rather than net grid import, which would be offset by solar generation.
 - The computed profile is persisted to `usage_profile` and `usage_profile_meta`, and read by scheduler forecasting helpers in [`src/lib/usage/repository.ts`](../src/lib/usage/repository.ts).
 
 ### 5. Home Assistant Publisher

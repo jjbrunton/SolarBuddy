@@ -1,24 +1,21 @@
 /**
  * Nightly refresh job for the usage profile.
  *
- * By default this job prefers half-hour import usage from Octopus (when API
- * key + meter identity are configured). If Octopus data is unavailable or too
- * sparse, SolarBuddy automatically falls back to local telemetry snapshots in
- * readings.load_power.
+ * Usage is always learned from local inverter telemetry (readings.load_power)
+ * so the profile reflects actual household consumption rather than net grid
+ * import, which would be offset by solar generation.
  *
  * Samples are bucketed by (day_type, half-hour slot), percentiles are
  * calculated, baseload + high-consumption periods are derived, and the result
  * is persisted atomically to usage_profile + usage_profile_meta.
  *
  * Note on virtual mode: readings/ingest.ts refuses to insert readings while
- * the runtime is in virtual mode. In that case Octopus usage (if configured)
- * can still refresh the profile; otherwise the existing profile remains intact
- * and fallback to estimated_consumption_w applies.
+ * the runtime is in virtual mode. In that case the existing profile remains
+ * intact and fallback to estimated_consumption_w applies.
  */
 
 import { getDb } from '../db';
-import { getSettings, type AppSettings } from '../config';
-import { fetchConsumption, hasOctopusConsumptionConfig } from '../octopus/consumption';
+import { getSettings } from '../config';
 import { localDayType, localHalfHourIndex, slotIndexToLocalTime } from './slot-index';
 import { percentileSorted } from './percentile';
 import type {
@@ -35,9 +32,7 @@ import { invalidateUsageProfileCache, getUsageProfile } from './repository';
 const DAY_TYPES: DayType[] = ['weekday', 'weekend'];
 const SLOTS_PER_DAY = 48;
 const MIN_TELEMETRY_SAMPLES_PER_DAY = 200; // ~14% of 1-min coverage; days below this are dropped
-const MIN_OCTOPUS_SAMPLES_PER_DAY = 24; // allow partial days while still dropping sparse imports
 const MIN_REQUIRED_TELEMETRY_SAMPLES_PER_DAY = 48; // ~2 samples/hour averaged across window
-const MIN_REQUIRED_OCTOPUS_SAMPLES_PER_DAY = 24; // ~1 sample/hour averaged across window
 const MAX_VALID_LOAD_W = 20000; // sanity clamp for residential sensors
 
 export interface ComputeUsageProfileOptions {
@@ -49,12 +44,6 @@ export interface ComputeUsageProfileOptions {
 interface ReadingRow {
   timestamp: string;
   load_power: number;
-}
-
-type UsageDataSource = 'telemetry' | 'octopus';
-
-function normalizeUsageSource(rawSource: string | undefined): UsageDataSource {
-  return rawSource === 'telemetry' ? 'telemetry' : 'octopus';
 }
 
 function readTelemetryRows(windowStart: Date, windowEnd: Date): ReadingRow[] {
@@ -72,52 +61,6 @@ function readTelemetryRows(windowStart: Date, windowEnd: Date): ReadingRow[] {
     .all(windowStart.toISOString(), windowEnd.toISOString(), MAX_VALID_LOAD_W) as ReadingRow[];
 }
 
-async function readOctopusRows(windowStart: Date, windowEnd: Date): Promise<ReadingRow[]> {
-  const rows = await fetchConsumption(windowStart.toISOString(), windowEnd.toISOString());
-  return rows
-    .filter((row) => Number.isFinite(row.average_w) && row.average_w >= 0 && row.average_w <= MAX_VALID_LOAD_W)
-    .map((row) => ({
-      timestamp: row.interval_start,
-      load_power: row.average_w,
-    }));
-}
-
-async function resolveSampleRows(
-  settings: AppSettings,
-  windowDays: number,
-  windowStart: Date,
-  windowEnd: Date,
-): Promise<{ source: UsageDataSource; rows: ReadingRow[] }> {
-  const preferredSource = normalizeUsageSource(settings.usage_source);
-
-  if (preferredSource === 'octopus') {
-    if (!hasOctopusConsumptionConfig(settings)) {
-      return { source: 'telemetry', rows: readTelemetryRows(windowStart, windowEnd) };
-    }
-
-    try {
-      const octopusRows = await readOctopusRows(windowStart, windowEnd);
-      const minimumRows = windowDays * MIN_REQUIRED_OCTOPUS_SAMPLES_PER_DAY;
-      if (octopusRows.length < minimumRows) {
-        console.warn(
-          `[Usage] Octopus usage returned ${octopusRows.length} samples (< ${minimumRows}); falling back to telemetry samples.`,
-        );
-        return { source: 'telemetry', rows: readTelemetryRows(windowStart, windowEnd) };
-      }
-      if (octopusRows.length > 0) {
-        return { source: 'octopus', rows: octopusRows };
-      }
-      console.warn('[Usage] Octopus usage returned no intervals; falling back to telemetry samples.');
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : 'unknown error';
-      console.warn(`[Usage] Octopus usage fetch failed (${reason}); falling back to telemetry samples.`);
-    }
-    return { source: 'telemetry', rows: readTelemetryRows(windowStart, windowEnd) };
-  }
-
-  return { source: 'telemetry', rows: readTelemetryRows(windowStart, windowEnd) };
-}
-
 export async function computeUsageProfile(
   opts: ComputeUsageProfileOptions = {},
 ): Promise<UsageProfileResult> {
@@ -132,14 +75,9 @@ export async function computeUsageProfile(
   const windowEnd = now;
   const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
 
-  const { source, rows } = await resolveSampleRows(settings, windowDays, windowStart, windowEnd);
-  const minSamplesPerDay =
-    source === 'octopus' ? MIN_OCTOPUS_SAMPLES_PER_DAY : MIN_TELEMETRY_SAMPLES_PER_DAY;
-  const minimumRequired =
-    windowDays *
-    (source === 'octopus'
-      ? MIN_REQUIRED_OCTOPUS_SAMPLES_PER_DAY
-      : MIN_REQUIRED_TELEMETRY_SAMPLES_PER_DAY);
+  const rows = readTelemetryRows(windowStart, windowEnd);
+  const minSamplesPerDay = MIN_TELEMETRY_SAMPLES_PER_DAY;
+  const minimumRequired = windowDays * MIN_REQUIRED_TELEMETRY_SAMPLES_PER_DAY;
 
   // Group samples by day (YYYY-MM-DD local) so we can drop undersampled days.
   const samplesByDay: Map<
@@ -183,7 +121,7 @@ export async function computeUsageProfile(
   if (totalSamples < minimumRequired) {
     return {
       ok: false,
-      reason: `insufficient ${source} data: ${totalSamples} samples < required ${minimumRequired}`,
+      reason: `insufficient telemetry data: ${totalSamples} samples < required ${minimumRequired}`,
       stats: {
         total_samples: totalSamples,
         weekday_samples: weekdaySamples,

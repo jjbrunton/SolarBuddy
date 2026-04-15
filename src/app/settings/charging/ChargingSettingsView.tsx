@@ -121,19 +121,6 @@ export default function ChargingSettingsView() {
               onChange={(e) => update('max_charge_power_kw', e.target.value)}
             />
           </Field>
-          <Field
-            label="Usage Profile Source"
-            description="Octopus uses half-hour import usage from your meter when available. Telemetry uses local inverter readings only."
-          >
-            <select
-              className={inputClass}
-              value={settings.usage_source || 'octopus'}
-              onChange={(e) => update('usage_source', e.target.value)}
-            >
-              <option value="octopus">Octopus (preferred)</option>
-              <option value="telemetry">Local telemetry</option>
-            </select>
-          </Field>
           <Field label="Est. Consumption (W)" description="Average household consumption for SOC forecasting">
             <input
               className={inputClass}
