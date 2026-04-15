@@ -5,7 +5,7 @@
 [![Dependency Review](https://github.com/jjbrunton/SolarBuddy/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/dependency-review.yml)
 [![Release](https://github.com/jjbrunton/SolarBuddy/actions/workflows/release.yml/badge.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/release.yml)
 [![Coverage](https://raw.githubusercontent.com/jjbrunton/SolarBuddy/badge-data/badges/coverage.svg)](https://github.com/jjbrunton/SolarBuddy/actions/workflows/validation.yml)
-![GitHub Release](https://img.shields.io/github/v/release/jjbrunton/SolarBuddy)
+![GitHub Release](https://img.shields.io/github/v/release/jjbrunton/SolarBuddy?include_prereleases)
 ![GitHub last commit](https://img.shields.io/github/last-commit/jjbrunton/SolarBuddy)
 ![GitHub Repo stars](https://img.shields.io/github/stars/jjbrunton/SolarBuddy)
 ![GitHub License](https://img.shields.io/github/license/jjbrunton/SolarBuddy)
