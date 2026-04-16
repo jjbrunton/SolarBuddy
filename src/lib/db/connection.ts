@@ -247,6 +247,40 @@ function initSchema(db: Database.Database) {
     db.exec("ALTER TABLE rates ADD COLUMN source TEXT DEFAULT 'api'");
   }
 
+  // Migrate: normalise rate timestamps. Octopus returns "...:00Z", but Nordpool
+  // wrote "...:00.000Z" via Date.toISOString(), so the TEXT PRIMARY KEY treated
+  // them as different keys and both rows coexisted for the same slot. Drop the
+  // duplicates (prefer Octopus) and canonicalise the remaining timestamps.
+  for (const table of ['rates', 'export_rates'] as const) {
+    const needs = db
+      .prepare(`SELECT 1 FROM ${table} WHERE valid_from LIKE '%.%Z' LIMIT 1`)
+      .get();
+    if (!needs) continue;
+
+    db.exec(`
+      DELETE FROM ${table}
+      WHERE source IN ('nordpool', 'tariff', 'api')
+        AND EXISTS (
+          SELECT 1 FROM ${table} AS other
+          WHERE other.source = 'octopus'
+            AND other.rowid != ${table}.rowid
+            AND strftime('%Y-%m-%dT%H:%M:%SZ', other.valid_from)
+                = strftime('%Y-%m-%dT%H:%M:%SZ', ${table}.valid_from)
+        );
+
+      DELETE FROM ${table}
+      WHERE rowid NOT IN (
+        SELECT MIN(rowid) FROM ${table}
+        GROUP BY strftime('%Y-%m-%dT%H:%M:%SZ', valid_from)
+      );
+
+      UPDATE ${table}
+      SET valid_from = strftime('%Y-%m-%dT%H:%M:%SZ', valid_from),
+          valid_to   = strftime('%Y-%m-%dT%H:%M:%SZ', valid_to)
+      WHERE valid_from LIKE '%.%Z';
+    `);
+  }
+
   // Migrate: add type column to schedules (charge vs discharge)
   const scheduleCols = db.prepare('PRAGMA table_info(schedules)').all() as { name: string }[];
   const scheduleColNames = new Set(scheduleCols.map((c) => c.name));

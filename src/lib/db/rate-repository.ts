@@ -3,6 +3,14 @@ import type { AgileRate } from '../octopus/rates';
 
 export type RateSource = 'octopus' | 'nordpool' | 'tariff';
 
+// Canonical ISO form: YYYY-MM-DDTHH:MM:SSZ (no milliseconds, always UTC).
+// Octopus returns this form; Date.toISOString() adds ".000" which would
+// collide with the TEXT PRIMARY KEY on valid_from and bypass the Octopus-over-
+// Nordpool conflict rule. Normalise on write so every source maps to the same key.
+export function normalizeRateTimestamp(iso: string): string {
+  return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 function upsertRates(table: 'rates' | 'export_rates', rates: AgileRate[], source: RateSource = 'octopus') {
   const db = getDb();
   // Octopus (confirmed) rates always overwrite any existing row.
@@ -20,7 +28,14 @@ function upsertRates(table: 'rates' | 'export_rates', rates: AgileRate[], source
   const now = new Date().toISOString();
   const transaction = db.transaction((rates: AgileRate[]) => {
     for (const rate of rates) {
-      upsert.run(rate.valid_from, rate.valid_to, rate.price_inc_vat, rate.price_exc_vat, now, source);
+      upsert.run(
+        normalizeRateTimestamp(rate.valid_from),
+        normalizeRateTimestamp(rate.valid_to),
+        rate.price_inc_vat,
+        rate.price_exc_vat,
+        now,
+        source,
+      );
     }
   });
   transaction(rates);
