@@ -2,10 +2,10 @@
 
 | Metric | Percent | Covered / Total |
 | --- | ---: | ---: |
-| Lines | 77.1% | 3226/4186 |
-| Statements | 76.3% | 3442/4510 |
-| Functions | 79.4% | 587/739 |
-| Branches | 65.8% | 1778/2702 |
+| Lines | 77.6% | 3342/4304 |
+| Statements | 76.9% | 3564/4635 |
+| Functions | 79.7% | 601/754 |
+| Branches | 65.9% | 1806/2742 |
 
 Scope: backend and API code under `src/lib/` and `src/app/api/`.
 
