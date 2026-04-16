@@ -2,8 +2,8 @@
 
 | Metric | Percent | Covered / Total |
 | --- | ---: | ---: |
-| Lines | 77.1% | 3225/4185 |
-| Statements | 76.3% | 3441/4509 |
+| Lines | 77.1% | 3226/4186 |
+| Statements | 76.3% | 3442/4510 |
 | Functions | 79.4% | 587/739 |
 | Branches | 65.8% | 1778/2702 |
 
