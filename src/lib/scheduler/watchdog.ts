@@ -78,6 +78,7 @@ interface WatchdogState {
   lastCommandAt: number;
   lastBatteryExhaustedAt: number;
   lastNotifiedAction: RuntimeAction | null;
+  lastSatisfiedLoggedAction: RuntimeAction | null;
   /**
    * `rangeStart` of the previous tick's resolved slot range. Used by the
    * slot-end backfill to detect when the watchdog has crossed a slot/run
@@ -112,6 +113,7 @@ function getWatchdogState(): WatchdogState {
       lastCommandAt: 0,
       lastBatteryExhaustedAt: 0,
       lastNotifiedAction: null,
+      lastSatisfiedLoggedAction: null,
       lastResolvedRangeStart: null,
       lastHoldAssertedStopDischarge: null,
     };
@@ -345,6 +347,7 @@ function recordCommand(signature: string) {
   const runtime = getWatchdogState();
   runtime.lastCommandSignature = signature;
   runtime.lastCommandAt = Date.now();
+  runtime.lastSatisfiedLoggedAction = null;
 }
 
 function clearCommandCooldown() {
@@ -457,6 +460,9 @@ function notifyIfActionChanged(action: RuntimeAction, title: string, body: strin
 }
 
 function logStateSatisfied(action: RuntimeAction) {
+  const runtime = getWatchdogState();
+  if (runtime.lastSatisfiedLoggedAction === action) return;
+  runtime.lastSatisfiedLoggedAction = action;
   appendEvent({
     level: 'info',
     category: 'watchdog',
