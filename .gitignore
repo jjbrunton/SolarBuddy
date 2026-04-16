@@ -27,3 +27,13 @@ Thumbs.db
 # Playwright
 playwright-report/
 test-results/
+.playwright-mcp/
+
+# Coverage
+coverage/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Ad-hoc screenshots at repo root (keep docs/images/ and public/icons/)
+/*.png
