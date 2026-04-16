@@ -1,10 +1,29 @@
 #!/usr/bin/env bash
+# Smoke test the production build by booting the Next.js standalone server and
+# curling a slice of core endpoints. Proves the standalone artifact is
+# self-contained and that no route crashes on a cold DB.
+#
+# Run after `npm run build`. Used directly in CI (see validation.yml).
 set -euo pipefail
 
 PORT="${PORT:-3101}"
 HOSTNAME="${HOSTNAME:-127.0.0.1}"
+BASE_URL="http://${HOSTNAME}:${PORT}"
+
 if [[ -z "${DB_PATH:-}" ]]; then
   DB_PATH="$(mktemp "${TMPDIR:-/tmp}/solarbuddy-smoke-db.XXXXXX")"
+fi
+
+# Next.js standalone build does not copy .next/static or public/ — the server
+# 404s every client chunk without them. Mirror the same setup Playwright uses
+# so the smoke test exercises a realistic static-asset serving path.
+if [[ ! -d .next/standalone/.next/static ]]; then
+  rm -rf .next/standalone/.next/static
+  mkdir -p .next/standalone/.next
+  cp -R .next/static .next/standalone/.next/static
+fi
+if [[ -d public && ! -d .next/standalone/public ]]; then
+  cp -R public .next/standalone/public
 fi
 
 cleanup() {
@@ -19,16 +38,107 @@ trap cleanup EXIT
 PORT="${PORT}" HOSTNAME="${HOSTNAME}" DB_PATH="${DB_PATH}" node .next/standalone/server.js >/tmp/solarbuddy-smoke.log 2>&1 &
 SERVER_PID=$!
 
+# Wait for the server to come up. Health endpoint is the authoritative signal.
 for _ in $(seq 1 30); do
-  if curl -fsS "http://${HOSTNAME}:${PORT}/api/health" >/dev/null 2>&1; then
+  if curl -fsS "${BASE_URL}/api/health" >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
 
-curl -fsS "http://${HOSTNAME}:${PORT}/api/health" >/dev/null
-curl -fsS "http://${HOSTNAME}:${PORT}/" >/dev/null
-curl -fsS "http://${HOSTNAME}:${PORT}/simulate" >/dev/null
-curl -fsS "http://${HOSTNAME}:${PORT}/api/status" >/dev/null
+# Assertion helpers — fail fast with a clear message so CI output is readable.
+assert_status() {
+  local url="$1"
+  local expected="$2"
+  local actual
+  actual="$(curl -s -o /dev/null -w '%{http_code}' "${url}")"
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "FAIL: ${url} returned ${actual}, expected ${expected}" >&2
+    return 1
+  fi
+  echo "  ${expected}  ${url}"
+}
+
+assert_non_5xx() {
+  local url="$1"
+  local actual
+  actual="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${url}")"
+  if [[ "${actual}" -ge 500 ]]; then
+    echo "FAIL: ${url} returned ${actual} (>= 500)" >&2
+    return 1
+  fi
+  echo "  ${actual}  ${url}"
+}
+
+echo "Page renders:"
+assert_status "${BASE_URL}/" 200
+assert_status "${BASE_URL}/simulate" 200
+assert_status "${BASE_URL}/settings" 200
+assert_status "${BASE_URL}/schedule" 200
+
+echo "Core API endpoints (non-5xx):"
+# These are the GET routes that must never crash on a bare DB. /api/events is
+# excluded because it's a Server-Sent Events stream that never closes.
+for path in \
+  /api/health \
+  /api/status \
+  /api/settings \
+  /api/overrides \
+  /api/schedule \
+  /api/scheduled-actions \
+  /api/rates \
+  /api/forecast \
+  /api/readings \
+  /api/analytics/savings \
+  /api/analytics/attribution \
+  /api/events-log \
+  /api/system \
+  /api/usage-profile \
+  /api/virtual-inverter \
+  /api/home-assistant/status \
+; do
+  assert_non_5xx "${BASE_URL}${path}"
+done
+
+echo "Health payload shape:"
+HEALTH_JSON="$(curl -fsS "${BASE_URL}/api/health")"
+echo "${HEALTH_JSON}" | node -e '
+  let data = "";
+  process.stdin.on("data", (c) => data += c);
+  process.stdin.on("end", () => {
+    const body = JSON.parse(data);
+    if (body.ok !== true) throw new Error("health.ok is not true");
+    if (body.service !== "solarbuddy") throw new Error("health.service is wrong");
+    if (!body.build || typeof body.build.commit !== "string") throw new Error("health.build.commit missing");
+    if (body.build.commit !== "unknown" && body.build.commitShort.length !== 7) {
+      throw new Error("health.build.commitShort is not a 7-char prefix");
+    }
+    console.log("  health payload OK (commit=" + body.build.commitShort + ")");
+  });
+'
+
+echo "Overrides POST → GET → DELETE round-trip:"
+TODAY="$(date -u +%Y-%m-%d)"
+SLOT_START="${TODAY}T23:00:00Z"
+SLOT_END="${TODAY}T23:30:00Z"
+
+curl -fsS -X POST "${BASE_URL}/api/overrides" \
+  -H 'content-type: application/json' \
+  -d "{\"slots\":[{\"slot_start\":\"${SLOT_START}\",\"slot_end\":\"${SLOT_END}\",\"action\":\"charge\"}]}" \
+  >/dev/null
+GET_RESPONSE="$(curl -fsS "${BASE_URL}/api/overrides")"
+if ! echo "${GET_RESPONSE}" | grep -q "${SLOT_START}"; then
+  echo "FAIL: override for ${SLOT_START} not returned by GET" >&2
+  echo "Got: ${GET_RESPONSE}" >&2
+  exit 1
+fi
+echo "  POST+GET round-trip OK"
+
+DELETE_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE_URL}/api/overrides?slot_start=${SLOT_START}")"
+if [[ "${DELETE_STATUS}" != "200" ]]; then
+  echo "FAIL: DELETE returned ${DELETE_STATUS}" >&2
+  exit 1
+fi
+echo "  DELETE OK"
 
 echo "Smoke test passed."
