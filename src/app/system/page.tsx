@@ -8,6 +8,7 @@ import SystemPageView from './SystemPageView';
 import { getVirtualInverterStatus, isVirtualModeEnabled } from '@/lib/virtual-inverter/runtime';
 
 export const metadata: Metadata = { title: 'System' };
+export const dynamic = 'force-dynamic';
 
 const startTime = Date.now();
 
