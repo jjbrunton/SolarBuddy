@@ -30,10 +30,16 @@ import {
   type UpcomingEvents,
 } from './resolve';
 
-const WATCHDOG_INTERVAL_MS = 30_000;
+const WATCHDOG_INTERVAL_MS = 60_000;
 const WATCHDOG_DEBOUNCE_MS = 1_000;
 const COMMAND_COOLDOWN_MS = 120_000;
-const STATE_FRESHNESS_MS = 60_000;
+// Wider than a single telemetry push cycle so a brief MQTT gap doesn't defeat
+// the satisfaction gate and force re-issues that only the cooldown catches.
+const STATE_FRESHNESS_MS = 180_000;
+// Charge rate read-backs can round or lag the written value by a small
+// amount. Treat anything within this tolerance as "already satisfied" so a
+// rounded read-back doesn't trigger a re-write every cooldown expiry.
+const CHARGE_RATE_TOLERANCE_PP = 2;
 
 type RuntimeAction = PlanAction;
 type RuntimeReason =
@@ -78,6 +84,16 @@ interface WatchdogState {
    * boundary and update the prior execution row's `soc_at_end`.
    */
   lastResolvedRangeStart: string | null;
+  /**
+   * The `load_first_stop_discharge` value we most recently pinned on a hold
+   * write, or `null` if the last applied action was not hold. Hold pins
+   * stop_discharge to the SOC at write time; if we compared against live SOC
+   * every tick, natural drift from solar top-up or self-consumption would
+   * flag the hold as unsatisfied and re-pin repeatedly. Tracking the pinned
+   * value lets us consider hold satisfied as long as the inverter still
+   * reports back what we wrote — regardless of SOC drift.
+   */
+  lastHoldAssertedStopDischarge: number | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -97,6 +113,7 @@ function getWatchdogState(): WatchdogState {
       lastBatteryExhaustedAt: 0,
       lastNotifiedAction: null,
       lastResolvedRangeStart: null,
+      lastHoldAssertedStopDischarge: null,
     };
   }
 
@@ -239,7 +256,8 @@ export function resolveRuntimeIntentRange(
 function isChargeStateSatisfied(state: InverterState, chargeRate: number): boolean {
   const workModeMatches = state.work_mode === 'Battery first';
   const chargeRateMatches =
-    state.battery_first_charge_rate === null || state.battery_first_charge_rate === chargeRate;
+    state.battery_first_charge_rate === null ||
+    Math.abs(state.battery_first_charge_rate - chargeRate) <= CHARGE_RATE_TOLERANCE_PP;
 
   return workModeMatches && chargeRateMatches;
 }
@@ -251,18 +269,23 @@ function isDischargeStateSatisfied(state: InverterState, floor: number): boolean
   return true;
 }
 
-function isHoldStateSatisfied(state: InverterState): boolean {
+function isHoldStateSatisfied(
+  state: InverterState,
+  runtime: WatchdogState,
+): boolean {
   if (isForcedChargeActive(state) || isForcedDischargeActive(state)) {
     return false;
   }
+  if (state.work_mode !== 'Load first') return false;
+  if (state.load_first_stop_discharge === null) return false;
+  if (runtime.lastHoldAssertedStopDischarge === null) return false;
 
-  const stopDischargeMatchesSoc =
-    state.load_first_stop_discharge !== null &&
-    state.battery_soc !== null &&
-    state.load_first_stop_discharge >= state.battery_soc - 3 &&
-    state.load_first_stop_discharge <= state.battery_soc + 3;
-
-  return state.work_mode === 'Load first' && stopDischargeMatchesSoc;
+  // Hold is satisfied as long as the inverter still reports the stop_discharge
+  // we last pinned. Natural SOC drift from solar top-up or self-consumption
+  // does not trigger a re-pin; only an external mutation (work_mode flipped,
+  // or stop_discharge changed) or a transition out of hold falls through and
+  // re-asserts. This avoids hammering the inverter during long hold runs.
+  return state.load_first_stop_discharge === runtime.lastHoldAssertedStopDischarge;
 }
 
 function isGridChargingFromTelemetry(state: Pick<InverterState, 'battery_power' | 'grid_power' | 'load_power' | 'pv_power'>): boolean {
@@ -452,6 +475,7 @@ function isIntentAlreadySatisfied(
   state: InverterState,
   chargeRate: number,
   floor: number,
+  runtime: WatchdogState,
 ): boolean {
   if (!isStateFresh(state)) return false;
 
@@ -461,7 +485,7 @@ function isIntentAlreadySatisfied(
     case 'discharge':
       return isDischargeStateSatisfied(state, floor);
     case 'hold':
-      return isHoldStateSatisfied(state);
+      return isHoldStateSatisfied(state, runtime);
     default:
       return false;
   }
@@ -473,6 +497,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
   const defaultMode = settings.default_work_mode as 'Battery first' | 'Load first';
   const floorRaw = parseInt(settings.discharge_soc_floor, 10);
   const floor = Number.isFinite(floorRaw) ? floorRaw : 20;
+  const runtime = getWatchdogState();
   const signature = buildCommandSignature(
     intent.action,
     intent.rangeStart ?? intent.slotStart,
@@ -485,7 +510,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
   // telemetry is fresh, skip the write entirely. We deliberately do NOT touch
   // the cooldown timers here — a subsequent drift should still be able to
   // re-issue the command immediately without waiting for the 120s cooldown.
-  if (isIntentAlreadySatisfied(intent, state, chargeRate, floor)) {
+  if (isIntentAlreadySatisfied(intent, state, chargeRate, floor, runtime)) {
     logStateSatisfied(intent.action);
     return;
   }
@@ -505,6 +530,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       await ensureStopDischargeAtFloor(state);
       await startGridCharging(chargeRate);
       recordCommand(signature);
+      runtime.lastHoldAssertedStopDischarge = null;
       logSlotExecution(intent, state, signature);
       appendEvent({
         level: 'info',
@@ -521,6 +547,7 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       await ensureStopDischargeAtFloor(state);
       await startGridDischarge(defaultMode);
       recordCommand(signature);
+      runtime.lastHoldAssertedStopDischarge = null;
       logSlotExecution(intent, state, signature);
       appendEvent({
         level: 'info',
@@ -538,8 +565,10 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
       if (isForcedChargeActive(state)) {
         await stopGridCharging(defaultMode);
       }
-      await startBatteryHold(state.battery_soc ?? 50);
+      const pinnedStopDischarge = state.battery_soc ?? 50;
+      await startBatteryHold(pinnedStopDischarge);
       recordCommand(signature);
+      runtime.lastHoldAssertedStopDischarge = pinnedStopDischarge;
       logSlotExecution(intent, state, signature);
       appendEvent({
         level: 'info',
@@ -675,5 +704,6 @@ export function stopInverterWatchdog() {
   runtime.pendingReasons.clear();
   runtime.running = false;
   runtime.lastResolvedRangeStart = null;
+  runtime.lastHoldAssertedStopDischarge = null;
   clearCommandCooldown();
 }

@@ -402,7 +402,7 @@ describe('reconcileInverterState', () => {
     expect(startBatteryHold).toHaveBeenCalledWith(56);
   });
 
-  it('considers hold satisfied when load_first_stop_discharge matches SOC', async () => {
+  it('asserts hold once on cold start then suppresses subsequent ticks while the inverter still reports the pinned value', async () => {
     currentState = buildState({
       battery_soc: 56,
       work_mode: 'Load first',
@@ -417,8 +417,23 @@ describe('reconcileInverterState', () => {
       reason: 'Hold battery.',
     };
 
+    // First tick (cold start): we don't trust whatever state we find, assert once.
     await reconcileInverterState('watchdog startup');
+    expect(startBatteryHold).toHaveBeenCalledWith(56);
 
+    startBatteryHold.mockClear();
+
+    // Second tick: SOC has drifted upward from solar top-up (the scenario that
+    // used to trigger the ±3% tolerance re-pin loop). stop_discharge still
+    // reports the value we pinned, so hold is satisfied — no new command.
+    currentState = buildState({
+      battery_soc: 72,
+      work_mode: 'Load first',
+      output_source_priority: 'USB',
+      battery_first_grid_charge: 'Disabled',
+      load_first_stop_discharge: 56,
+    });
+    await reconcileInverterState('tick — soc drifted');
     expect(startBatteryHold).not.toHaveBeenCalled();
   });
 
@@ -560,6 +575,48 @@ describe('reconcileInverterState', () => {
     expect(stopGridCharging).not.toHaveBeenCalled();
     expect(startBatteryHold).not.toHaveBeenCalled();
     expect(startGridDischarge).not.toHaveBeenCalled();
+  });
+
+  it('treats a charge rate within ±2pp of the desired rate as satisfied', async () => {
+    currentSettings = buildSettings({ charge_rate: '80' });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    // Inverter read-back rounded down by 1pp. Under exact-match equality this
+    // would re-fire every cooldown expiry; the tolerance absorbs it.
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Battery first',
+      battery_first_charge_rate: 79,
+      battery_first_grid_charge: 'Enabled',
+    });
+
+    await reconcileInverterState('fuzzy-match charge rate');
+
+    expect(startGridCharging).not.toHaveBeenCalled();
+  });
+
+  it('re-issues the charge command when the read-back rate drifts beyond the tolerance', async () => {
+    currentSettings = buildSettings({ charge_rate: '80' });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    currentState = buildState({
+      battery_soc: 40,
+      work_mode: 'Battery first',
+      battery_first_charge_rate: 70,
+      battery_first_grid_charge: 'Enabled',
+    });
+
+    await reconcileInverterState('out-of-tolerance charge rate');
+
+    expect(startGridCharging).toHaveBeenCalledWith(80);
   });
 
   it('re-issues the charge command when state drifts away from the desired posture', async () => {
