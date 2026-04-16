@@ -24,6 +24,23 @@ Documentation changes are part of the definition of done.
 
 If code and docs disagree, fix the docs in the same change unless the user explicitly asked you to leave documentation untouched.
 
+## Mandatory: Record Architectural Decisions
+
+Durable architectural choices MUST be captured as an ADR in [`docs/decisions/`](docs/decisions/README.md), using the [template](docs/decisions/TEMPLATE.md). PR descriptions and chat history are not durable.
+
+Write an ADR when the change introduces or alters any of the following:
+
+- A runtime model or process boundary (e.g. single-instance vs. multi-instance, in-process vs. external service)
+- A persistence choice or schema-shape decision (storage engine, migration strategy, retention policy)
+- An external integration contract (new third-party API, MQTT topic structure, webhook protocol)
+- A scheduling, planning, or control-loop strategy (planner algorithm, override precedence, watchdog behavior)
+- A security, authentication, or trust-boundary change
+- A reversal or material revision of an earlier ADR (supersede the prior ADR rather than editing it in place)
+
+Do NOT write an ADR for: bug fixes, refactors that preserve behavior, dependency bumps, copy/UX tweaks, or anything fully captured by updating an existing focused doc.
+
+ADR file naming: `NNNN-short-kebab-title.md`, where `NNNN` is the next zero-padded number. Register the new ADR in [`docs/decisions/README.md`](docs/decisions/README.md).
+
 ## Mandatory: Testing and Verification
 
 Verification is required both before and after changes.
@@ -47,6 +64,7 @@ A change is not complete if:
 
 - Relevant docs were not updated
 - New functionality was added without corresponding documentation
+- An architectural decision matching the ADR triggers above was made without an ADR
 - Relevant verification commands were not run
 - A change requiring integration coverage did not run `npm run test:integration`
 - Changed behaviour has no test coverage and no explicit justification
