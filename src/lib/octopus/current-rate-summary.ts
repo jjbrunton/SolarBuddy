@@ -55,7 +55,8 @@ export function summarizeCurrentRate(
 
   if (currentIndex === -1) return null;
 
-  const prices = sortedRates.map((rate) => roundPrice(rate.price_inc_vat));
+  const upcomingRates = sortedRates.slice(currentIndex);
+  const prices = upcomingRates.map((rate) => roundPrice(rate.price_inc_vat));
   const minPrice = roundPrice(Math.min(...prices));
   const maxPrice = roundPrice(Math.max(...prices));
   const averagePrice = roundPrice(prices.reduce((sum, price) => sum + price, 0) / prices.length);

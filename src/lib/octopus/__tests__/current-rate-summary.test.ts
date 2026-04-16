@@ -38,7 +38,7 @@ describe('summarizeCurrentRate', () => {
     },
   ];
 
-  it('returns the current slot, next slot, and loaded aggregates', () => {
+  it('returns the current slot, next slot, and upcoming-window aggregates', () => {
     const summary = summarizeCurrentRate(rates, new Date('2026-03-30T10:40:00.000Z'));
 
     expect(summary).toEqual({
@@ -54,9 +54,24 @@ describe('summarizeCurrentRate', () => {
       },
       minPrice: 6.2,
       maxPrice: 14.99,
-      averagePrice: 10.1,
+      averagePrice: 10.6,
       status: 'best',
     });
+  });
+
+  it('ignores elapsed slots when computing the best/min price', () => {
+    const ratesWithCheaperPast = [
+      {
+        valid_from: '2026-03-30T09:00:00.000Z',
+        valid_to: '2026-03-30T09:30:00.000Z',
+        price_inc_vat: 1.0,
+      },
+      ...rates,
+    ];
+    const summary = summarizeCurrentRate(ratesWithCheaperPast, new Date('2026-03-30T10:40:00.000Z'));
+
+    expect(summary?.minPrice).toBe(6.2);
+    expect(summary?.status).toBe('best');
   });
 
   it('returns null when there is no active rate for the current time', () => {
