@@ -68,6 +68,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `GET` | `/api/analytics/accounting` | Return accounting-oriented savings and cashflow totals for the selected period. |
 | `GET` | `/api/analytics/savings` | Return savings analytics and comparative cost views. |
 | `GET` | `/api/analytics/battery-profit` | Return battery charge cost, discharge revenue, and net profit for the selected period. |
+| `GET` | `/api/analytics/attribution` | Return a savings-vs-standard-tariff breakdown for the selected period, decomposed into solar self-use, tariff shift, and export revenue. |
 | `GET` | `/api/analytics/bill-estimate` | Return estimated electricity bill for today (actual + forecast) and tomorrow (fully forecast), combining import rates, PV generation, learned consumption, and planned battery actions. |
 | `GET` | `/api/usage-profile` | Return the learned half-hour consumption profile with weekday/weekend buckets, baseload, and high-consumption periods. |
 | `POST` | `/api/usage-profile/refresh` | Recompute the usage profile on demand from the configured usage source (Octopus consumption data when selected, otherwise local telemetry). |
