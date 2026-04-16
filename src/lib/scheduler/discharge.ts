@@ -354,11 +354,17 @@ function buildSlotModels(
   const peakStart = settings.peak_period_start || '16:00';
   const peakEnd = settings.peak_period_end || '19:00';
 
-  // Build export rate lookup — falls back to import rate when absent
+  // Build export rate lookup — falls back to import rate when absent.
+  // Non-positive export prices (e.g. synthetic 0.0 placeholders when the user
+  // has no Outgoing tariff) are skipped so the `??` fallback below picks up
+  // the avoided-import value. Without this filter, the arbitrage gate rejects
+  // every slot because effectiveDischargePrice(0, _) < marginalCost.
   const exportRateMap = new Map<string, number>();
   if (exportRates) {
     for (const er of exportRates) {
-      exportRateMap.set(er.valid_from, er.price_inc_vat);
+      if (Number.isFinite(er.price_inc_vat) && er.price_inc_vat > 0) {
+        exportRateMap.set(er.valid_from, er.price_inc_vat);
+      }
     }
   }
 

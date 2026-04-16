@@ -767,11 +767,16 @@ function buildPlannedSlots(
 
   const perSlotEnergyKwh = ((parseFloat(settings.max_charge_power_kw) || 3.6) * ((parseFloat(settings.charge_rate) || 100) / 100)) * HALF_HOUR_HOURS;
 
-  // Build export rate lookup for discharge value calculation
+  // Build export rate lookup for discharge value calculation.
+  // Skip non-positive entries (synthetic 0.0 placeholders written when the
+  // user has no export tariff) so the `??` fallback below picks up the
+  // avoided-import value instead of crediting discharge at 0p.
   const exportRateMap = new Map<string, number>();
   if (exportRates) {
     for (const er of exportRates) {
-      exportRateMap.set(er.valid_from, er.price_inc_vat);
+      if (Number.isFinite(er.price_inc_vat) && er.price_inc_vat > 0) {
+        exportRateMap.set(er.valid_from, er.price_inc_vat);
+      }
     }
   }
 
