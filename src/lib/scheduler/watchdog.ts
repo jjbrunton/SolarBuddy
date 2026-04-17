@@ -106,6 +106,14 @@ interface WatchdogState {
    * reports back what we wrote — regardless of SOC drift.
    */
   lastHoldAssertedStopDischarge: number | null;
+  /**
+   * `slotStart` of the plan slot during which we most recently logged a SOC
+   * trajectory drift event. Used to suppress repeated drift logs on every
+   * watchdog tick while drift persists within the same slot — the replan
+   * itself is debounced and throttled, so once per slot is plenty for
+   * visibility. Reset when drift clears or we cross into a new slot.
+   */
+  lastDriftLoggedSlotStart: string | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -127,6 +135,7 @@ function getWatchdogState(): WatchdogState {
       lastSatisfiedLoggedAction: null,
       lastResolvedRangeStart: null,
       lastHoldAssertedStopDischarge: null,
+      lastDriftLoggedSlotStart: null,
     };
   }
 
@@ -613,22 +622,41 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
  * charge window's planning pass.
  */
 function checkSocTrajectoryDrift(intent: RuntimeIntent, state: InverterState, nowIso: string) {
-  if (intent.action !== 'charge') return;
-  if (intent.source !== 'plan') return;
-  if (state.battery_soc === null) return;
+  const runtime = getWatchdogState();
+
+  if (intent.action !== 'charge' || intent.source !== 'plan' || state.battery_soc === null) {
+    // Not in a plan-driven charge slot — reset the log-dedup marker so a fresh
+    // drift episode in the next cheap window emits a log again.
+    runtime.lastDriftLoggedSlotStart = null;
+    return;
+  }
 
   const trajectory = getMostRecentCompletedPlanSlot(nowIso);
   if (!trajectory || trajectory.expected_soc_after === null) return;
 
   const drift = trajectory.expected_soc_after - state.battery_soc;
-  if (drift <= SOC_DRIFT_THRESHOLD_PCT) return;
+  if (drift <= SOC_DRIFT_THRESHOLD_PCT) {
+    // Drift has cleared; reset the marker so it logs again if it reappears.
+    runtime.lastDriftLoggedSlotStart = null;
+    return;
+  }
+
+  // requestReplan is debounced + min-interval-throttled internally, so calling
+  // it every tick is fine — only one replan actually fires per 60s window.
+  requestReplan('soc_trajectory_drift');
+
+  // Log once per plan slot while drift persists. The replan itself dedupes
+  // its own log, but the detection log would otherwise fire on every
+  // telemetry push.
+  const slotKey = intent.slotStart ?? intent.rangeStart ?? null;
+  if (slotKey !== null && runtime.lastDriftLoggedSlotStart === slotKey) return;
+  runtime.lastDriftLoggedSlotStart = slotKey;
 
   appendEvent({
     level: 'info',
     category: 'scheduler',
     message: `SOC trajectory drift detected: actual ${state.battery_soc}% vs. planned ${trajectory.expected_soc_after}% (drift ${drift.toFixed(1)}pp). Requesting replan.`,
   });
-  requestReplan('soc_trajectory_drift');
 }
 
 export async function reconcileInverterState(reason = 'manual trigger') {
@@ -762,5 +790,6 @@ export function stopInverterWatchdog() {
   runtime.running = false;
   runtime.lastResolvedRangeStart = null;
   runtime.lastHoldAssertedStopDischarge = null;
+  runtime.lastDriftLoggedSlotStart = null;
   clearCommandCooldown();
 }

@@ -1069,6 +1069,60 @@ describe('reconcileInverterState', () => {
       expect(requestReplan).not.toHaveBeenCalled();
     });
 
+    it('logs drift only once per slot even when the watchdog ticks repeatedly while drift persists', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: 70,
+      };
+      currentState = buildState({ battery_soc: 55 });
+
+      await reconcileInverterState('tick 1');
+      await reconcileInverterState('tick 2');
+      await reconcileInverterState('tick 3');
+
+      const driftLogs = appendEvent.mock.calls.filter(
+        ([event]) => typeof event?.message === 'string' && event.message.startsWith('SOC trajectory drift detected'),
+      );
+      expect(driftLogs).toHaveLength(1);
+      // requestReplan still fires each tick — its own throttle handles the rest.
+      expect(requestReplan).toHaveBeenCalledTimes(3);
+    });
+
+    it('logs again when drift reappears after a clearance', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: 70,
+      };
+
+      currentState = buildState({ battery_soc: 55 });
+      await reconcileInverterState('tick with drift');
+
+      // Solar catches up — drift clears.
+      currentState = buildState({ battery_soc: 70 });
+      await reconcileInverterState('tick without drift');
+
+      // Drift reappears (e.g. clouds rolled back in).
+      currentState = buildState({ battery_soc: 50 });
+      await reconcileInverterState('tick with drift again');
+
+      const driftLogs = appendEvent.mock.calls.filter(
+        ([event]) => typeof event?.message === 'string' && event.message.startsWith('SOC trajectory drift detected'),
+      );
+      expect(driftLogs).toHaveLength(2);
+    });
+
     it('skips the drift check when the completed plan slot has no expected_soc_after', async () => {
       planSlotRow = {
         slot_start: '2026-04-01T10:00:00Z',
