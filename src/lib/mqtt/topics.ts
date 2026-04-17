@@ -46,6 +46,7 @@ export const COMMAND_TOPICS = {
   workMode: 'solar_assistant/inverter_1/work_mode_priority/set',
   gridChargeRate: 'solar_assistant/inverter_1/grid_charge_rate/set',
   batteryChargeRate: 'solar_assistant/inverter_1/battery_first_charge_rate/set',
+  batteryFirstStopCharge: 'solar_assistant/inverter_1/battery_first_stop_charge/set',
   outputSourcePriority: 'solar_assistant/inverter_1/output_source_priority/set',
   chargerSourcePriority: 'solar_assistant/inverter_1/charger_source_priority/set',
   maxGridChargeCurrent: 'solar_assistant/inverter_1/max_grid_charge_current/set',

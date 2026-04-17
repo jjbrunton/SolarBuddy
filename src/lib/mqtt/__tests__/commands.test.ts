@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   setBatteryChargeRate,
+  setBatteryFirstStopCharge,
   setChargerSourcePriority,
   setLoadFirstStopDischarge,
   setMaxGridChargeCurrent,
@@ -73,6 +74,12 @@ describe('mqtt commands', () => {
       payload: '75',
     },
     {
+      label: 'battery-first stop charge',
+      run: () => setBatteryFirstStopCharge(100),
+      topic: COMMAND_TOPICS.batteryFirstStopCharge,
+      payload: '100',
+    },
+    {
       label: 'output source priority',
       run: () => setOutputSourcePriority('SBU'),
       topic: COMMAND_TOPICS.outputSourcePriority,
@@ -133,7 +140,10 @@ describe('mqtt commands', () => {
 
     await startGridCharging(88);
 
+    // Stop charge is raised to 100% first so Growatt firmware doesn't exit
+    // Battery first mode the instant our work-mode write lands.
     expect(publish.mock.calls.map(([topic, payload]) => [topic, payload])).toEqual([
+      [COMMAND_TOPICS.batteryFirstStopCharge, '100'],
       [COMMAND_TOPICS.batteryChargeRate, '88'],
       [COMMAND_TOPICS.workMode, 'Battery first'],
     ]);

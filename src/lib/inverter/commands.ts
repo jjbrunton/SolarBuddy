@@ -1,6 +1,7 @@
 import {
   setWorkMode as setRealWorkMode,
   setBatteryChargeRate as setRealBatteryChargeRate,
+  setBatteryFirstStopCharge as setRealBatteryFirstStopCharge,
   startGridCharging as startRealGridCharging,
   stopGridCharging as stopRealGridCharging,
   startGridDischarge as startRealGridDischarge,
@@ -31,12 +32,21 @@ export async function setBatteryChargeRate(rate: number) {
   await setRealBatteryChargeRate(rate);
 }
 
+export async function setBatteryFirstStopCharge(soc: number) {
+  if (isVirtualModeEnabled()) {
+    handleVirtualCommand(`Virtual battery first stop charge set to ${soc}%.`, { batteryFirstStopCharge: soc });
+    return;
+  }
+  await setRealBatteryFirstStopCharge(soc);
+}
+
 export async function startGridCharging(chargeRate: number) {
   if (isVirtualModeEnabled()) {
     handleVirtualCommand(`Virtual grid charging started at ${chargeRate}%.`, {
       action: 'charge',
       workMode: 'Grid first',
       batteryFirstChargeRate: chargeRate,
+      batteryFirstStopCharge: 100,
       outputSourcePriority: 'USB',
     });
     return;

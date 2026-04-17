@@ -26,6 +26,7 @@ interface VirtualCommandState {
   workMode: 'Grid first' | 'Battery first' | 'Load first';
   outputSourcePriority: string;
   batteryFirstChargeRate: number;
+  batteryFirstStopCharge: number;
   loadFirstStopDischarge: number;
 }
 
@@ -69,6 +70,7 @@ function getStore(): VirtualRuntimeStore {
         workMode: 'Battery first',
         outputSourcePriority: 'USB',
         batteryFirstChargeRate: 100,
+        batteryFirstStopCharge: 100,
         loadFirstStopDischarge: 20,
       },
       scenarioData: null,
@@ -216,7 +218,7 @@ function buildSnapshotState(isoTime: string): Partial<InverterState> {
     grid_frequency: currentState.grid_frequency ?? 50,
     battery_first_charge_rate: store.command.batteryFirstChargeRate,
     battery_first_grid_charge: store.command.action === 'charge' ? 'Enabled' : 'Disabled',
-    battery_first_stop_charge: 100,
+    battery_first_stop_charge: store.command.batteryFirstStopCharge,
     load_first_stop_discharge: store.command.loadFirstStopDischarge,
     output_source_priority: store.command.outputSourcePriority,
     max_charge_current: round((effectiveChargePowerW / Math.max(currentState.grid_voltage ?? 230, 1)), 1),
@@ -281,6 +283,7 @@ function applyScenarioState() {
     workMode: (store.scenarioData.initialState.work_mode as VirtualCommandState['workMode']) ?? 'Battery first',
     outputSourcePriority: store.scenarioData.initialState.output_source_priority ?? 'USB',
     batteryFirstChargeRate: store.scenarioData.initialState.battery_first_charge_rate ?? 100,
+    batteryFirstStopCharge: store.scenarioData.initialState.battery_first_stop_charge ?? 100,
     loadFirstStopDischarge: store.scenarioData.initialState.load_first_stop_discharge ?? 20,
   };
 
@@ -538,6 +541,7 @@ export function resetVirtualInverterForTests() {
     workMode: 'Battery first',
     outputSourcePriority: 'USB',
     batteryFirstChargeRate: 100,
+    batteryFirstStopCharge: 100,
     loadFirstStopDischarge: 20,
   };
   replaceState({

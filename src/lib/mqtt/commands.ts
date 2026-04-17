@@ -47,9 +47,24 @@ export async function setBatteryChargeRate(rate: number) {
   await publish(COMMAND_TOPICS.batteryChargeRate, String(rate));
 }
 
+export async function setBatteryFirstStopCharge(soc: number) {
+  console.log(`[CMD] Battery first stop charge: ${soc}%`);
+  await publish(COMMAND_TOPICS.batteryFirstStopCharge, String(soc));
+}
+
 const COMMAND_GAP_MS = 1_500;
 
+// Growatt inverters exit Battery first mode the moment SOC exceeds the
+// `battery_first_stop_charge` register — the default is often set well below
+// our planned fill target (e.g. 41%), which causes the firmware to revert
+// the live `work_mode_priority` back to Load first within seconds of our
+// write. Raising stop-charge to 100% lets SolarBuddy's own target_soc path
+// be the sole authority on when charging ends, so the inverter stays in
+// Battery first for the whole planned window.
+const CHARGE_STOP_SOC = 100;
+
 export async function startGridCharging(chargeRate: number) {
+  await setBatteryFirstStopCharge(CHARGE_STOP_SOC);
   await setBatteryChargeRate(chargeRate);
   await setWorkMode('Battery first');
 }

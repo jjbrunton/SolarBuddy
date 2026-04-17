@@ -98,7 +98,7 @@ describe('inverter command adapter — virtual mode', () => {
     expect(realMocks.startGridCharging).not.toHaveBeenCalled();
     expect(handleVirtualCommandMock).toHaveBeenCalledWith(
       expect.stringContaining('75%'),
-      { action: 'charge', workMode: 'Grid first', batteryFirstChargeRate: 75, outputSourcePriority: 'USB' },
+      { action: 'charge', workMode: 'Grid first', batteryFirstChargeRate: 75, batteryFirstStopCharge: 100, outputSourcePriority: 'USB' },
     );
   });
 
