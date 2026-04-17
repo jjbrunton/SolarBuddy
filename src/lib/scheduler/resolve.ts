@@ -3,14 +3,16 @@ import { getDb } from '../db';
 import { getCurrentAutoOverride } from '../db/auto-override-repository';
 import type { PlanAction } from '../plan-actions';
 import { evaluateScheduledActions } from '../scheduled-actions';
+import { getLatestForecastAge, getStoredPVForecast } from '../solcast/store';
 import type { InverterState } from '../types';
+import { getForecastedConsumptionW } from '../usage';
 import {
   getVirtualCurrentPlanSlot,
   getVirtualScheduleData,
   isVirtualModeEnabled,
 } from '../virtual-inverter/runtime';
-import { getChargingStrategy } from './engine';
-import { shouldHoldForSolarSurplus } from './solar-surplus';
+import { getChargingStrategy, parsePVDampFactor } from './engine';
+import { canReachTargetWithPessimisticSolar, shouldHoldForSolarSurplus } from './solar-surplus';
 
 const UPCOMING_PLAN_SLOT_LIMIT = 48;
 
@@ -52,6 +54,11 @@ interface PlanSlotRow {
   slot_end: string;
   action: PlanAction;
   reason: string | null;
+}
+
+export interface CompletedPlanSlotTrajectory {
+  slot_end: string;
+  expected_soc_after: number | null;
 }
 
 export function getCurrentOverride(nowIso: string): OverrideRow | null {
@@ -124,6 +131,75 @@ export function getUpcomingPlanSlots(nowIso: string): PlanSlotRow[] {
     .all(nowIso, UPCOMING_PLAN_SLOT_LIMIT) as PlanSlotRow[] | undefined;
 
   return rows ?? [];
+}
+
+/**
+ * Returns the `expected_soc_after` and `slot_end` of the most recently
+ * completed plan slot (i.e. the slot whose `slot_end <= nowIso`). Used by the
+ * watchdog's SOC drift check to compare current SOC against the trajectory
+ * the plan assumed.
+ *
+ * Returns null when no plan slot has completed yet (e.g. at the very start of
+ * a plan's horizon) so the caller can skip the drift check without a
+ * trajectory baseline.
+ */
+export function getMostRecentCompletedPlanSlot(nowIso: string): CompletedPlanSlotTrajectory | null {
+  if (isVirtualModeEnabled()) {
+    const { plan_slots } = getVirtualScheduleData(new Date(nowIso));
+    const completed = plan_slots
+      .filter((slot) => slot.slot_end <= nowIso)
+      .sort((a, b) => (a.slot_end < b.slot_end ? 1 : a.slot_end > b.slot_end ? -1 : 0));
+    if (completed.length === 0) return null;
+    return {
+      slot_end: completed[0].slot_end,
+      expected_soc_after: completed[0].expected_soc_after ?? null,
+    };
+  }
+
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT slot_end, expected_soc_after
+       FROM plan_slots
+       WHERE slot_end <= ?
+       ORDER BY slot_end DESC, created_at DESC, id DESC
+       LIMIT 1`,
+    )
+    .get(nowIso) as { slot_end: string; expected_soc_after: number | null } | undefined;
+
+  if (!row) return null;
+  return { slot_end: row.slot_end, expected_soc_after: row.expected_soc_after };
+}
+
+/**
+ * Returns the contiguous run of `charge` plan slots starting with the slot
+ * whose `slot_start` matches `currentSlotStart`. Used by the solar-surplus
+ * trajectory guard to ask "across this entire cheap window, can P10 PV get
+ * us to target?" rather than deciding slot-by-slot on instantaneous PV.
+ *
+ * The walk stops on action change or time discontinuity. Returns an empty
+ * array when the current slot isn't found in the upcoming plan.
+ */
+function getContiguousChargeSlots(
+  nowIso: string,
+  currentSlotStart: string,
+): { slot_start: string; slot_end: string }[] {
+  const upcoming = getUpcomingPlanSlots(nowIso);
+  const startIndex = upcoming.findIndex((slot) => slot.slot_start === currentSlotStart);
+  if (startIndex === -1) return [];
+
+  const result: { slot_start: string; slot_end: string }[] = [];
+  let lastEnd: string | null = null;
+
+  for (let i = startIndex; i < upcoming.length; i++) {
+    const slot = upcoming[i];
+    if (slot.action !== 'charge') break;
+    if (lastEnd !== null && slot.slot_start !== lastEnd) break;
+    result.push({ slot_start: slot.slot_start, slot_end: slot.slot_end });
+    lastEnd = slot.slot_end;
+  }
+
+  return result;
 }
 
 /**
@@ -207,14 +283,48 @@ export function resolveSlotAction(
     const isNegativePriceSlot = plannedSlot.reason?.toLowerCase().includes('negative-price') ?? false;
     const strategy = getChargingStrategy(settings);
     if (!isNegativePriceSlot && strategy === 'opportunistic_topup' && shouldHoldForSolarSurplus(state)) {
-      return {
-        action: 'hold',
-        source: 'solar_surplus',
-        reason: 'solar_surplus',
-        detail: 'Scheduled opportunistic top-up window is active, but solar surplus is already charging the battery. Holding.',
-        slotStart: plannedSlot.slot_start,
-        slotEnd: plannedSlot.slot_end,
-      };
+      // Trajectory guard: only accept the solar-surplus hold if the pessimistic
+      // (P10) forecast across the remaining contiguous cheap slots is enough
+      // to hit min_soc_target. This prevents silently burning through a cheap
+      // window when solar is underperforming — the most expensive failure mode.
+      const remainingSlots = getContiguousChargeSlots(nowIso, plannedSlot.slot_start);
+      const targetSoc = parseInt(settings.min_soc_target, 10) || 80;
+      const batteryCapacityKwh = parseFloat(settings.battery_capacity_kwh) || 5.12;
+      const fallbackConsumptionW = parseFloat(settings.estimated_consumption_w) || 500;
+
+      const forecast =
+        remainingSlots.length > 0
+          ? getStoredPVForecast(
+              remainingSlots[0].slot_start,
+              remainingSlots[remainingSlots.length - 1].slot_end,
+            )
+          : [];
+
+      const canHold = canReachTargetWithPessimisticSolar({
+        currentSoc: state.battery_soc,
+        targetSoc,
+        batteryCapacityKwh,
+        remainingSlots,
+        forecast,
+        forecastAgeMinutes: getLatestForecastAge(),
+        expectedLoadAtW: (slotStart) =>
+          getForecastedConsumptionW(new Date(slotStart), fallbackConsumptionW),
+        dampFactor: parsePVDampFactor(settings),
+      });
+
+      if (canHold) {
+        return {
+          action: 'hold',
+          source: 'solar_surplus',
+          reason: 'solar_surplus',
+          detail:
+            'Scheduled opportunistic top-up window is active and pessimistic PV forecast covers the remaining SOC deficit. Holding.',
+          slotStart: plannedSlot.slot_start,
+          slotEnd: plannedSlot.slot_end,
+        };
+      }
+      // Fall through to charge: pessimistic forecast says solar alone won't
+      // get us to target, so take the cheap grid window while we have it.
     }
   }
 

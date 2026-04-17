@@ -20,7 +20,9 @@ import {
   stopGridDischarge,
 } from '../inverter/commands';
 import { getVirtualNow } from '../virtual-inverter/runtime';
+import { requestReplan } from './reevaluate';
 import {
+  getMostRecentCompletedPlanSlot,
   resolveSlotAction,
   resolveSlotActionRange,
   resolveUpcomingEvents,
@@ -33,6 +35,15 @@ import {
 const WATCHDOG_INTERVAL_MS = 60_000;
 const WATCHDOG_DEBOUNCE_MS = 1_000;
 const COMMAND_COOLDOWN_MS = 120_000;
+/**
+ * SOC points below the plan's expected trajectory before the drift watchdog
+ * treats reality as diverged enough to trigger an intra-window replan. The
+ * planner's SOC forecast uses P50 PV and forecasted load — small overshoots
+ * are expected, so this threshold is sized to catch structural drift (solar
+ * meaningfully under-performing, load meaningfully higher than forecast)
+ * rather than routine noise.
+ */
+const SOC_DRIFT_THRESHOLD_PCT = 5;
 // Wider than a single telemetry push cycle so a brief MQTT gap doesn't defeat
 // the satisfaction gate and force re-issues that only the cooldown catches.
 const STATE_FRESHNESS_MS = 180_000;
@@ -587,6 +598,39 @@ async function applyIntent(intent: RuntimeIntent, state: InverterState) {
   }
 }
 
+/**
+ * Intra-window failsafe: if the planner thought we'd be at SOC X by now but
+ * we're materially below it during a planner-driven charge slot, ask for a
+ * replan. Replan is debounced and min-interval-throttled by `requestReplan`,
+ * so repeated ticks during sustained drift don't thrash. The new plan will
+ * re-run slot budgeting with the now-lower SOC, typically booking extra
+ * cheap slots to compensate for the missed solar contribution.
+ *
+ * Only fires when the current resolved intent is a plan-driven `charge`
+ * because that's the failure mode we care about (missing cheap grid windows
+ * because solar under-performed forecast). Drift during hold/discharge is
+ * either expected (we're spending SOC deliberately) or handled by the next
+ * charge window's planning pass.
+ */
+function checkSocTrajectoryDrift(intent: RuntimeIntent, state: InverterState, nowIso: string) {
+  if (intent.action !== 'charge') return;
+  if (intent.source !== 'plan') return;
+  if (state.battery_soc === null) return;
+
+  const trajectory = getMostRecentCompletedPlanSlot(nowIso);
+  if (!trajectory || trajectory.expected_soc_after === null) return;
+
+  const drift = trajectory.expected_soc_after - state.battery_soc;
+  if (drift <= SOC_DRIFT_THRESHOLD_PCT) return;
+
+  appendEvent({
+    level: 'info',
+    category: 'scheduler',
+    message: `SOC trajectory drift detected: actual ${state.battery_soc}% vs. planned ${trajectory.expected_soc_after}% (drift ${drift.toFixed(1)}pp). Requesting replan.`,
+  });
+  requestReplan('soc_trajectory_drift');
+}
+
 export async function reconcileInverterState(reason = 'manual trigger') {
   const runtime = getWatchdogState();
   if (runtime.running) {
@@ -606,7 +650,14 @@ export async function reconcileInverterState(reason = 'manual trigger') {
       return;
     }
 
-    const intent = resolveRuntimeIntentRange(getVirtualNow(), state);
+    const nowForTick = getVirtualNow();
+    const intent = resolveRuntimeIntentRange(nowForTick, state);
+
+    // Intra-window failsafe: detect SOC drift below the plan's expected
+    // trajectory during a plan-driven charge slot and trigger a replan so the
+    // slot budget can be recomputed against current reality. Runs before the
+    // apply so a replan-triggered plan change can take effect on the next tick.
+    checkSocTrajectoryDrift(intent, state, nowForTick.toISOString());
 
     // Slot-end backfill: if we've crossed a slot/run boundary since the last
     // tick, stamp `soc_at_end` onto the previous run's latest execution row

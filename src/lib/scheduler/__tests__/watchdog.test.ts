@@ -16,6 +16,7 @@ const {
   updateSlotExecutionActuals,
   getLatestExecutionForSlot,
   getCurrentAutoOverride,
+  requestReplan,
 } = vi.hoisted(() => ({
   startGridCharging: vi.fn().mockResolvedValue(undefined),
   startGridDischarge: vi.fn().mockResolvedValue(undefined),
@@ -29,6 +30,7 @@ const {
   updateSlotExecutionActuals: vi.fn(),
   getLatestExecutionForSlot: vi.fn().mockReturnValue(null),
   getCurrentAutoOverride: vi.fn().mockReturnValue(null),
+  requestReplan: vi.fn(),
 }));
 
 type OverrideRow = {
@@ -49,6 +51,15 @@ const listeners = new Set<(state: InverterState) => void>();
 let overrideRow: OverrideRow | null = null;
 let planSlotRow: PlanSlotRow | null = null;
 let planSlotRows: PlanSlotRow[] | null = null;
+let completedPlanSlotRow: { slot_end: string; expected_soc_after: number | null } | null = null;
+let pvForecastRows: Array<{
+  valid_from: string;
+  valid_to: string;
+  pv_estimate_w: number;
+  pv_estimate10_w: number;
+  pv_estimate90_w: number;
+}> = [];
+let pvForecastAgeMinutes = Infinity;
 let currentState: InverterState;
 let currentSettings: AppSettings;
 
@@ -130,6 +141,9 @@ vi.mock('../../db', () => ({
         if (sql.includes('FROM plan_slots') && sql.includes('slot_start <=')) {
           return planSlotRow;
         }
+        if (sql.includes('FROM plan_slots') && sql.includes('slot_end <=')) {
+          return completedPlanSlotRow;
+        }
         return null;
       },
       all: (_a?: string, _b?: number) => {
@@ -190,6 +204,18 @@ vi.mock('../../events', () => ({
   appendEvent,
 }));
 
+vi.mock('../../solcast/store', () => ({
+  getStoredPVForecast: (from?: string, to?: string) => {
+    if (!from || !to) return pvForecastRows;
+    return pvForecastRows.filter((row) => row.valid_from >= from && row.valid_to <= to);
+  },
+  getLatestForecastAge: () => pvForecastAgeMinutes,
+}));
+
+vi.mock('../reevaluate', () => ({
+  requestReplan,
+}));
+
 vi.mock('../../virtual-inverter/runtime', () => ({
   getVirtualCurrentPlanSlot: () => null,
   getVirtualNow: () => new Date('2026-04-01T10:10:00Z'),
@@ -210,6 +236,9 @@ describe('resolveRuntimeIntent', () => {
     overrideRow = null;
     planSlotRow = null;
     planSlotRows = null;
+    completedPlanSlotRow = null;
+    pvForecastRows = [];
+    pvForecastAgeMinutes = Infinity;
   });
 
   it('gives the current manual override precedence over scheduled windows', () => {
@@ -240,6 +269,10 @@ describe('reconcileInverterState', () => {
     overrideRow = null;
     planSlotRow = null;
     planSlotRows = null;
+    completedPlanSlotRow = null;
+    pvForecastRows = [];
+    pvForecastAgeMinutes = Infinity;
+    requestReplan.mockClear();
     listeners.clear();
     startGridCharging.mockClear();
     startGridDischarge.mockClear();
@@ -342,7 +375,7 @@ describe('reconcileInverterState', () => {
     expect(startGridDischarge).toHaveBeenCalled();
   });
 
-  it('holds a scheduled opportunistic charge window when solar surplus is already covering demand', async () => {
+  it('holds a scheduled opportunistic charge window when solar surplus is active AND P10 forecast covers the remaining deficit', async () => {
     currentSettings = buildSettings({ default_work_mode: 'Load first' });
     planSlotRow = {
       slot_start: '2026-04-01T10:00:00Z',
@@ -350,6 +383,22 @@ describe('reconcileInverterState', () => {
       action: 'charge',
       reason: 'Charge slot selected by the planner.',
     };
+    // Four contiguous cheap charge slots + generous P10 forecast.
+    // Deficit: 8pp × 5.12 kWh ≈ 0.41 kWh. 4 × (3000W - 0W) × 0.5h = 6 kWh of headroom.
+    planSlotRows = [
+      planSlotRow,
+      { slot_start: '2026-04-01T10:30:00Z', slot_end: '2026-04-01T11:00:00Z', action: 'charge', reason: 'Charge slot selected by the planner.' },
+      { slot_start: '2026-04-01T11:00:00Z', slot_end: '2026-04-01T11:30:00Z', action: 'charge', reason: 'Charge slot selected by the planner.' },
+      { slot_start: '2026-04-01T11:30:00Z', slot_end: '2026-04-01T12:00:00Z', action: 'charge', reason: 'Charge slot selected by the planner.' },
+    ];
+    pvForecastRows = planSlotRows.map((slot) => ({
+      valid_from: slot.slot_start,
+      valid_to: slot.slot_end,
+      pv_estimate_w: 4000,
+      pv_estimate10_w: 3000,
+      pv_estimate90_w: 5000,
+    }));
+    pvForecastAgeMinutes = 30;
     currentState = buildState({
       battery_soc: 72,
       work_mode: 'Battery first',
@@ -909,6 +958,133 @@ describe('reconcileInverterState', () => {
       // SOC observed at tick 2 (75).
       expect(getLatestExecutionForSlot).toHaveBeenCalledWith('2026-04-01T10:00:00Z');
       expect(updateSlotExecutionActuals).toHaveBeenCalledWith(42, { soc_at_end: 75 });
+    });
+  });
+
+  describe('SOC trajectory drift replan', () => {
+    it('requests a replan during a plan-driven charge slot when actual SOC is below the plan trajectory', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      // Plan expected SOC to reach 70% by the end of the previous slot; actual
+      // SOC is 55% — a 15pp drift, well above the 5pp threshold.
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: 70,
+      };
+      currentState = buildState({ battery_soc: 55 });
+
+      await reconcileInverterState('watchdog interval');
+
+      expect(requestReplan).toHaveBeenCalledWith('soc_trajectory_drift');
+    });
+
+    it('does not request a replan when actual SOC is on or above the plan trajectory', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: 70,
+      };
+      currentState = buildState({ battery_soc: 72 });
+
+      await reconcileInverterState('watchdog interval');
+
+      expect(requestReplan).not.toHaveBeenCalled();
+    });
+
+    it('does not request a replan when drift is below the threshold', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: 70,
+      };
+      // 3pp drift — below the 5pp threshold, treated as routine noise.
+      currentState = buildState({ battery_soc: 67 });
+
+      await reconcileInverterState('watchdog interval');
+
+      expect(requestReplan).not.toHaveBeenCalled();
+    });
+
+    it('does not run drift check for non-plan sources (e.g. manual override)', async () => {
+      overrideRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+      };
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: 70,
+      };
+      currentState = buildState({ battery_soc: 40 });
+
+      await reconcileInverterState('watchdog interval');
+
+      expect(requestReplan).not.toHaveBeenCalled();
+    });
+
+    it('does not run drift check when the current action is hold', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'hold',
+        reason: 'Hold battery and prevent discharge in this slot.',
+      };
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: 70,
+      };
+      currentState = buildState({ battery_soc: 40 });
+
+      await reconcileInverterState('watchdog interval');
+
+      expect(requestReplan).not.toHaveBeenCalled();
+    });
+
+    it('skips the drift check when no plan slot has completed yet', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      completedPlanSlotRow = null;
+      currentState = buildState({ battery_soc: 30 });
+
+      await reconcileInverterState('watchdog interval');
+
+      expect(requestReplan).not.toHaveBeenCalled();
+    });
+
+    it('skips the drift check when the completed plan slot has no expected_soc_after', async () => {
+      planSlotRow = {
+        slot_start: '2026-04-01T10:00:00Z',
+        slot_end: '2026-04-01T10:30:00Z',
+        action: 'charge',
+        reason: 'Charge slot selected by the planner.',
+      };
+      completedPlanSlotRow = {
+        slot_end: '2026-04-01T10:00:00Z',
+        expected_soc_after: null,
+      };
+      currentState = buildState({ battery_soc: 30 });
+
+      await reconcileInverterState('watchdog interval');
+
+      expect(requestReplan).not.toHaveBeenCalled();
     });
   });
 });

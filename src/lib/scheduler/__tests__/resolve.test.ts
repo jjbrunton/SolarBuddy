@@ -34,6 +34,17 @@ let scheduledActionLookup:
   | ((now: Date, soc: number | null) => { action: PlanAction; reason: string } | null)
   | null = null;
 
+let pvForecastRows: Array<{
+  valid_from: string;
+  valid_to: string;
+  pv_estimate_w: number;
+  pv_estimate10_w: number;
+  pv_estimate90_w: number;
+}> = [];
+let pvForecastAgeMinutes = Infinity;
+
+let completedPlanSlotRow: { slot_end: string; expected_soc_after: number | null } | null = null;
+
 function buildState(partial: Partial<InverterState> = {}): InverterState {
   return {
     runtime_mode: 'real',
@@ -114,6 +125,9 @@ vi.mock('../../db', () => ({
         if (sql.includes('FROM plan_slots') && sql.includes('slot_start <=')) {
           return planSlotRow;
         }
+        if (sql.includes('FROM plan_slots') && sql.includes('slot_end <=')) {
+          return completedPlanSlotRow;
+        }
         return null;
       },
       all: (_a?: string, _b?: number) => {
@@ -124,6 +138,14 @@ vi.mock('../../db', () => ({
       },
     }),
   }),
+}));
+
+vi.mock('../../solcast/store', () => ({
+  getStoredPVForecast: (from?: string, to?: string) => {
+    if (!from || !to) return pvForecastRows;
+    return pvForecastRows.filter((row) => row.valid_from >= from && row.valid_to <= to);
+  },
+  getLatestForecastAge: () => pvForecastAgeMinutes,
 }));
 
 vi.mock('../../db/auto-override-repository', () => ({
@@ -170,6 +192,9 @@ describe('resolveSlotAction', () => {
     planSlotRows = [];
     scheduledActionResult = null;
     scheduledActionLookup = null;
+    pvForecastRows = [];
+    pvForecastAgeMinutes = Infinity;
+    completedPlanSlotRow = null;
   });
 
   it('returns source "manual" when a manual override is active', () => {
@@ -266,13 +291,31 @@ describe('resolveSlotAction', () => {
     });
   });
 
-  it('returns source "solar_surplus" when an opportunistic top-up window overlaps solar surplus', () => {
+  it('holds with source "solar_surplus" when P10 forecast across remaining cheap slots covers the SOC deficit', () => {
+    // Four contiguous cheap charge slots — P10 forecast shows solar can
+    // comfortably fill the 20pp gap to the 80% target, so we trust the hold.
     planSlotRow = {
       slot_start: '2026-04-01T10:00:00Z',
       slot_end: '2026-04-01T10:30:00Z',
       action: 'charge',
       reason: 'Charge slot selected by the planner.',
     };
+    planSlotRows = [
+      planSlotRow,
+      { slot_start: '2026-04-01T10:30:00Z', slot_end: '2026-04-01T11:00:00Z', action: 'charge', reason: 'Charge slot selected by the planner.' },
+      { slot_start: '2026-04-01T11:00:00Z', slot_end: '2026-04-01T11:30:00Z', action: 'charge', reason: 'Charge slot selected by the planner.' },
+      { slot_start: '2026-04-01T11:30:00Z', slot_end: '2026-04-01T12:00:00Z', action: 'charge', reason: 'Charge slot selected by the planner.' },
+    ];
+    // With default battery capacity 5.12 kWh, 20pp deficit ≈ 1.024 kWh.
+    // 4 × (3000W × 0.5h) = 6 kWh of P10 solar headroom — plenty.
+    pvForecastRows = planSlotRows.map((slot) => ({
+      valid_from: slot.slot_start,
+      valid_to: slot.slot_end,
+      pv_estimate_w: 4000,
+      pv_estimate10_w: 3000,
+      pv_estimate90_w: 5000,
+    }));
+    pvForecastAgeMinutes = 30;
 
     const result = resolveSlotAction(
       now,
@@ -283,17 +326,86 @@ describe('resolveSlotAction', () => {
         grid_power: -300,
         battery_power: 150,
       }),
-      buildSettings({ charging_strategy: 'opportunistic_topup' }),
+      buildSettings({ charging_strategy: 'opportunistic_topup', min_soc_target: '80' }),
     );
 
-    expect(result).toEqual({
-      action: 'hold',
-      source: 'solar_surplus',
-      reason: 'solar_surplus',
-      detail: 'Scheduled opportunistic top-up window is active, but solar surplus is already charging the battery. Holding.',
-      slotStart: '2026-04-01T10:00:00Z',
-      slotEnd: '2026-04-01T10:30:00Z',
-    });
+    expect(result.source).toBe('solar_surplus');
+    expect(result.action).toBe('hold');
+    expect(result.slotStart).toBe('2026-04-01T10:00:00Z');
+  });
+
+  it('charges through despite solar surplus when P10 forecast is insufficient to hit target', () => {
+    // One cheap slot with low P10 forecast — solar alone can't close the gap,
+    // so we take the grid window while we have it.
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    planSlotRows = [planSlotRow];
+    // 20pp deficit on 5.12 kWh ≈ 1.024 kWh. One slot of 500W P10 × 0.5h = 0.25 kWh. Nowhere near.
+    pvForecastRows = [
+      {
+        valid_from: '2026-04-01T10:00:00Z',
+        valid_to: '2026-04-01T10:30:00Z',
+        pv_estimate_w: 1800,
+        pv_estimate10_w: 500,
+        pv_estimate90_w: 2500,
+      },
+    ];
+    pvForecastAgeMinutes = 30;
+
+    const result = resolveSlotAction(
+      now,
+      buildState({
+        battery_soc: 60,
+        pv_power: 1800,
+        load_power: 400,
+        grid_power: -300,
+        battery_power: 150,
+      }),
+      buildSettings({ charging_strategy: 'opportunistic_topup', min_soc_target: '80' }),
+    );
+
+    expect(result.source).toBe('plan');
+    expect(result.action).toBe('charge');
+  });
+
+  it('charges through when PV forecast is stale (conservative fallback)', () => {
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+    planSlotRows = [planSlotRow];
+    // Forecast exists but hasn't been refreshed for most of a day.
+    pvForecastRows = [
+      {
+        valid_from: '2026-04-01T10:00:00Z',
+        valid_to: '2026-04-01T10:30:00Z',
+        pv_estimate_w: 4000,
+        pv_estimate10_w: 3000,
+        pv_estimate90_w: 5000,
+      },
+    ];
+    pvForecastAgeMinutes = 24 * 60;
+
+    const result = resolveSlotAction(
+      now,
+      buildState({
+        battery_soc: 60,
+        pv_power: 1800,
+        load_power: 400,
+        grid_power: -300,
+        battery_power: 150,
+      }),
+      buildSettings({ charging_strategy: 'opportunistic_topup', min_soc_target: '80' }),
+    );
+
+    expect(result.source).toBe('plan');
+    expect(result.action).toBe('charge');
   });
 
   it('does not apply the solar-surplus hold for negative-price charge slots', () => {
@@ -412,6 +524,9 @@ describe('resolveSlotActionRange', () => {
     planSlotRows = [];
     scheduledActionResult = null;
     scheduledActionLookup = null;
+    pvForecastRows = [];
+    pvForecastAgeMinutes = Infinity;
+    completedPlanSlotRow = null;
   });
 
   it('returns a single-slot range when only one charge plan slot exists', () => {
@@ -717,6 +832,9 @@ describe('resolveUpcomingEvents', () => {
     planSlotRows = [];
     scheduledActionResult = null;
     scheduledActionLookup = null;
+    pvForecastRows = [];
+    pvForecastAgeMinutes = Infinity;
+    completedPlanSlotRow = null;
   });
 
   it('returns null fields when there are no upcoming plan slots', () => {
