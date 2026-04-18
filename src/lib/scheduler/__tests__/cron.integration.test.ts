@@ -192,4 +192,83 @@ describe('runScheduleCycle scheduler+SQLite integration', () => {
     expect(scheduleExecutionMock).toHaveBeenCalledTimes(1);
     expect(notifyMock).toHaveBeenCalledTimes(1);
   });
+
+  it('returns no_rates and skips execution when the rate fetch returns an empty list', async () => {
+    resolveRatesMock.mockResolvedValue([]);
+
+    const result = await runScheduleCycle();
+
+    expect(result.status).toBe('no_rates');
+    expect(scheduleExecutionMock).not.toHaveBeenCalled();
+    expect(notifyMock).not.toHaveBeenCalled();
+
+    const events = testDb
+      .prepare(
+        "SELECT level, message FROM events WHERE category = 'scheduler' ORDER BY id DESC LIMIT 1",
+      )
+      .all() as Array<{ level: string; message: string }>;
+    expect(events).toHaveLength(1);
+    expect(events[0].level).toBe('warning');
+    expect(events[0].message).toMatch(/No Agile rates/i);
+  });
+
+  it('catches rate-fetch failures and logs an error event without throwing', async () => {
+    resolveRatesMock.mockRejectedValue(new Error('Octopus API timed out'));
+
+    const result = await runScheduleCycle();
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'error',
+      windowsCount: 0,
+    });
+    expect(result.message).toContain('Octopus API timed out');
+    expect(scheduleExecutionMock).not.toHaveBeenCalled();
+    expect(notifyMock).not.toHaveBeenCalled();
+
+    const events = testDb
+      .prepare(
+        "SELECT level, message FROM events WHERE category = 'scheduler' ORDER BY id DESC LIMIT 1",
+      )
+      .all() as Array<{ level: string; message: string }>;
+    expect(events).toHaveLength(1);
+    expect(events[0].level).toBe('error');
+    expect(events[0].message).toContain('Octopus API timed out');
+  });
+
+  it('returns missing_config when tariff is agile and octopus_region is unset', async () => {
+    testDb.prepare("UPDATE settings SET value = '' WHERE key = 'octopus_region'").run();
+
+    const result = await runScheduleCycle();
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'missing_config',
+    });
+    expect(resolveRatesMock).not.toHaveBeenCalled();
+    expect(scheduleExecutionMock).not.toHaveBeenCalled();
+  });
+
+  it('skips auto_schedule execution when the setting is off, but still persists the plan', async () => {
+    testDb.prepare("UPDATE settings SET value = 'false' WHERE key = 'auto_schedule'").run();
+
+    const result = await runScheduleCycle();
+    expect(result.status).toBe('scheduled');
+    expect(scheduleExecutionMock).not.toHaveBeenCalled();
+
+    // Plan still persisted to the DB, even with execution skipped.
+    const planSlots = testDb
+      .prepare('SELECT slot_start FROM plan_slots LIMIT 1')
+      .all() as Array<{ slot_start: string }>;
+    expect(planSlots.length).toBeGreaterThan(0);
+  });
+
+  it('deduplicates change notifications when the plan fingerprint is unchanged between cycles', async () => {
+    await runScheduleCycle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+
+    // Second cycle with identical rates should not produce a second notify.
+    await runScheduleCycle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+  });
 });

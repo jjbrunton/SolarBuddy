@@ -22,7 +22,7 @@ export function getDb(): Database.Database {
   return _db;
 }
 
-function initSchema(db: Database.Database) {
+export function initSchema(db: Database.Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,

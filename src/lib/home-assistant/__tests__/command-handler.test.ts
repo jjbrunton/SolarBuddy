@@ -204,4 +204,76 @@ describe('home-assistant command handler', () => {
     // appendEvent should have been called with an error entry
     expect(appendEventMock).toHaveBeenCalled();
   });
+
+  it('does not crash when appendEvent itself throws (event log failure must never break commands)', async () => {
+    appendEventMock.mockImplementation(() => {
+      throw new Error('events table missing');
+    });
+    const { deps } = buildDeps();
+    const dispatch = createCommandDispatcher(deps);
+
+    await expect(
+      dispatch('solarbuddy/switch/auto_schedule/set', Buffer.from('ON')),
+    ).resolves.toBeUndefined();
+    expect(saveSettingsMock).toHaveBeenCalledWith({ auto_schedule: 'true' });
+    expect(requestReplanMock).toHaveBeenCalledWith('home-assistant auto_schedule');
+  });
+
+  it('silently drops switch payloads that are not ON/OFF', async () => {
+    const { deps } = buildDeps();
+    const dispatch = createCommandDispatcher(deps);
+    await dispatch('solarbuddy/switch/auto_schedule/set', Buffer.from('maybe'));
+    expect(saveSettingsMock).not.toHaveBeenCalled();
+    expect(requestReplanMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid current_slot_override payloads', async () => {
+    const { deps } = buildDeps();
+    const dispatch = createCommandDispatcher(deps);
+    await dispatch('solarbuddy/select/current_slot_override/set', Buffer.from('boost'));
+    expect(upsertTodayOverrideMock).not.toHaveBeenCalled();
+    expect(deleteTodayOverrideSlotMock).not.toHaveBeenCalled();
+  });
+
+  it("publishes the toggle's state optimistically after saveSettings", async () => {
+    const { deps, publishWritableEntity } = buildDeps();
+    const dispatch = createCommandDispatcher(deps);
+    await dispatch('solarbuddy/switch/smart_discharge/set', Buffer.from('ON'));
+    expect(saveSettingsMock).toHaveBeenCalledWith({ smart_discharge: 'true' });
+    expect(publishWritableEntity).toHaveBeenCalledWith('smart_discharge');
+  });
+
+  it('logs an error and does not throw when saveSettings rejects', async () => {
+    saveSettingsMock.mockImplementationOnce(() => {
+      throw new Error('settings write failed');
+    });
+    const { deps } = buildDeps();
+    const dispatch = createCommandDispatcher(deps);
+
+    await expect(
+      dispatch('solarbuddy/switch/auto_schedule/set', Buffer.from('ON')),
+    ).resolves.toBeUndefined();
+    expect(appendEventMock).toHaveBeenCalled();
+    // replan should not fire because the toggle never applied
+    expect(requestReplanMock).not.toHaveBeenCalled();
+  });
+
+  it('logs an error and does not throw when fetch_rates itself rejects', async () => {
+    fetchAndStoreRatesMock.mockRejectedValueOnce(new Error('Octopus down'));
+    const { deps } = buildDeps();
+    const dispatch = createCommandDispatcher(deps);
+
+    await expect(
+      dispatch('solarbuddy/button/fetch_rates/press', Buffer.from('PRESS')),
+    ).resolves.toBeUndefined();
+    expect(fetchAndStoreRatesMock).toHaveBeenCalled();
+    expect(appendEventMock).toHaveBeenCalled();
+  });
+
+  it('trims whitespace around select payloads', async () => {
+    const { deps } = buildDeps();
+    const dispatch = createCommandDispatcher(deps);
+    await dispatch('solarbuddy/select/charging_strategy/set', Buffer.from('   night_fill\n'));
+    expect(saveSettingsMock).toHaveBeenCalledWith({ charging_strategy: 'night_fill' });
+  });
 });
