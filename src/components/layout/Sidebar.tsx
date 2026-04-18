@@ -53,7 +53,7 @@ export function Sidebar({
       ) : null}
 
       <aside
-        className={`sb-shell-panel fixed top-0 left-0 z-50 flex h-full w-[240px] flex-col border-r border-sb-border bg-sb-sidebar px-4 py-5 transition-transform duration-200 lg:translate-x-0 ${
+        className={`sb-shell-panel fixed top-0 left-0 z-50 flex h-full w-[86vw] max-w-[280px] flex-col border-r border-sb-border bg-sb-sidebar px-4 py-5 transition-transform duration-200 lg:w-[240px] lg:max-w-none lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

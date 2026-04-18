@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <TariffTicker />
             <VirtualModeBanner />
             <TelemetryStatusBanner />
-            <main className="relative flex-1 overflow-y-auto px-4 py-8 sm:px-8 lg:px-10">
+            <main className="relative flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
               <div className="mx-auto max-w-[1280px]">{children}</div>
             </main>
           </div>

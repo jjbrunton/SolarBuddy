@@ -14,9 +14,9 @@ const toneClasses: Record<CardTone, string> = {
 };
 
 const paddingClasses: Record<CardPadding, string> = {
-  sm: 'p-4',
-  md: 'p-5',
-  lg: 'p-6',
+  sm: 'p-3 sm:p-4',
+  md: 'p-4 sm:p-5',
+  lg: 'p-4 sm:p-6',
 };
 
 interface CardProps {
@@ -57,7 +57,7 @@ export function CardHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-sb-rule pb-4">
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-sb-rule pb-3 sm:mb-5 sm:pb-4">
       <div className="space-y-1">
         <h2 className="text-[0.9rem] font-bold uppercase tracking-[0.04em] text-sb-text">{title}</h2>
         {subtitle ? <p className="text-[0.75rem] text-sb-text-muted">{subtitle}</p> : null}

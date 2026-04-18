@@ -102,7 +102,7 @@ export default function CurrentModeWidget() {
       </CardHeader>
 
       <div className="space-y-3">
-        <p className="sb-display text-4xl leading-none text-sb-text sm:text-5xl">{modeLabel}</p>
+        <p className="sb-display text-3xl leading-none text-sb-text sm:text-5xl">{modeLabel}</p>
         <p className="text-sm text-sb-text-muted">
           {rangeLabel
             ? `${rangeLabel}${remainingLabel ? ` • ${remainingLabel}` : ''}`

@@ -175,7 +175,7 @@ export default function LogsView({
             description="Connection changes and topic traffic will appear here once the broker is connected and Solar Assistant begins publishing payloads."
           />
         ) : (
-          <div ref={mqttTableRef} className="max-h-[70vh] overflow-auto">
+          <div ref={mqttTableRef} className="max-h-[50vh] overflow-auto sm:max-h-[70vh]">
             <table className="w-full min-w-[720px] text-sm">
               <thead className="sticky top-0 bg-sb-card">
                 <tr className="border-b border-sb-border text-left text-xs uppercase tracking-[0.16em] text-sb-text-subtle">

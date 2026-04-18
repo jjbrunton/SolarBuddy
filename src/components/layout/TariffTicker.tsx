@@ -131,7 +131,7 @@ export function TariffTicker() {
   if (!ready || slots.length === 0) {
     return (
       <div className="border-b border-sb-border bg-sb-bg-elevated/50">
-        <div className="flex h-[48px] items-center gap-3 px-4 sm:px-6">
+        <div className="flex h-[48px] items-center gap-3 px-3 sm:px-6">
           <span className="sb-eyebrow">Tariff</span>
           <span className="text-[0.7rem] text-sb-text-subtle">Waiting for rates...</span>
         </div>
@@ -141,7 +141,7 @@ export function TariffTicker() {
 
   return (
     <div className="border-b border-sb-border bg-sb-bg-elevated/50">
-      <div className="relative flex items-center gap-3 px-4 py-1.5 sm:px-6">
+      <div className="relative flex items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-6">
         <span className="sb-eyebrow shrink-0">Tariff</span>
         <div className="h-4 w-px bg-sb-rule-strong" />
         <div className="flex min-w-0 flex-1 items-stretch gap-0 overflow-x-auto">
@@ -150,7 +150,7 @@ export function TariffTicker() {
               key={slot.validFrom}
               href="/rates"
               aria-label={`${formatTime(slot.validFrom)} ${formatPrice(slot.price)}`}
-              className={`animate-ticker-rise group relative flex min-w-[70px] flex-col justify-center border-r border-sb-border/50 px-3 py-1.5 text-left transition-colors last:border-r-0 hover:bg-sb-card/60 ${
+              className={`animate-ticker-rise group relative flex min-w-[58px] flex-col justify-center border-r border-sb-border/50 px-2 py-1.5 text-left transition-colors last:border-r-0 hover:bg-sb-card/60 sm:min-w-[70px] sm:px-3 ${
                 slot.isCurrent ? 'bg-sb-ember/8' : ''
               }`}
               style={{ animationDelay: `${i * 25}ms` }}

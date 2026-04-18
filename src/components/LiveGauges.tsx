@@ -39,13 +39,13 @@ function GaugeTile({
   subtitle?: string;
 }) {
   return (
-    <div className="flex h-full flex-col gap-2 rounded-[0.75rem] border border-sb-border bg-sb-card p-4 transition-colors hover:bg-sb-card-hover">
+    <div className="flex h-full flex-col gap-2 rounded-[0.75rem] border border-sb-border bg-sb-card p-3 transition-colors hover:bg-sb-card-hover sm:p-4">
       <div className="flex items-center gap-2">
         <Icon size={14} className={accent} />
         <span className="sb-eyebrow">{label}</span>
       </div>
       {value !== null ? (
-        <div className="sb-display flex items-baseline gap-1 text-[2rem] leading-none text-sb-text">
+        <div className="sb-display flex items-baseline gap-1 text-[1.5rem] leading-none text-sb-text sm:text-[2rem]">
           <span>{value}</span>
           <span className="text-[0.68rem] uppercase tracking-[0.2em] text-sb-text-muted">{unit}</span>
         </div>
@@ -104,14 +104,14 @@ function BatteryTile({
           : 'bg-sb-danger';
 
   return (
-    <div className="flex h-full flex-col gap-2 rounded-[0.75rem] border border-sb-border bg-sb-card p-4 transition-colors hover:bg-sb-card-hover">
+    <div className="flex h-full flex-col gap-2 rounded-[0.75rem] border border-sb-border bg-sb-card p-3 transition-colors hover:bg-sb-card-hover sm:p-4">
       <div className="flex items-center gap-2">
         <Battery size={14} className={tone} />
         <span className="sb-eyebrow">Battery</span>
       </div>
       <div className="flex items-baseline gap-2">
         {soc !== null ? (
-          <span className={`sb-display text-[2rem] leading-none ${tone}`}>
+          <span className={`sb-display text-[1.5rem] leading-none sm:text-[2rem] ${tone}`}>
             {soc}
             <span className="ml-0.5 text-[0.68rem] uppercase tracking-[0.2em] text-sb-text-muted">%</span>
           </span>
@@ -170,7 +170,7 @@ export default function LiveGauges({ state, targetSoc, capacityWh }: Props) {
       ) : null}
 
       {/* Primary gauge grid */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <BatteryTile
           soc={state.battery_soc}
           voltage={state.battery_voltage}
@@ -207,7 +207,7 @@ export default function LiveGauges({ state, targetSoc, capacityWh }: Props) {
       </div>
 
       {/* Secondary metrics strip */}
-      <div className="mt-3 flex flex-wrap items-center gap-4 rounded-[0.75rem] border border-sb-border/60 bg-sb-surface-muted px-4 py-2.5">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[0.75rem] border border-sb-border/60 bg-sb-surface-muted px-3 py-2.5 sm:px-4">
         <TempBadge label="Inverter" value={state.inverter_temperature} warnAt={45} />
         <TempBadge label="Battery" value={state.battery_temperature} warnAt={40} />
         {state.grid_frequency != null && (

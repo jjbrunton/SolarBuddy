@@ -207,7 +207,7 @@ function HeroBand({ summary }: { summary: AttributionSummary | null }) {
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sb-text-subtle">
           SolarBuddy scheduling value
         </p>
-        <p className={`mt-2 text-[2.5rem] font-semibold leading-tight tracking-[-0.03em] ${schedulingColor}`}>
+        <p className={`mt-2 text-[1.75rem] font-semibold leading-tight tracking-[-0.03em] sm:text-[2.5rem] ${schedulingColor}`}>
           {summary ? signedCost(schedulingValue) : '—'}
         </p>
         <p className="mt-1 text-[0.78rem] text-sb-text-muted">

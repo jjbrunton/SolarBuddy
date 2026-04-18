@@ -706,8 +706,8 @@ export default function ScheduleView() {
               ? 'Use the action chips to force a charge, discharge, hold, or no-op override on an individual half-hour slot.'
               : 'Past days are read-only so the table reflects the recorded plan and outcomes without allowing retroactive edits.'}
           />
-          <div ref={tableRef} className="max-h-[500px] overflow-y-auto">
-            <table className="w-full text-sm">
+          <div ref={tableRef} className="max-h-[500px] overflow-auto">
+            <table className="w-full min-w-[720px] text-sm">
               <thead className="sticky top-0 z-10 bg-sb-card">
                 <tr className="border-b border-sb-border text-left text-xs uppercase tracking-[0.16em] text-sb-text-subtle">
                   <th className="px-3 py-3 font-medium">Time</th>

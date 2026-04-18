@@ -22,7 +22,7 @@ function DayColumn({ label, day }: { label: string; day: DayBillEstimate }) {
     <div className="flex flex-col gap-2">
       <p className="sb-eyebrow">{label}</p>
 
-      <p className={`sb-display text-3xl leading-none sm:text-4xl ${costColor}`}>
+      <p className={`sb-display text-2xl leading-none sm:text-4xl ${costColor}`}>
         {isEarning ? '-' : ''}{formatCost(Math.abs(day.total_cost_pence))}
       </p>
 

@@ -18,15 +18,15 @@ export function PageHeader({
   actions,
 }: PageHeaderProps) {
   return (
-    <header className="relative flex flex-col gap-4 pt-2 pb-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-3xl">
+    <header className="relative flex flex-col gap-3 pt-1 pb-4 sm:gap-4 sm:pt-2 sm:pb-5">
+      <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 max-w-3xl">
           <p className="sb-eyebrow">{eyebrow}</p>
-          <h1 className="mt-2 text-2xl font-bold uppercase tracking-[0.02em] text-sb-text sm:text-3xl">
+          <h1 className="mt-2 text-xl font-bold uppercase tracking-[0.02em] text-sb-text sm:text-3xl">
             {title}
           </h1>
           {description ? (
-            <p className="mt-3 max-w-2xl text-[0.8rem] leading-6 text-sb-text-muted">
+            <p className="mt-2 max-w-2xl text-[0.8rem] leading-6 text-sb-text-muted sm:mt-3">
               {description}
             </p>
           ) : null}

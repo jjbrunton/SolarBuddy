@@ -90,7 +90,7 @@ export function DashboardGrid({ widgets }: { widgets: WidgetDefinition[] }) {
 
       {/* Edit mode: reset + add hidden widgets */}
       {editing && (
-        <div className="flex flex-wrap items-center gap-2 rounded-[0.75rem] border border-sb-rule bg-sb-card/70 p-4">
+        <div className="flex flex-wrap items-center gap-2 rounded-[0.75rem] border border-sb-rule bg-sb-card/70 p-3 sm:p-4">
           <Button onClick={resetLayout} variant="secondary" size="sm">
             <RotateCcw size={12} />
             Reset layout

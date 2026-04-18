@@ -9,11 +9,16 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const { theme, toggle } = useTheme();
   const { connected, state } = useSSE();
 
-  const todayLabel = new Date().toLocaleDateString('en-GB', {
+  const now = new Date();
+  const todayLabel = now.toLocaleDateString('en-GB', {
     weekday: 'short',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+  });
+  const shortDateLabel = now.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
   });
 
   const inverterStatus =
@@ -25,20 +30,22 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
 
   return (
     <header className="sb-shell-panel sticky top-0 z-30 border-b border-sb-border bg-sb-header">
-      <div className="flex items-center gap-3 px-4 py-2.5 sm:px-6">
+      <div className="flex items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-6">
         <button
           onClick={onMenuClick}
-          className="border border-sb-border bg-transparent p-1.5 text-sb-text-muted transition-colors hover:border-sb-ember hover:text-sb-ember lg:hidden"
+          className="shrink-0 border border-sb-border bg-transparent p-1.5 text-sb-text-muted transition-colors hover:border-sb-ember hover:text-sb-ember lg:hidden"
+          aria-label="Open menu"
         >
           <Menu size={16} />
         </button>
 
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[0.75rem] uppercase tracking-[0.08em] text-sb-text-muted">
-              {todayLabel}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[0.7rem] uppercase tracking-[0.08em] text-sb-text-muted sm:text-[0.75rem]">
+              <span className="sm:hidden">{shortDateLabel}</span>
+              <span className="hidden sm:inline">{todayLabel}</span>
             </span>
-            <span className="h-3 w-px bg-sb-rule-strong" />
+            <span className="hidden h-3 w-px bg-sb-rule-strong sm:inline-block" />
             <Badge kind={connected ? 'success' : 'warning'}>
               {connected ? 'Live' : 'Reconnecting'}
             </Badge>
@@ -48,8 +55,9 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
 
         <button
           onClick={toggle}
-          className="border border-sb-border bg-transparent p-1.5 text-sb-text-muted transition-colors hover:border-sb-ember hover:text-sb-ember"
+          className="shrink-0 border border-sb-border bg-transparent p-1.5 text-sb-text-muted transition-colors hover:border-sb-ember hover:text-sb-ember"
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
