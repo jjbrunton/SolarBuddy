@@ -6,6 +6,7 @@ import RateChartWidget from '@/components/dashboard/widgets/RateChartWidget';
 import UpcomingChargesWidget from '@/components/dashboard/widgets/UpcomingChargesWidget';
 import SolarForecastWidget from '@/components/dashboard/widgets/SolarForecastWidget';
 import BillEstimateWidget from '@/components/dashboard/widgets/BillEstimateWidget';
+import PlanSummaryWidget from '@/components/dashboard/widgets/PlanSummaryWidget';
 
 export type WidgetSize = 'full' | 'half';
 
@@ -34,6 +35,7 @@ export interface WidgetDefinition {
 export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   { id: 'live-gauges', label: 'Live Gauges', component: LiveGaugesWidget, size: 'full' },
   { id: 'current-rate', label: 'Current Rate', component: CurrentRateWidget, size: 'full' },
+  { id: 'plan-summary', label: 'Plan Summary', component: PlanSummaryWidget, size: 'full' },
   { id: 'energy-flow', label: 'Energy Flow', component: EnergyFlowWidget, size: 'half' },
   { id: 'upcoming-charges', label: 'Upcoming Charges', component: UpcomingChargesWidget, size: 'half' },
   { id: 'rate-chart', label: 'Rate Chart', component: RateChartWidget, size: 'full' },

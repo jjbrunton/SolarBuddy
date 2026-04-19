@@ -11,6 +11,7 @@ import {
   FlaskConical,
   Settings,
   Server,
+  HelpCircle,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -104,6 +105,16 @@ export function Sidebar({
         </nav>
 
         <div className="sb-rule mt-4" />
+
+        <a
+          href="https://github.com/jjbrunton/SolarBuddy"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="mt-3 flex items-center gap-2.5 px-3 py-2 text-[0.78rem] uppercase tracking-[0.06em] text-sb-text-muted transition-colors hover:bg-sb-card/60 hover:text-sb-text"
+        >
+          <HelpCircle size={14} strokeWidth={1.5} />
+          <span>Help</span>
+        </a>
 
         <div className="mt-3 flex flex-col gap-0.5">
           <span className="text-[0.6rem] uppercase tracking-[0.2em] text-sb-text-subtle">

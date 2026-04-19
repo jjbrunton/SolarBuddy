@@ -189,7 +189,9 @@ export default function CurrentRateWidget() {
           <div className="border-b border-sb-rule px-4 py-4 sm:border-b-0 sm:border-r sm:border-sb-rule">
             <p className="sb-eyebrow">Best Rate</p>
             <p className="sb-display mt-2 text-2xl text-sb-ember">{formatPrice(summary.minPrice)}p</p>
-            <p className="mt-1 text-[0.7rem] text-sb-text-muted">Cheapest upcoming slot</p>
+            <p className="mt-1 text-[0.7rem] text-sb-text-muted">
+              {formatTimeRange(summary.minWindow.valid_from, summary.minWindow.valid_to)}
+            </p>
           </div>
 
           <div className="px-4 py-4">

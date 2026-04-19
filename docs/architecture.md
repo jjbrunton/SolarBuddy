@@ -198,6 +198,7 @@ The default database path is `data/solarbuddy.db`, unless `DB_PATH` is set.
 - The virtual inverter runtime is also process-local and global to the instance. It is not scoped per browser session.
 - The supported deployment topology is a single app replica with persistent SQLite storage mounted into the container or host runtime.
 - Recent MQTT log history is persisted in SQLite and trimmed to a bounded recent window for the live logs view.
+- A daily retention prune at 03:30 deletes rows older than 30 days from the display-only `events` and `mqtt_logs` tables. Targets are listed in [`src/lib/db/prune.ts`](../src/lib/db/prune.ts) and intentionally exclude every table that calculations read from.
 - Cron scheduling assumes Octopus Agile rates become available during the configured afternoon and evening retry window.
 - The Charge Plan UI now presents the stored schedule horizon as separate UK-local days. Past days are treated as read-only history, while today and future days continue to accept overrides against the stored horizon.
 

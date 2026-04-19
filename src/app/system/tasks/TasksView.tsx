@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Play, RefreshCw } from 'lucide-react';
+import { Play, RefreshCw, Trash2 } from 'lucide-react';
 
 interface TaskResult {
   success: boolean;
@@ -44,6 +44,13 @@ export default function TasksView() {
       schedule: 'Daily at 4:10 PM',
       endpoint: '/api/schedule',
       icon: Play,
+    },
+    {
+      name: 'DB Retention Prune',
+      description: 'Delete rows older than 30 days from the events and mqtt_logs tables',
+      schedule: 'Daily at 3:30 AM',
+      endpoint: '/api/system/retention-prune',
+      icon: Trash2,
     },
   ];
 

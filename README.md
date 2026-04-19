@@ -51,6 +51,7 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 
 ## Features
 
+- Mandatory single-user login with a first-run setup flow, plus issuable API keys so Home Assistant, scripts, and other external systems can reach SolarBuddy endpoints programmatically
 - Real-time inverter monitoring via Solar Assistant (MQTT)
 - Optional Home Assistant integration via MQTT Discovery — publishes sensors, switches, selects and buttons to HA and accepts commands from HA automations ([docs/home-assistant.md](docs/home-assistant.md))
 - Optional Virtual Inverter mode with preset sandbox scenarios for safe end-to-end testing without touching live hardware
@@ -107,7 +108,7 @@ npm install
 npm run dev
 ```
 
-The app runs at `http://localhost:3000`.
+The app runs at `http://localhost:3000`. On first launch you'll be redirected to `/setup` to create the single administrator account — a username and password of at least 8 characters. After that, every page and API route requires either a signed session cookie (obtained via the login form) or an API key sent as `Authorization: Bearer <key>` or `X-API-Key: <key>`. `GET /api/health` stays unauthenticated so platform health checks keep working.
 
 ## Deployment
 
@@ -128,6 +129,7 @@ All settings are managed through the web UI under **Settings**:
 3. **Charging** — Strategy, max slots, price thresholds, charge/discharge SOC targets, night window, work mode, and usage-profile source (Octopus vs local telemetry)
 4. **General** — Background automation toggles such as Auto Schedule and the inverter watchdog
 5. **Virtual Inverter** — Optional sandbox mode with preset scenarios, playback controls, and live-command blocking
+6. **Account** — Change the administrator password and create or revoke API keys for external systems. The plaintext key is shown exactly once at creation; see [docs/runbooks.md](docs/runbooks.md) for password-reset and key-rotation procedures.
 
 ### Dashboard Highlights
 
@@ -174,6 +176,13 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 
 | Method | Route | Purpose |
 |--------|-------|---------|
+| POST | `/api/auth/setup` | First-run administrator account creation |
+| POST | `/api/auth/login` | Exchange username/password for a session cookie |
+| POST | `/api/auth/logout` | Clear the session cookie |
+| GET | `/api/auth/status` | Report whether auth is configured and whether the caller is authenticated |
+| POST | `/api/auth/password` | Change the administrator password |
+| GET, POST | `/api/auth/api-keys` | List or create API keys for external systems |
+| DELETE | `/api/auth/api-keys/[prefix]` | Revoke an API key by its prefix |
 | GET | `/api/settings` | Retrieve all settings |
 | POST | `/api/settings` | Update settings |
 | POST | `/api/octopus/verify` | Verify Octopus account and auto-detect tariff details |
@@ -262,3 +271,4 @@ SQLite database at `data/solarbuddy.db` (override with `DB_PATH`). Tables:
 - `auto_overrides` — runtime-generated short-lived overrides (e.g. SOC protection)
 - `scheduled_actions` — time-of-day scheduled operator actions with day and SOC conditions
 - `usage_profile`, `usage_profile_meta` — learned half-hour consumption profile and metadata
+- `api_keys` — hashed API keys used by external systems (only the sha256 digest, display prefix, name, and last-used timestamp are stored)

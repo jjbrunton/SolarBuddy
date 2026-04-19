@@ -12,6 +12,7 @@ import ScheduledActionsView from './scheduled-actions/ScheduledActionsView';
 import SettingsVirtualInverterView from './SettingsVirtualInverterView';
 import NotificationsSettingsView from './notifications/NotificationsSettingsView';
 import HomeAssistantSettingsView from './home-assistant/HomeAssistantSettingsView';
+import AccountSettingsView from './account/AccountSettingsView';
 
 // Settings used to render eight flat tabs in a single row. That exposed
 // every setting at once and forced the user to guess which bucket anything
@@ -61,6 +62,13 @@ const GROUPS: SettingGroup[] = [
     value: 'automation',
     subViews: [
       { label: 'Scheduled Actions', value: 'actions', component: ScheduledActionsView },
+    ],
+  },
+  {
+    label: 'Account',
+    value: 'account',
+    subViews: [
+      { label: 'Account & API keys', value: 'account', component: AccountSettingsView },
     ],
   },
 ];

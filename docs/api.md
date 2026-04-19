@@ -13,6 +13,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `GET` | `/api/system` | Return health, stats, runtime metadata, and database information, including whether Auto Schedule and the inverter watchdog are enabled. |
 | `POST` | `/api/system/time-sync` | Trigger an inverter clock synchronization and return the outcome. |
 | `POST` | `/api/system/tariff-check` | Trigger a tariff-change check against the configured Octopus account and return the result. |
+| `POST` | `/api/system/retention-prune` | Run the daily DB retention prune on demand and return the per-table delete counts. |
 | `GET` | `/api/virtual-inverter` | Return the current virtual runtime status, selected scenario, playback state, and available controls. |
 | `POST` | `/api/virtual-inverter` | Enable, start, pause, reset, or disable the virtual inverter runtime. |
 | `GET` | `/api/virtual-inverter/scenarios` | Return the catalog of built-in virtual inverter scenarios. |
@@ -38,6 +39,27 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `PATCH` | `/api/scheduled-actions` | Update an existing scheduled operator action by id. |
 | `DELETE` | `/api/scheduled-actions` | Delete a scheduled operator action by id. |
 | `POST` | `/api/simulate` | Run the planner and simulator against stored tariff data and return projected slot-by-slot outcomes without sending inverter commands. |
+
+## Authentication
+
+SolarBuddy requires a single administrator account. The first time the app
+starts, users are routed to `/setup` to create that account; from then on every
+page and API route requires either a signed session cookie (set by
+`POST /api/auth/login`) or an API key sent as `Authorization: Bearer <key>` or
+`X-API-Key: <key>`. `GET /api/health` and the `/api/auth/*` endpoints remain
+reachable without authentication so container health probes and the sign-in
+flow keep working.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/auth/status` | Return `{ configured, authenticated, via, username }`. Never requires auth — used by the UI to decide whether to show setup, login, or the app. |
+| `POST` | `/api/auth/setup` | First-run creation of the single admin account. Rejected once credentials already exist. Sets a session cookie on success. |
+| `POST` | `/api/auth/login` | Exchange `{ username, password }` for a session cookie. Returns 401 on invalid credentials, 409 with `setup_required` if no account exists yet. |
+| `POST` | `/api/auth/logout` | Clear the session cookie. |
+| `POST` | `/api/auth/password` | Change the account password. Requires an authenticated session or API key but does NOT require the previous password — access to the proxy-guarded app is the proof of control on this single-user deployment. Rotates the session secret, invalidating every other active session. |
+| `GET` | `/api/auth/api-keys` | List API keys (name, short prefix, created/last-used timestamps). The full key value is never returned. |
+| `POST` | `/api/auth/api-keys` | Create a new API key named by `{ name }`. The plaintext key is returned once — clients must store it immediately. |
+| `DELETE` | `/api/auth/api-keys/[prefix]` | Revoke an API key by its prefix. Any system using that key loses access immediately. |
 
 ## Notifications
 

@@ -8,6 +8,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PeriodSelector } from '@/components/analytics/PeriodSelector';
 import { StatCard } from '@/components/analytics/StatCard';
+import { WhatIfPanel } from '@/components/analytics/WhatIfPanel';
+import { WorstSlotsPanel } from '@/components/analytics/WorstSlotsPanel';
 import { formatCost } from '@/lib/forecast';
 
 const PERIODS = [
@@ -158,6 +160,12 @@ export default function SavingsPageView() {
           <ScenarioBreakdown summary={summary} />
         )}
       </Card>
+
+      {/* Historical backtest / A-B comparison */}
+      <WhatIfPanel period={period} />
+
+      {/* Worst individual slot decisions */}
+      <WorstSlotsPanel period={period} />
 
       {/* Daily strip */}
       <Card>

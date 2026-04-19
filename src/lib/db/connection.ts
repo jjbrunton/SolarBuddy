@@ -193,6 +193,14 @@ export function initSchema(db: Database.Database) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS api_keys (
+      key_hash    TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      prefix      TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      last_used_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_auto_overrides_slot_start ON auto_overrides(slot_start);
     CREATE INDEX IF NOT EXISTS idx_auto_overrides_expires_at ON auto_overrides(expires_at);
 

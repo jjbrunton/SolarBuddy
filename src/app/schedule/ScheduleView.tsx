@@ -112,6 +112,43 @@ function formatSlotTime(iso: string) {
   return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
 }
 
+// Resolver / auto-override runs on the wall-clock `*/5` cron tick, so the
+// current decision is only binding until the next :00/:05/:10/... boundary
+// inside the current slot. Ticks its own clock so the label rolls forward
+// without depending on the page's frozen `effectiveNow`.
+function CurrentSlotTimeCell({ validFrom, validTo }: { validFrom: string; validTo: string }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const slotStartMs = new Date(validFrom).getTime();
+  const slotEndMs = new Date(validTo).getTime();
+  const nowMs = now.getTime();
+
+  if (nowMs < slotStartMs || nowMs >= slotEndMs) {
+    return <span>{formatSlotTime(validFrom)} - {formatSlotTime(validTo)}</span>;
+  }
+
+  const fiveMinMs = 5 * 60 * 1000;
+  const windowStartMs = slotStartMs + Math.floor((nowMs - slotStartMs) / fiveMinMs) * fiveMinMs;
+  const windowEndMs = Math.min(windowStartMs + fiveMinMs, slotEndMs);
+  const windowStart = formatSlotTime(new Date(windowStartMs).toISOString());
+  const windowEnd = formatSlotTime(new Date(windowEndMs).toISOString());
+  const slotStart = formatSlotTime(validFrom);
+  const slotEnd = formatSlotTime(validTo);
+
+  return (
+    <div className="flex flex-col">
+      <span>{windowStart} - {windowEnd}</span>
+      <span className="text-[0.65rem] font-normal text-sb-text-subtle">
+        of {slotStart}–{slotEnd}
+      </span>
+    </div>
+  );
+}
+
 export default function ScheduleView() {
   const colors = useChartColors();
   const { state } = useSSE();
@@ -734,7 +771,11 @@ export default function ScheduleView() {
                     }`}
                   >
                     <td className="px-3 py-3 whitespace-nowrap text-sb-text">
-                      {slot.time} - {formatSlotTime(slot.validTo)}
+                      {slot.isCurrent ? (
+                        <CurrentSlotTimeCell validFrom={slot.validFrom} validTo={slot.validTo} />
+                      ) : (
+                        <>{slot.time} - {formatSlotTime(slot.validTo)}</>
+                      )}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       <span className={slot.price < 0 ? 'font-medium text-sb-success' : 'text-sb-text-muted'}>

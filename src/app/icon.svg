@@ -2,7 +2,7 @@
   <rect width="512" height="512" rx="96" fill="#1a1a1a"/>
   <g transform="translate(256,256)">
     <!-- Sun rays (bolder for favicon legibility) -->
-    <g stroke="#ff902b" stroke-width="28" stroke-linecap="round">
+    <g stroke="#ff8533" stroke-width="28" stroke-linecap="round">
       <line y1="-148" y2="-112"/>
       <line y1="-148" y2="-112" transform="rotate(45)"/>
       <line y1="-148" y2="-112" transform="rotate(90)"/>
@@ -13,7 +13,7 @@
       <line y1="-148" y2="-112" transform="rotate(315)"/>
     </g>
     <!-- Sun circle -->
-    <circle r="80" fill="#ff902b"/>
+    <circle r="80" fill="#ff8533"/>
     <!-- Battery icon overlay (bolder strokes) -->
     <rect x="-30" y="10" width="60" height="90" rx="6" fill="none" stroke="#1a1a1a" stroke-width="10"/>
     <rect x="-12" y="0" width="24" height="14" rx="4" fill="#1a1a1a"/>

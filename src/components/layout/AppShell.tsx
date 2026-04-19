@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { TariffTicker } from './TariffTicker';
@@ -9,14 +10,28 @@ import { VirtualModeBanner } from './VirtualModeBanner';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { SSEProvider } from '@/hooks/useSSE';
 
+// Pre-auth pages (/login, /setup) must not render the sidebar or data-hungry
+// banners — those components fetch from endpoints the user can't reach yet.
+const CHROMELESS_PREFIXES = ['/login', '/setup'];
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const chromeless = CHROMELESS_PREFIXES.some((p) => pathname === p || pathname?.startsWith(`${p}/`));
 
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
   }, []);
+
+  if (chromeless) {
+    return (
+      <ThemeProvider>
+        <main className="min-h-screen bg-sb-bg">{children}</main>
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider>

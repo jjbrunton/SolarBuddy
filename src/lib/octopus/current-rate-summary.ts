@@ -8,12 +8,19 @@ export interface CurrentRatePoint {
   price_inc_vat: number;
 }
 
+export interface CurrentRateWindow {
+  valid_from: string;
+  valid_to: string;
+}
+
 export interface CurrentRateSummary {
   current: CurrentRatePoint;
   next: CurrentRatePoint | null;
   minPrice: number;
   maxPrice: number;
   averagePrice: number;
+  minWindow: CurrentRateWindow;
+  maxWindow: CurrentRateWindow;
   status: CurrentRateStatus;
 }
 
@@ -61,6 +68,9 @@ export function summarizeCurrentRate(
   const maxPrice = roundPrice(Math.max(...prices));
   const averagePrice = roundPrice(prices.reduce((sum, price) => sum + price, 0) / prices.length);
 
+  const minRate = upcomingRates[prices.indexOf(minPrice)];
+  const maxRate = upcomingRates[prices.indexOf(maxPrice)];
+
   const current = sortedRates[currentIndex];
   const next = sortedRates[currentIndex + 1] ?? null;
   const currentPrice = roundPrice(current.price_inc_vat);
@@ -79,6 +89,8 @@ export function summarizeCurrentRate(
     minPrice,
     maxPrice,
     averagePrice,
+    minWindow: { valid_from: minRate.valid_from, valid_to: minRate.valid_to },
+    maxWindow: { valid_from: maxRate.valid_from, valid_to: maxRate.valid_to },
     status: classifyCurrentRate(currentPrice, minPrice, maxPrice),
   };
 }

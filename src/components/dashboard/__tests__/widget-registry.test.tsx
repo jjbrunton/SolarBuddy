@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DASHBOARD_WIDGETS } from '../widget-registry';
 
 describe('dashboard widget registry', () => {
-  it('keeps the default view focused on five non-overlapping widgets', () => {
+  it('keeps the default view focused on a curated set of non-overlapping widgets', () => {
     const defaultVisible = DASHBOARD_WIDGETS
       .filter((w) => w.defaultVisible !== false)
       .map((w) => w.id);
@@ -10,6 +10,7 @@ describe('dashboard widget registry', () => {
     expect(defaultVisible).toEqual([
       'live-gauges',
       'current-rate',
+      'plan-summary',
       'energy-flow',
       'upcoming-charges',
       'rate-chart',

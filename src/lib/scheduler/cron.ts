@@ -25,6 +25,7 @@ import {
 import { notify } from '../notifications/dispatcher';
 import { evaluateAutoOverrides } from './auto-override';
 import { reconcileInverterState } from './watchdog';
+import { runRetentionPrune } from '../db/prune';
 
 const SCHEDULER_TIME_ZONE = 'Europe/London';
 const windowTimeFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -116,6 +117,7 @@ let replanJob: cron.ScheduledTask | null = null;
 let usageProfileJob: cron.ScheduledTask | null = null;
 let autoOverrideJob: cron.ScheduledTask | null = null;
 let nordpoolJob: cron.ScheduledTask | null = null;
+let retentionJob: cron.ScheduledTask | null = null;
 
 export type ScheduleCycleStatus = 'scheduled' | 'no_rates' | 'no_windows' | 'missing_config' | 'error';
 
@@ -465,12 +467,38 @@ export function startCronJobs() {
     }
   });
 
+  // Daily DB retention prune at 03:30 — off-axis from 03:00 time-sync and 03:17
+  // usage refresh. Trims display-only tables (events, mqtt_logs); never touches
+  // calculation inputs. See src/lib/db/prune.ts for the target list.
+  retentionJob = cron.schedule('30 3 * * *', () => {
+    try {
+      const results = runRetentionPrune();
+      const summary = results.map((r) => `${r.table}=${r.deleted}`).join(', ');
+      appendEvent({
+        level: 'info',
+        category: 'retention',
+        message: `DB retention prune complete (${summary}).`,
+      });
+    } catch (err) {
+      try {
+        appendEvent({
+          level: 'error',
+          category: 'retention',
+          message: `DB retention prune failed: ${(err as Error).message}`,
+        });
+      } catch {
+        // swallow — cron must never throw
+      }
+    }
+  });
+
   console.log('[Cron] Scheduled rate fetch: afternoon (4:05pm-8pm) + evening (11:05pm-00:05am)');
   console.log('[Cron] Scheduled replan: every 30 minutes at :02 and :32');
   console.log('[Cron] Scheduled time sync: daily at 03:00, tariff check: every 4h at :03');
   console.log('[Cron] Scheduled usage profile refresh: daily at 03:17');
   console.log('[Cron] Scheduled auto-override evaluation: every 5 minutes');
   console.log('[Cron] Scheduled Nordpool day-ahead forecast: 11:15am-11:45am');
+  console.log('[Cron] Scheduled DB retention prune: daily at 03:30');
 }
 
 export function stopCronJobs() {
@@ -505,6 +533,10 @@ export function stopCronJobs() {
   if (nordpoolJob) {
     nordpoolJob.stop();
     nordpoolJob = null;
+  }
+  if (retentionJob) {
+    retentionJob.stop();
+    retentionJob = null;
   }
 }
 

@@ -17,6 +17,7 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatCard } from '@/components/analytics/StatCard';
 import { SegmentedTabs } from '@/components/ui/Tabs';
+import { useChartColors } from '@/hooks/useTheme';
 
 type DayType = 'weekday' | 'weekend';
 
@@ -122,6 +123,7 @@ function UsageTooltip({
 }
 
 export function UsageProfileChart() {
+  const colors = useChartColors();
   const [profile, setProfile] = useState<UsageProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -238,7 +240,7 @@ export function UsageProfileChart() {
             <div className="mb-3 flex flex-wrap gap-4 text-xs text-sb-text-muted">
               {showWeekday && (
                 <span className="flex items-center gap-1">
-                  <span className="inline-block h-0.5 w-4 bg-[#ff902b]" /> Weekday median
+                  <span className="inline-block h-0.5 w-4" style={{ backgroundColor: colors.chartAmber }} /> Weekday median
                 </span>
               )}
               {showWeekend && (
@@ -254,7 +256,11 @@ export function UsageProfileChart() {
                 </span>
               )}
               <span className="flex items-center gap-1">
-                <span className="inline-block h-2.5 w-2.5 rounded bg-[rgba(255,144,43,0.15)]" /> High
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded"
+                  style={{ backgroundColor: 'color-mix(in srgb, var(--color-sb-chart-amber) 15%, transparent)' }}
+                />{' '}
+                High
                 periods
               </span>
             </div>
@@ -278,7 +284,7 @@ export function UsageProfileChart() {
                     type="monotone"
                     dataKey="weekday_band"
                     stroke="none"
-                    fill="#ff902b"
+                    fill={colors.chartAmber}
                     fillOpacity={0.12}
                     isAnimationActive={false}
                   />
@@ -301,7 +307,7 @@ export function UsageProfileChart() {
                       x1={slotLabel(hp.start_slot)}
                       x2={slotLabel(hp.end_slot)}
                       strokeOpacity={0}
-                      fill="#ff902b"
+                      fill={colors.chartAmber}
                       fillOpacity={0.08}
                     />
                   ))}
@@ -335,7 +341,7 @@ export function UsageProfileChart() {
                   <Line
                     type="monotone"
                     dataKey="weekday_median"
-                    stroke="#ff902b"
+                    stroke={colors.chartAmber}
                     strokeWidth={2}
                     dot={false}
                     isAnimationActive={false}

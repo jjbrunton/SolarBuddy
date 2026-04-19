@@ -7,14 +7,15 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Figure } from '@/components/ui/Figure';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { RefreshCw, Play, Pencil, X, Save, Layers } from 'lucide-react';
+import { RefreshCw, Play, Pencil, X, Save, Layers, BarChart3, Rows3 } from 'lucide-react';
+import { RatesChartSmallMultiples } from './RatesChartSmallMultiples';
 import { useChartColors } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { sliceTimeWindowsFromCurrentPeriod } from '@/lib/chart-window';
 import { computeSOCForecast } from '@/lib/soc-forecast';
 import { expandHalfHourSlotKeys, formatSlotTimeLabel, formatSlotTooltipLabel, toSlotKey } from '@/lib/slot-key';
 import { useSlotSelection } from '@/hooks/useSlotSelection';
-import { ACTION_COLORS, ACTION_LABELS, type PlanAction } from '@/lib/plan-actions';
+import { ACTION_COLORS, ACTION_LABELS, OVERRIDE_COLOR, type PlanAction } from '@/lib/plan-actions';
 import { alignPVForecastToSlots, type PVConfidence } from '@/lib/pv-forecast-utils';
 import type { PVForecastSlot } from '@/lib/solcast/client';
 
@@ -59,11 +60,15 @@ interface ChartData {
   pvGenerationKw?: number;
 }
 
-// Ember is the override / selected colour — ties the selection state back to
-// the Agile Almanac ember pole instead of a stray teal.
-const OVERRIDE_EMBER = '#ffb547';
 const CHART_LEFT_MARGIN = 45;
 const CHART_RIGHT_MARGIN = 50;
+
+function formatStatWindow(fromIso: string, toIso: string) {
+  const opts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+  const from = new Date(fromIso).toLocaleTimeString('en-GB', opts);
+  const to = new Date(toIso).toLocaleTimeString('en-GB', opts);
+  return `${from}–${to}`;
+}
 
 function RateTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number; dataKey: string }[]; label?: string }) {
   if (!active || !payload?.length) return null;
@@ -104,7 +109,13 @@ export default function RatesView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState<{ kind: 'success' | 'warning'; text: string } | null>(null);
-  const [stats, setStats] = useState<{ min: number; max: number; avg: number } | null>(null);
+  const [stats, setStats] = useState<{
+    min: number;
+    max: number;
+    avg: number;
+    minWindow: { valid_from: string; valid_to: string };
+    maxWindow: { valid_from: string; valid_to: string };
+  } | null>(null);
   const [currentSlotIndex, setCurrentSlotIndex] = useState(0);
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -122,6 +133,9 @@ export default function RatesView() {
   // axis) are hidden by default. The essential read is "price + action" —
   // power users can flip these on via the toolbar toggle.
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Prototype: small-multiples vs the classic combined chart. Lets us
+  // A/B the new design without ripping the existing view out yet.
+  const [chartLayout, setChartLayout] = useState<'classic' | 'multiples'>('classic');
 
   const {
     selectedIndices,
@@ -219,10 +233,14 @@ export default function RatesView() {
 
       if (visibleRates.length > 0) {
         const prices = visibleRates.map((r) => r.price_inc_vat);
+        const minIdx = prices.indexOf(Math.min(...prices));
+        const maxIdx = prices.indexOf(Math.max(...prices));
         setStats({
-          min: Math.round(Math.min(...prices) * 100) / 100,
-          max: Math.round(Math.max(...prices) * 100) / 100,
+          min: Math.round(prices[minIdx] * 100) / 100,
+          max: Math.round(prices[maxIdx] * 100) / 100,
           avg: Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100,
+          minWindow: { valid_from: visibleRates[minIdx].valid_from, valid_to: visibleRates[minIdx].valid_to },
+          maxWindow: { valid_from: visibleRates[maxIdx].valid_from, valid_to: visibleRates[maxIdx].valid_to },
         });
       }
 
@@ -362,8 +380,8 @@ export default function RatesView() {
   const getBarFill = (entry: ChartData, index: number) => {
     const isInDragRange = isDragging && dragRange && index >= dragRange[0] && index <= dragRange[1];
     const isSelected = selectedIndices.has(index);
-    if (isInDragRange) return OVERRIDE_EMBER + 'aa';
-    if (isSelected) return OVERRIDE_EMBER;
+    if (isInDragRange) return OVERRIDE_COLOR + 'aa';
+    if (isSelected) return OVERRIDE_COLOR;
     if (entry.price < 0 && entry.plannedAction === 'hold') return colors.ember;
     return ACTION_COLORS[entry.plannedAction];
   };
@@ -380,17 +398,30 @@ export default function RatesView() {
         actions={(
           <>
             <Button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              variant={showAdvanced ? 'secondary' : 'ghost'}
+              onClick={() => setChartLayout(chartLayout === 'classic' ? 'multiples' : 'classic')}
+              variant="ghost"
               size="sm"
+              title="Toggle chart layout"
             >
-              <Layers size={14} />
-              {showAdvanced ? 'Hide overlays' : 'Show overlays'}
+              {chartLayout === 'classic' ? <Rows3 size={14} /> : <BarChart3 size={14} />}
+              {chartLayout === 'classic' ? 'Try small multiples' : 'Classic view'}
             </Button>
-            <Button onClick={() => setEditMode(!editMode)} variant={editMode ? 'warning' : 'secondary'} size="sm">
-              {editMode ? <X size={14} /> : <Pencil size={14} />}
-              {editMode ? 'Cancel' : 'Edit slots'}
-            </Button>
+            {chartLayout === 'classic' && (
+              <Button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                variant={showAdvanced ? 'secondary' : 'ghost'}
+                size="sm"
+              >
+                <Layers size={14} />
+                {showAdvanced ? 'Hide overlays' : 'Show overlays'}
+              </Button>
+            )}
+            {chartLayout === 'classic' && (
+              <Button onClick={() => setEditMode(!editMode)} variant={editMode ? 'warning' : 'secondary'} size="sm">
+                {editMode ? <X size={14} /> : <Pencil size={14} />}
+                {editMode ? 'Cancel' : 'Edit slots'}
+              </Button>
+            )}
             <Button onClick={handleFetchRates} disabled={loading} size="sm">
               <RefreshCw size={14} />
               Fetch rates
@@ -407,13 +438,25 @@ export default function RatesView() {
       {stats && (
         <div className="grid grid-cols-1 divide-y divide-sb-rule border-y border-sb-rule sm:grid-cols-3 sm:divide-x sm:divide-y-0">
           <div className="px-4 py-5 sm:px-6">
-            <Figure label="Minimum" value={`${stats.min}p/kWh`} tone="success" size="sm" />
+            <Figure
+              label="Minimum"
+              value={`${stats.min}p/kWh`}
+              tone="success"
+              size="sm"
+              caption={formatStatWindow(stats.minWindow.valid_from, stats.minWindow.valid_to)}
+            />
           </div>
           <div className="px-4 py-5 sm:px-6">
             <Figure label="Average" value={`${stats.avg}p/kWh`} tone="default" size="sm" />
           </div>
           <div className="px-4 py-5 sm:px-6">
-            <Figure label="Maximum" value={`${stats.max}p/kWh`} tone="danger" size="sm" />
+            <Figure
+              label="Maximum"
+              value={`${stats.max}p/kWh`}
+              tone="danger"
+              size="sm"
+              caption={formatStatWindow(stats.maxWindow.valid_from, stats.maxWindow.valid_to)}
+            />
           </div>
         </div>
       )}
@@ -429,8 +472,32 @@ export default function RatesView() {
       <Card>
         <CardHeader
           title="Agile rates (p/kWh)"
-          subtitle="Manual overrides take precedence over the planner. Use Show overlays to add the SOC forecast and PV generation lines."
+          subtitle={
+            chartLayout === 'classic'
+              ? 'Manual overrides take precedence over the planner. Use Show overlays to add the SOC forecast and PV generation lines.'
+              : 'Stacked strips: price (cheap → expensive gradient), the planner ribbon, and the SOC / solar context below.'
+          }
         />
+        {chartLayout === 'multiples' && (
+          loading && data.length === 0 ? (
+            <p className="py-12 text-center text-sb-text-muted">Loading rates...</p>
+          ) : data.length === 0 ? (
+            <EmptyState
+              title="No rates loaded yet"
+              description="Fetch the current Agile price horizon to populate the chart and enable scheduling analysis."
+            />
+          ) : (
+            <RatesChartSmallMultiples
+              data={chartDataWithSOC}
+              colors={colors}
+              pvEnabled={pvEnabled}
+              hasPvData={pvForecasts.length > 0}
+              hasSocData={state.battery_soc !== null}
+              socFloor={settings ? parseFloat(settings.discharge_soc_floor) || 0 : 0}
+            />
+          )
+        )}
+        {chartLayout === 'classic' && (<>
         {/* Compact legend: only the four essential series by default.
             Predicted SOC + PV Forecast are gated on the advanced toggle. */}
         <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-sb-text-muted">
@@ -440,7 +507,7 @@ export default function RatesView() {
             </span>
           ))}
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: OVERRIDE_EMBER }} /> Override
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: OVERRIDE_COLOR }} /> Override
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block h-2.5 w-2.5 rounded-sm border-2 border-sb-ember" /> Current
@@ -535,9 +602,10 @@ export default function RatesView() {
             </ResponsiveContainer>
           </div>
         )}
+        </>)}
 
-        {/* Edit mode toolbar */}
-        {editMode && data.length > 0 && (
+        {/* Edit mode toolbar (classic view only — drag-select is wired to the combined chart canvas) */}
+        {chartLayout === 'classic' && editMode && data.length > 0 && (
           <div className="mt-4 flex items-center justify-between rounded-2xl border border-sb-border bg-sb-surface-muted px-4 py-3">
             <p className="text-sm text-sb-text-muted">
               {selectedCount > 0

@@ -1,6 +1,7 @@
 'use client';
 
-import { Menu, Sun, Moon } from 'lucide-react';
+import { Menu, Sun, Moon, LogOut } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useTheme } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { Badge } from '@/components/ui/Badge';
@@ -8,6 +9,13 @@ import { Badge } from '@/components/ui/Badge';
 export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const { theme, toggle } = useTheme();
   const { connected, state } = useSSE();
+  const router = useRouter();
+
+  async function signOut() {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    router.replace('/login');
+    router.refresh();
+  }
 
   const now = new Date();
   const todayLabel = now.toLocaleDateString('en-GB', {
@@ -60,6 +68,14 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
           aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+
+        <button
+          onClick={signOut}
+          className="border border-sb-border bg-transparent p-1.5 text-sb-text-muted transition-colors hover:border-sb-ember hover:text-sb-ember"
+          title="Sign out"
+        >
+          <LogOut size={16} />
         </button>
       </div>
     </header>

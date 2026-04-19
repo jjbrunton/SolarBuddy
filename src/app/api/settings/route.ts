@@ -1,20 +1,36 @@
 import { NextResponse } from 'next/server';
-import { getSettings, saveSettings, SETTING_KEY_SET, type AppSettings } from '@/lib/config';
+import {
+  getSettings,
+  saveSettings,
+  SETTING_KEY_SET,
+  SENSITIVE_SETTING_KEYS,
+  type AppSettings,
+} from '@/lib/config';
 import { syncVirtualInverterSetting } from '@/lib/virtual-inverter/runtime';
 import { ApiError, errorResponse } from '@/lib/api-error';
 
+function sanitise(settings: AppSettings): Partial<AppSettings> {
+  const copy: Record<string, string> = { ...(settings as unknown as Record<string, string>) };
+  for (const key of SENSITIVE_SETTING_KEYS) delete copy[key];
+  return copy as Partial<AppSettings>;
+}
+
 export async function GET() {
-  const settings = getSettings();
-  return NextResponse.json(settings);
+  return NextResponse.json(sanitise(getSettings()));
 }
 
 export async function POST(request: Request) {
   const body = (await request.json()) as Record<string, unknown>;
 
-  // Validate: only allow known setting keys with string values
+  // Validate: only allow known setting keys with string values, and refuse
+  // writes to sensitive keys (password hash, session secret). Those are only
+  // mutated by dedicated auth routes so the write goes through proper hashing.
   const validated: Record<string, string> = {};
   for (const [key, value] of Object.entries(body)) {
     if (!SETTING_KEY_SET.has(key)) continue;
+    if (SENSITIVE_SETTING_KEYS.has(key as keyof AppSettings)) {
+      return errorResponse(ApiError.badRequest(`Cannot write ${key} via this endpoint`));
+    }
     if (typeof value !== 'string') {
       return errorResponse(
         ApiError.badRequest(`Invalid value for ${key}: must be a string`),
@@ -97,5 +113,5 @@ export async function POST(request: Request) {
     })();
   }
 
-  return NextResponse.json({ ok: true, settings: getSettings() });
+  return NextResponse.json({ ok: true, settings: sanitise(getSettings()) });
 }

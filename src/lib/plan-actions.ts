@@ -18,6 +18,14 @@ export const ACTION_COLORS: Record<PlanAction, string> = {
   hold: '#6b7c93',
 };
 
+/**
+ * Manual slot override — explicitly OFF the warm price palette so it can't be
+ * confused with charge / mid-price / brand ember. Mirrors `--color-sb-override`
+ * in globals.css; consumers using `useChartColors` should prefer `colors.override`,
+ * but this constant exists for static contexts (legend swatches, JSX inline styles).
+ */
+export const OVERRIDE_COLOR = '#00aaff';
+
 export const ACTION_LABELS: Record<PlanAction, string> = {
   charge: 'Charge',
   discharge: 'Discharge',

@@ -66,6 +66,7 @@ export function useChartColors() {
         accent: '#ff6600',
         ember: '#ff6600',
         emberDeep: '#cc5200',
+        emberHover: '#ff8533',
         frost: '#00aaff',
         frostDeep: '#0077cc',
         success: '#00cc66',
@@ -79,6 +80,11 @@ export function useChartColors() {
         solar: '#ff6600',
         grid: '#00aaff',
         load: '#aa66ff',
+        actionCharge: '#ffb547',
+        actionDischarge: '#6bb87a',
+        actionHold: '#6b7c93',
+        override: '#00aaff',
+        chartAmber: '#ff8533',
       };
     }
     const style = getComputedStyle(document.documentElement);
@@ -92,6 +98,7 @@ export function useChartColors() {
       accent: get('--color-sb-accent', '#ff6600'),
       ember: get('--color-sb-ember', '#ff6600'),
       emberDeep: get('--color-sb-ember-deep', '#cc5200'),
+      emberHover: get('--color-sb-ember-hover', '#ff8533'),
       frost: get('--color-sb-frost', '#00aaff'),
       frostDeep: get('--color-sb-frost-deep', '#0077cc'),
       success: get('--color-sb-success', '#00cc66'),
@@ -105,6 +112,11 @@ export function useChartColors() {
       solar: get('--color-sb-solar', '#ff6600'),
       grid: get('--color-sb-grid', '#00aaff'),
       load: get('--color-sb-load', '#aa66ff'),
+      actionCharge: get('--color-sb-action-charge', '#ffb547'),
+      actionDischarge: get('--color-sb-action-discharge', '#6bb87a'),
+      actionHold: get('--color-sb-action-hold', '#6b7c93'),
+      override: get('--color-sb-override', '#00aaff'),
+      chartAmber: get('--color-sb-chart-amber', '#ff8533'),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);

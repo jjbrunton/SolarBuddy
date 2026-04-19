@@ -55,6 +55,14 @@ describe('summarizeCurrentRate', () => {
       minPrice: 6.2,
       maxPrice: 14.99,
       averagePrice: 10.6,
+      minWindow: {
+        valid_from: '2026-03-30T10:30:00.000Z',
+        valid_to: '2026-03-30T11:00:00.000Z',
+      },
+      maxWindow: {
+        valid_from: '2026-03-30T11:00:00.000Z',
+        valid_to: '2026-03-30T11:30:00.000Z',
+      },
       status: 'best',
     });
   });

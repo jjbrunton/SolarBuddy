@@ -103,6 +103,10 @@ export interface AppSettings {
   homeassistant_password: string;
   homeassistant_discovery_prefix: string;
   homeassistant_base_topic: string;
+  // Auth (single user; mandatory — populated by first-run setup)
+  auth_username: string;
+  auth_password_hash: string;
+  auth_session_secret: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -205,7 +209,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   homeassistant_password: '',
   homeassistant_discovery_prefix: 'homeassistant',
   homeassistant_base_topic: 'solarbuddy',
+  auth_username: '',
+  auth_password_hash: '',
+  auth_session_secret: '',
 };
+
+// Settings that must never leave the process in plain text, and must not be
+// writable through the generic POST /api/settings endpoint. The auth-specific
+// routes are the only sanctioned way to mutate these.
+export const SENSITIVE_SETTING_KEYS = new Set<keyof AppSettings>([
+  'auth_password_hash',
+  'auth_session_secret',
+]);
 
 export const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof AppSettings)[];
 export const SETTING_KEY_SET = new Set<string>(SETTING_KEYS);
@@ -219,6 +234,7 @@ export function getSettings(): AppSettings {
   }
   return { ...DEFAULT_SETTINGS, ...stored };
 }
+
 
 export function getSetting(key: keyof AppSettings): string {
   const db = getDb();

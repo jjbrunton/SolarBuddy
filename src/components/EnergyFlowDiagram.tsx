@@ -59,11 +59,11 @@ function Defs() {
       <linearGradient id="ef-daynight" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0%" stopColor="#00aaff" stopOpacity="0.18" />
         <stop offset="22%" stopColor="#00aaff" stopOpacity="0.18" />
-        <stop offset="25%" stopColor="#ff8833" stopOpacity="0.28" />
+        <stop offset="25%" stopColor="#ff8533" stopOpacity="0.28" />
         <stop offset="32%" stopColor="#ff6600" stopOpacity="0.35" />
         <stop offset="50%" stopColor="#ff6600" stopOpacity="0.4" />
         <stop offset="68%" stopColor="#ff6600" stopOpacity="0.35" />
-        <stop offset="75%" stopColor="#ff8833" stopOpacity="0.28" />
+        <stop offset="75%" stopColor="#ff8533" stopOpacity="0.28" />
         <stop offset="78%" stopColor="#00aaff" stopOpacity="0.18" />
         <stop offset="100%" stopColor="#00aaff" stopOpacity="0.18" />
       </linearGradient>
@@ -186,13 +186,13 @@ function DayNightStrip() {
 
       {/* Sunrise notch */}
       <line x1={sunriseX} y1={barY - 2} x2={sunriseX} y2={barY + barH + 2}
-        stroke="#ff8833" strokeWidth={0.75} opacity={0.3} />
+        stroke="#ff8533" strokeWidth={0.75} opacity={0.3} />
       {/* Noon notch */}
       <line x1={noonX} y1={barY - 1.5} x2={noonX} y2={barY + barH + 1.5}
         stroke="#ff6600" strokeWidth={0.5} opacity={0.2} />
       {/* Sunset notch */}
       <line x1={sunsetX} y1={barY - 2} x2={sunsetX} y2={barY + barH + 2}
-        stroke="#ff8833" strokeWidth={0.75} opacity={0.3} />
+        stroke="#ff8533" strokeWidth={0.75} opacity={0.3} />
 
       {/* Current position — glow */}
       <circle cx={nowX} cy={barY + barH / 2} r={8}
