@@ -45,11 +45,13 @@ vi.mock('../accounting', () => ({
 import { getEstimatedBill } from '../bill-estimate';
 
 function slotsForDay(dayIso: string, importPrice = 20, exportPrice = 5) {
-  // 48 half-hour slots covering the full day in UTC.
+  // 48 half-hour slots covering the full day in local time — getEstimatedBill()
+  // uses local midnight boundaries (setHours(0,0,0,0)) for today/tomorrow, so
+  // fixture slots must align with local time to match regardless of TZ.
   const [y, m, d] = dayIso.split('-').map(Number);
   const rates: Array<{ valid_from: string; valid_to: string; price_inc_vat: number; price_exc_vat: number }> = [];
   for (let i = 0; i < 48; i++) {
-    const start = new Date(Date.UTC(y, m - 1, d, 0, i * 30));
+    const start = new Date(y, m - 1, d, 0, i * 30);
     const end = new Date(start.getTime() + 30 * 60 * 1000);
     rates.push({
       valid_from: start.toISOString(),
