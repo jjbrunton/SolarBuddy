@@ -92,6 +92,8 @@ flow keep working.
 | `GET` | `/api/analytics/battery-profit` | Return battery charge cost, discharge revenue, and net profit for the selected period. |
 | `GET` | `/api/analytics/attribution` | Return a savings-vs-standard-tariff breakdown for the selected period, decomposed into solar self-use, tariff shift, and export revenue. |
 | `GET` | `/api/analytics/bill-estimate` | Return estimated electricity bill for today (actual + forecast) and tomorrow (fully forecast), combining import rates, PV generation, learned consumption, and planned battery actions. |
+| `GET` | `/api/analytics/worst-slots` | Return the highest-cost slots over the requested `period` (default `7d`), ordered by cost impact. Supports `limit` (default 10). |
+| `POST` | `/api/analytics/backtest` | Replay the planner over historical rates/readings with optional strategy `settings_overrides` and return projected outcomes. Accepts `period`, `from`, `to`, and `include_slots`. |
 | `GET` | `/api/usage-profile` | Return the learned half-hour consumption profile with weekday/weekend buckets, baseload, and high-consumption periods. |
 | `POST` | `/api/usage-profile/refresh` | Recompute the usage profile on demand from the configured usage source (Octopus consumption data when selected, otherwise local telemetry). |
 

@@ -37,3 +37,6 @@ coverage/
 
 # Ad-hoc screenshots at repo root (keep docs/images/ and public/icons/)
 /*.png
+
+# Playwright global-setup storage state (regenerated each run)
+e2e/.auth-state.json

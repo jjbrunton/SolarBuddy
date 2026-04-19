@@ -4,8 +4,16 @@ import { authenticateRequest } from '@/lib/auth/guard';
 
 // Paths that must stay reachable regardless of auth state. /api/health is on
 // the list so uptime checks and container orchestrators keep working; the
-// auth endpoints are obviously required to bootstrap a session.
-const PUBLIC_API_PREFIXES = ['/api/auth/', '/api/health'];
+// listed auth endpoints are the bootstrap surface (log in, log out, first-run
+// setup, status probe). Other /api/auth/* routes — password change, API key
+// management — are sensitive and must go through the authenticated gate.
+const PUBLIC_API_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/auth/setup',
+  '/api/auth/status',
+  '/api/health',
+]);
 const PUBLIC_PAGE_PATHS = ['/login', '/setup'];
 
 function isPublicPath(pathname: string): boolean {
@@ -13,10 +21,7 @@ function isPublicPath(pathname: string): boolean {
   for (const p of PUBLIC_PAGE_PATHS) {
     if (pathname.startsWith(`${p}/`)) return true;
   }
-  for (const p of PUBLIC_API_PREFIXES) {
-    if (pathname === p || pathname.startsWith(p)) return true;
-  }
-  return false;
+  return PUBLIC_API_PATHS.has(pathname);
 }
 
 function unauthorized(code: 'setup_required' | 'unauthorized'): NextResponse {

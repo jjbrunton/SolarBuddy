@@ -7,7 +7,10 @@
 set -euo pipefail
 
 PORT="${PORT:-3101}"
-HOSTNAME="${HOSTNAME:-127.0.0.1}"
+# Pin the host to loopback so curl treats the origin as secure and will send
+# the auth session cookie (marked Secure in production builds). Inheriting the
+# CI runner's HOSTNAME env var here breaks the auth bootstrap silently.
+HOSTNAME="127.0.0.1"
 BASE_URL="http://${HOSTNAME}:${PORT}"
 
 if [[ -z "${DB_PATH:-}" ]]; then
@@ -35,10 +38,10 @@ cleanup() {
 
 trap cleanup EXIT
 
-PORT="${PORT}" HOSTNAME="${HOSTNAME}" DB_PATH="${DB_PATH}" node .next/standalone/server.js >/tmp/solarbuddy-smoke.log 2>&1 &
+PORT="${PORT}" HOSTNAME="${HOSTNAME}" DB_PATH="${DB_PATH}" SOLARBUDDY_AUTH_COOKIE_SECURE=0 node .next/standalone/server.js >/tmp/solarbuddy-smoke.log 2>&1 &
 SERVER_PID=$!
 
-# Wait for the server to come up. Health endpoint is the authoritative signal.
+# Wait for the server to come up. Health endpoint is public and authoritative.
 for _ in $(seq 1 30); do
   if curl -fsS "${BASE_URL}/api/health" >/dev/null 2>&1; then
     break
@@ -46,12 +49,27 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
+# Bootstrap the single admin account so the rest of the smoke test exercises
+# the real authenticated surface. The auth gate redirects pages and 409s APIs
+# until setup completes, so a fresh DB smoke run must do this first.
+COOKIE_JAR="$(mktemp "${TMPDIR:-/tmp}/solarbuddy-smoke-cookies.XXXXXX")"
+SETUP_STATUS="$(curl -s -o /dev/null -w '%{http_code}' \
+  -c "${COOKIE_JAR}" \
+  -X POST "${BASE_URL}/api/auth/setup" \
+  -H 'content-type: application/json' \
+  -d '{"username":"smoke","password":"smoke-smoke-smoke"}')"
+if [[ "${SETUP_STATUS}" != "200" ]]; then
+  echo "FAIL: /api/auth/setup returned ${SETUP_STATUS}" >&2
+  exit 1
+fi
+echo "  auth bootstrap OK"
+
 # Assertion helpers — fail fast with a clear message so CI output is readable.
 assert_status() {
   local url="$1"
   local expected="$2"
   local actual
-  actual="$(curl -s -o /dev/null -w '%{http_code}' "${url}")"
+  actual="$(curl -s -o /dev/null -w '%{http_code}' -b "${COOKIE_JAR}" "${url}")"
   if [[ "${actual}" != "${expected}" ]]; then
     echo "FAIL: ${url} returned ${actual}, expected ${expected}" >&2
     return 1
@@ -62,7 +80,7 @@ assert_status() {
 assert_non_5xx() {
   local url="$1"
   local actual
-  actual="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${url}")"
+  actual="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -b "${COOKIE_JAR}" "${url}")"
   if [[ "${actual}" -ge 500 ]]; then
     echo "FAIL: ${url} returned ${actual} (>= 500)" >&2
     return 1
@@ -122,11 +140,11 @@ TODAY="$(date -u +%Y-%m-%d)"
 SLOT_START="${TODAY}T23:00:00Z"
 SLOT_END="${TODAY}T23:30:00Z"
 
-curl -fsS -X POST "${BASE_URL}/api/overrides" \
+curl -fsS -b "${COOKIE_JAR}" -X POST "${BASE_URL}/api/overrides" \
   -H 'content-type: application/json' \
   -d "{\"slots\":[{\"slot_start\":\"${SLOT_START}\",\"slot_end\":\"${SLOT_END}\",\"action\":\"charge\"}]}" \
   >/dev/null
-GET_RESPONSE="$(curl -fsS "${BASE_URL}/api/overrides")"
+GET_RESPONSE="$(curl -fsS -b "${COOKIE_JAR}" "${BASE_URL}/api/overrides")"
 if ! echo "${GET_RESPONSE}" | grep -q "${SLOT_START}"; then
   echo "FAIL: override for ${SLOT_START} not returned by GET" >&2
   echo "Got: ${GET_RESPONSE}" >&2
@@ -134,7 +152,7 @@ if ! echo "${GET_RESPONSE}" | grep -q "${SLOT_START}"; then
 fi
 echo "  POST+GET round-trip OK"
 
-DELETE_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE_URL}/api/overrides?slot_start=${SLOT_START}")"
+DELETE_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -b "${COOKIE_JAR}" -X DELETE "${BASE_URL}/api/overrides?slot_start=${SLOT_START}")"
 if [[ "${DELETE_STATUS}" != "200" ]]; then
   echo "FAIL: DELETE returned ${DELETE_STATUS}" >&2
   exit 1

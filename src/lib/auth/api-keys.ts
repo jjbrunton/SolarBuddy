@@ -59,6 +59,12 @@ export function revokeApiKey(prefix: string): boolean {
   return result.changes > 0;
 }
 
+export function revokeAllApiKeys(): number {
+  const db = getDb();
+  const result = db.prepare('DELETE FROM api_keys').run();
+  return result.changes;
+}
+
 export function verifyApiKey(key: string | undefined | null): boolean {
   if (!key || !key.startsWith(KEY_PREFIX)) return false;
   const db = getDb();

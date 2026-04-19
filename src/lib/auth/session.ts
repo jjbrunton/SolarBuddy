@@ -4,6 +4,15 @@ import { getSetting, saveSettings } from '@/lib/config';
 export const SESSION_COOKIE = 'sb_session';
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
+// Secure is set on the session cookie in production by default. Self-hosted
+// deployments running over plain HTTP on a LAN (and CI smoke/E2E, which hit
+// the production build over http://127.0.0.1) need to opt out so browsers
+// actually send the cookie back. SOLARBUDDY_AUTH_COOKIE_SECURE=0 disables it.
+export function isCookieSecure(): boolean {
+  if (process.env.SOLARBUDDY_AUTH_COOKIE_SECURE === '0') return false;
+  return process.env.NODE_ENV === 'production';
+}
+
 function b64url(buf: Buffer): string {
   return buf.toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 }

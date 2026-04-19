@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server';
 import { generateApiKey, listApiKeys } from '@/lib/auth/api-keys';
+import { authenticateRequest } from '@/lib/auth/guard';
 import { ApiError, errorResponse } from '@/lib/api-error';
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (authenticateRequest(request) === 'none') {
+    return errorResponse(ApiError.unauthorized('Authentication required'));
+  }
   return NextResponse.json({ keys: listApiKeys() });
 }
 
 export async function POST(request: Request) {
+  if (authenticateRequest(request) === 'none') {
+    return errorResponse(ApiError.unauthorized('Authentication required'));
+  }
+
   let body: { name?: unknown };
   try {
     body = (await request.json()) as typeof body;

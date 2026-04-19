@@ -13,6 +13,10 @@ export class ApiError extends Error {
     return new ApiError(message, 400);
   }
 
+  static unauthorized(message: string) {
+    return new ApiError(message, 401);
+  }
+
   static notFound(message: string) {
     return new ApiError(message, 404);
   }

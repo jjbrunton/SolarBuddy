@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSetting } from '@/lib/config';
 import { isAuthConfigured } from '@/lib/auth/state';
 import { verifyPassword } from '@/lib/auth/password';
-import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session';
+import { createSessionToken, isCookieSecure, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session';
 import { ApiError, errorResponse } from '@/lib/api-error';
 
 export async function POST(request: Request) {
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isCookieSecure(),
     path: '/',
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
