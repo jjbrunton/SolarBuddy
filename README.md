@@ -58,19 +58,22 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 - Live MQTT traffic log on the System Logs page for broker troubleshooting
 - Dashboard current-rate card with live Agile slot, next-slot preview, and loaded rate benchmarks
 - Inverter configuration read-back, including compatibility fallbacks for renamed Solar Assistant settings and clear unavailable-state messaging when an inverter does not publish a read-back value
-- Octopus Energy Agile rate tracking and visualization
+- Octopus Energy Agile rate tracking and visualization, with optional Nordpool N2EX day-ahead forecasts to preview and plan tomorrow's slots before Octopus publishes them
+- Solcast-backed PV generation forecasting used by the planner, bill estimate, and dashboard forecast card
 - Usage-profile learning that can pull half-hour household import data from Octopus (with automatic fallback to local telemetry when Octopus data is unavailable)
 - Automatic battery scheduling with selectable Night Fill and Opportunistic Top-up strategies, horizon-aware smart discharge, and slot-level hold planning
-- Manual charge window and work mode overrides
+- Manual charge window and work mode overrides, plus time-of-day scheduled operator actions (charge/discharge/hold) with day and SOC conditions
 - Daily charge-plan navigation that defaults to today and keeps recent schedule history available for review
 - Inverter watchdog reconciliation that re-applies the active schedule or override after restarts and inverter drift
+- Analytics views for savings, battery profit, savings attribution, and today/tomorrow bill estimates
+- Optional Discord and Telegram notifications for operator-facing events
 - Activity log and system status
 
 ## Architecture
 
 - **Frontend**: Next.js App Router with React, Tailwind CSS, Recharts
 - **Backend**: Next.js API routes, SQLite (via better-sqlite3) for persistence
-- **Integrations**: MQTT for Solar Assistant, Octopus Energy REST API for tariff rates
+- **Integrations**: MQTT for Solar Assistant, Octopus Energy REST API for tariff rates, Nordpool N2EX for day-ahead forecasts, Solcast for PV forecasts, Home Assistant via MQTT Discovery, and Discord/Telegram for notifications
 - **Scheduling**: node-cron for periodic rate fetching and charge window calculation
 
 ### Key Modules
@@ -78,10 +81,16 @@ A self-hosted dashboard for managing solar battery charging and discharge with O
 | Path | Purpose |
 |------|---------|
 | `src/lib/octopus/` | Octopus Energy API client (rates, account verification) |
+| `src/lib/nordpool/` | Nordpool N2EX day-ahead forecast client and Agile-rate converter |
+| `src/lib/solcast/` | Solcast PV forecast client and storage |
 | `src/lib/mqtt/` | MQTT client for Solar Assistant inverter data |
+| `src/lib/home-assistant/` | Home Assistant MQTT Discovery publisher and command handler |
+| `src/lib/notifications/` | Dispatcher and channel adapters for Discord and Telegram |
 | `src/lib/scheduler/` | Cron jobs, slot planner, and execution engine |
+| `src/lib/usage/` | Usage-profile learning from Octopus consumption and local telemetry |
+| `src/lib/analytics.ts`, `src/lib/accounting.ts`, `src/lib/attribution.ts`, `src/lib/bill-estimate.ts` | Savings, battery profit, attribution, and bill-estimate analytics |
 | `src/lib/config.ts` | Settings schema and SQLite persistence |
-| `src/lib/db.ts` | Database initialization and access |
+| `src/lib/db/` | Database initialization, migrations, and repository modules |
 
 ## Getting Started
 
@@ -170,14 +179,31 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 | POST | `/api/octopus/verify` | Verify Octopus account and auto-detect tariff details |
 | GET | `/api/rates?from=&to=` | Retrieve stored Agile rates |
 | POST | `/api/rates` | Trigger rate fetch from Octopus API |
+| POST | `/api/rates/nordpool/refresh` | Manually refresh the Nordpool N2EX day-ahead forecast |
+| GET, POST | `/api/forecast` | Return stored Solcast PV forecasts or trigger a refresh when stale |
 | GET | `/api/status` | Current inverter status |
 | GET | `/api/health` | Deployment health check for container platforms |
-| GET | `/api/schedule` | Current battery windows plus slot-by-slot plan |
+| GET, POST | `/api/schedule` | Current battery windows plus slot-by-slot plan; `POST` re-runs the scheduler |
+| GET, POST, PATCH, DELETE | `/api/overrides` | Read, replace, upsert, or clear manual charge-slot overrides for today |
+| GET, POST, PATCH, DELETE | `/api/scheduled-actions` | Manage time-of-day scheduled operator actions |
+| POST | `/api/simulate` | Dry-run the planner and simulator against stored tariff data |
 | GET | `/api/readings` | Historical inverter readings |
 | GET | `/api/events` | SSE stream of real-time events |
 | GET | `/api/events-log` | Historical event log |
 | GET | `/api/system` | System health info |
+| POST | `/api/system/time-sync` | Trigger an inverter clock synchronization |
+| POST | `/api/system/tariff-check` | Trigger a tariff-change check against the configured Octopus account |
 | GET | `/api/system/mqtt-log` | SSE stream of recent MQTT connection and topic activity |
+| GET | `/api/analytics/savings` | Savings analytics and comparative cost views |
+| GET | `/api/analytics/accounting` | Accounting-oriented savings and cashflow totals |
+| GET | `/api/analytics/battery-profit` | Battery charge cost, discharge revenue, and net profit |
+| GET | `/api/analytics/attribution` | Savings-vs-standard-tariff breakdown (solar, tariff shift, export) |
+| GET | `/api/analytics/bill-estimate` | Today and tomorrow bill estimate combining rates, PV, usage, and plan |
+| GET | `/api/usage-profile` | Learned half-hour consumption profile |
+| POST | `/api/usage-profile/refresh` | Recompute the usage profile on demand |
+| POST | `/api/notifications/test` | Send a test notification to a configured channel (Discord or Telegram) |
+| GET | `/api/home-assistant/status` | Home Assistant publisher status |
+| POST | `/api/home-assistant/test` | Test the Home Assistant MQTT discovery publish without affecting the live publisher |
 | GET | `/api/virtual-inverter` | Current virtual runtime status |
 | POST | `/api/virtual-inverter` | Enable, start, pause, reset, or disable the virtual runtime |
 | GET | `/api/virtual-inverter/scenarios` | List the available virtual inverter presets |
@@ -187,12 +213,13 @@ For the full route inventory, see [docs/api.md](docs/api.md).
 ```bash
 npm test          # Run all tests once
 npm run test:coverage  # Generate a backend/API coverage report
-npm run test:integration  # Run integration suites under src/**
+npm run test:integration  # Run *.integration.test.ts suites under src/**
 npm run test:watch  # Run in watch mode
 npm run lint      # Run the Next.js/TypeScript lint rules
+npm run typecheck  # Run the TypeScript compiler in no-emit mode
 npm run test:e2e:install  # One-time Playwright browser install
 npm run test:e2e  # Run browser E2E tests against the production build
-npm run verify    # Docs check, tests, production build, and smoke test
+npm run verify    # Docs check, lint, tests, production build, smoke test, and E2E
 npm run release:dry-run  # Build the release Docker image locally
 ```
 
@@ -218,14 +245,20 @@ See [docs/release-process.md](docs/release-process.md) and [docs/deployment.md](
 
 ## Data Storage
 
-SQLite database at `data/solarbuddy.db`. Tables:
+SQLite database at `data/solarbuddy.db` (override with `DB_PATH`). Tables:
 
 - `settings` — key-value configuration store
-- `rates` — cached Agile tariff rates
+- `rates` — cached Agile tariff rates (with `source` column for `octopus`, `nordpool`, or `tariff`)
+- `export_rates` — cached Agile export rates
+- `pv_forecasts` — cached Solcast PV generation forecasts
 - `readings` — inverter telemetry snapshots
 - `events` — system event history
 - `mqtt_logs` — recent MQTT connection, topic, and command activity
 - `plan_slots` — canonical slot-level battery policy and planner reasoning
-- `schedules` — computed charge and discharge windows
+- `plan_slot_executions` — per-slot execution log with actual import/export and command metadata
+- `schedules` — computed charge and discharge windows derived from `plan_slots`
 - `carbon_intensity` — cached grid carbon intensity data
-- `manual_overrides` — operator-defined charge slots for the current day
+- `manual_overrides` — operator-defined charge/discharge/hold slots for the current day
+- `auto_overrides` — runtime-generated short-lived overrides (e.g. SOC protection)
+- `scheduled_actions` — time-of-day scheduled operator actions with day and SOC conditions
+- `usage_profile`, `usage_profile_meta` — learned half-hour consumption profile and metadata
