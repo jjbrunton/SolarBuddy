@@ -360,6 +360,142 @@ describe('marginal cost gate', () => {
   });
 });
 
+describe('bundle retry for shared-refill discharges', () => {
+  // Regression: greedy per-candidate evaluation rejects a cluster of
+  // morning discharges as 'value' because each one individually requires a
+  // full refill charge slot, even though one refill slot covers six
+  // discharge slots.  A bundle-retry pass should detect the positive
+  // cumulative value and accept the cluster.
+  it('accepts a cluster of morning discharges sharing one refill charge', () => {
+    // Battery 5.12 kWh, charge 3 kW (1.5 kWh/slot = 29.3% SOC), load 500 W
+    // (0.25 kWh/slot = 4.88% SOC).  Starting at peak target so no base
+    // refill is needed — any morning discharge must earn back its own refill.
+    const rates: AgileRate[] = [
+      // pre-morning hold window (irrelevant, no discharge candidates needed)
+      rate('2026-04-01T04:00:00Z', '2026-04-01T04:30:00Z', 10),
+      rate('2026-04-01T04:30:00Z', '2026-04-01T05:00:00Z', 10),
+      // morning: high import price (22-24p) — six candidate discharge slots
+      rate('2026-04-01T06:00:00Z', '2026-04-01T06:30:00Z', 23),
+      rate('2026-04-01T06:30:00Z', '2026-04-01T07:00:00Z', 24),
+      rate('2026-04-01T07:00:00Z', '2026-04-01T07:30:00Z', 23),
+      rate('2026-04-01T07:30:00Z', '2026-04-01T08:00:00Z', 23),
+      rate('2026-04-01T08:00:00Z', '2026-04-01T08:30:00Z', 22),
+      rate('2026-04-01T08:30:00Z', '2026-04-01T09:00:00Z', 22),
+      // mid-day cheap refill opportunity
+      rate('2026-04-01T12:00:00Z', '2026-04-01T12:30:00Z', 15),
+      rate('2026-04-01T12:30:00Z', '2026-04-01T13:00:00Z', 15),
+      rate('2026-04-01T13:00:00Z', '2026-04-01T13:30:00Z', 15),
+      // evening peak: must still fire
+      rate('2026-04-01T17:00:00Z', '2026-04-01T17:30:00Z', 34),
+      rate('2026-04-01T17:30:00Z', '2026-04-01T18:00:00Z', 35),
+    ];
+
+    const plan = buildSmartDischargePlan(
+      rates,
+      {
+        ...baseSettings,
+        battery_capacity_kwh: '5.12',
+        max_charge_power_kw: '3',
+        charge_rate: '100',
+        charge_hours: '0',
+        estimated_consumption_w: '500',
+        discharge_soc_floor: '12',
+        discharge_price_threshold: '0',
+        peak_protection: 'true',
+        peak_period_start: '16:00',
+        peak_period_end: '19:00',
+        peak_soc_target: '90',
+      },
+      [],
+      [],
+      {
+        currentSoc: 40,
+        now: new Date('2026-04-01T03:50:00Z'),
+        exportRates: rates.map((r) => ({ ...r, price_inc_vat: 0, price_exc_vat: 0 })),
+      },
+    );
+
+    const dischargeStarts = plan.dischargeWindows.flatMap((w) => w.slots.map((s) => s.valid_from));
+
+    // Peak should always fire
+    expect(dischargeStarts).toContain('2026-04-01T17:00:00Z');
+    expect(dischargeStarts).toContain('2026-04-01T17:30:00Z');
+
+    // At least four of the six morning cluster candidates must be
+    // accepted — the greedy pass lets the first in (06:30) but rejects
+    // the rest as 'value'; the bundle retry should rescue them.
+    const morningAccepted = dischargeStarts.filter((s) =>
+      s >= '2026-04-01T06:00:00Z' && s < '2026-04-01T09:00:00Z',
+    );
+    if (morningAccepted.length < 4) {
+      throw new Error(
+        `Morning bundle not accepted. Accepted: ${JSON.stringify(dischargeStarts)}\nDebug: ${JSON.stringify(plan._debug, null, 2)}`,
+      );
+    }
+    expect(morningAccepted.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('0p export user (synthetic zero export rates)', () => {
+  // Reproduces the scenario for a user with no Outgoing tariff:
+  // resolveExportRates writes synthetic 0-valued export slots, and the
+  // discharge planner must still value discharge at the avoided-import
+  // rate (otherwise every candidate is rejected as marginal_cost and the
+  // resolver defaults to 'hold' for the whole evening).
+  function zeroExportRates(importRates: AgileRate[]): AgileRate[] {
+    return importRates.map((r) => ({
+      valid_from: r.valid_from,
+      valid_to: r.valid_to,
+      price_inc_vat: 0,
+      price_exc_vat: 0,
+    }));
+  }
+
+  it('plans discharge at an expensive peak when export is 0p', () => {
+    const rates: AgileRate[] = [
+      rate('2026-04-01T00:00:00Z', '2026-04-01T00:30:00Z', 3),
+      rate('2026-04-01T00:30:00Z', '2026-04-01T01:00:00Z', 4),
+      rate('2026-04-01T17:00:00Z', '2026-04-01T17:30:00Z', 30),
+      rate('2026-04-01T17:30:00Z', '2026-04-01T18:00:00Z', 32),
+    ];
+
+    const plannedCharges = [
+      { slot_start: rates[0].valid_from, slot_end: rates[0].valid_to, avg_price: 3, slots: [rates[0]] },
+      { slot_start: rates[1].valid_from, slot_end: rates[1].valid_to, avg_price: 4, slots: [rates[1]] },
+    ];
+
+    const plan = buildSmartDischargePlan(
+      rates,
+      {
+        ...baseSettings,
+        charge_hours: '2',
+        estimated_consumption_w: '500',
+        discharge_soc_floor: '12',
+        discharge_price_threshold: '0',
+        export_rate: '0',
+      },
+      plannedCharges,
+      [],
+      {
+        currentSoc: 80,
+        now: new Date('2026-03-31T23:50:00Z'),
+        exportRates: zeroExportRates(rates),
+      },
+    );
+
+    if (plan.dischargeWindows.length === 0) {
+      throw new Error(
+        `No discharge with 0p export! Debug: ${JSON.stringify(plan._debug, null, 2)}`,
+      );
+    }
+    expect(plan.dischargeWindows.length).toBeGreaterThan(0);
+    const dischargePrices = plan.dischargeWindows.flatMap((w) =>
+      w.slots.map((s) => s.price_inc_vat),
+    );
+    expect(dischargePrices.some((p) => p >= 30)).toBe(true);
+  });
+});
+
 describe('real-world: night_fill + peak protection with afternoon cheap rates', () => {
   // Reproduces the user's scenario: night_fill strategy, peak protection on,
   // cheap afternoon rates, expensive evening rates.  The planner should

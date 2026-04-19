@@ -52,6 +52,9 @@ interface SimulationPoint {
   endMs: number;
   socAfterWh: number;
   actualDischargeWh: number;
+  /** Grid energy actually drawn for a charge slot — zero if the battery
+   *  was already at capacity (no further grid draw is possible). */
+  actualChargeWh: number;
 }
 
 interface EnergyModel {
@@ -284,6 +287,76 @@ export function buildSmartDischargePlan(
     smartDischargeKeys.add(candidate.key);
   }
 
+  // Bundle retry: the per-candidate greedy above charges each discharge
+  // its share of a full refill charge slot, so a cluster of small
+  // discharges that together cost less than one shared refill still get
+  // rejected individually. Retry value-rejected candidates as a group.
+  const rejectedByKey = new Map(
+    (debug.candidateResults ?? []).map((r) => [r.key, r] as const),
+  );
+  const bundleCandidates = candidates.filter(
+    (c) => rejectedByKey.get(c.key)?.rejected === 'value',
+  );
+
+  for (let size = bundleCandidates.length; size >= 2; size -= 1) {
+    const bundle = bundleCandidates.slice(0, size);
+    const earliestMs = Math.min(...bundle.map((b) => b.startMs));
+    const tentative = clonePlan(plan);
+    for (const c of bundle) tentative.dischargeKeys.add(c.key);
+
+    const refill = backfillChargesForTargets(
+      slots,
+      tentative,
+      constraints,
+      extraChargeBudget,
+      currentSoc,
+      energy,
+      earliestMs,
+    );
+    if (!refill.feasible) continue;
+
+    const simulation = simulatePlan(slots, tentative, currentSoc, energy, dischargeFloorWh);
+    const simByKey = new Map(simulation.map((point) => [point.key, point]));
+
+    let bundleOk = true;
+    for (const c of bundle) {
+      const marginalCost = estimateStoredEnergyUnitCostBefore(
+        tentative,
+        slots,
+        energy,
+        c.startMs,
+        simByKey,
+      );
+      const eff = effectiveDischargePrice(c.exportPrice, economics);
+      if (marginalCost > 0 && eff <= marginalCost) {
+        bundleOk = false;
+        break;
+      }
+      const point = simByKey.get(c.key);
+      if (!point || point.actualDischargeWh <= 0) {
+        bundleOk = false;
+        break;
+      }
+    }
+    if (!bundleOk) continue;
+
+    const tentativeValue = calculatePlanValue(tentative, slots, energy, simulation, economics);
+    if (tentativeValue <= currentValue) continue;
+
+    plan.chargeKeys = tentative.chargeKeys;
+    plan.dischargeKeys = tentative.dischargeKeys;
+    plan.extraChargeKeys = tentative.extraChargeKeys;
+    extraChargeBudget = refill.remainingBudget;
+    currentValue = tentativeValue;
+    currentSim = simulation;
+    for (const c of bundle) {
+      smartDischargeKeys.add(c.key);
+      const entry = rejectedByKey.get(c.key);
+      if (entry) entry.rejected = null;
+    }
+    break;
+  }
+
   return {
     extraChargeWindows: slotsToWindows(slots, plan.extraChargeKeys),
     dischargeWindows: slotsToWindows(slots, smartDischargeKeys, 'discharge'),
@@ -510,9 +583,15 @@ function simulatePlan(
     // slot-by-slot; otherwise it collapses to the flat fallback.
     const drainWh = energy.drainWhAtMs(slot.startMs);
     let actualDischargeWh = 0;
+    let actualChargeWh = 0;
 
     if (plan.chargeKeys.has(slot.key)) {
-      // Grid charging + PV surplus after covering consumption
+      // Grid charge only fills remaining headroom — once the battery is at
+      // capacity the inverter stops drawing from the grid, so the paid
+      // energy is capped even though the slot is still marked 'charge'.
+      const headroomWh = Math.max(0, energy.batteryCapacityWh - socWh);
+      actualChargeWh = Math.min(energy.chargePerSlotWh, headroomWh);
+      // PV surplus after covering consumption fills any remaining headroom.
       const addWh = energy.chargePerSlotWh + Math.max(0, pvWh - drainWh);
       socWh = Math.min(energy.batteryCapacityWh, socWh + addWh);
     } else if (plan.dischargeKeys.has(slot.key)) {
@@ -540,6 +619,7 @@ function simulatePlan(
       endMs: slot.endMs,
       socAfterWh: socWh,
       actualDischargeWh,
+      actualChargeWh,
     });
   }
 
@@ -569,7 +649,11 @@ function calculatePlanValue(
 
   for (const slot of slots) {
     if (plan.chargeKeys.has(slot.key)) {
-      total -= (energy.chargePerSlotWh / 1000) * slot.rate.price_inc_vat;
+      // Cost only the grid energy the battery could actually accept — a
+      // slot that caps at full SOC draws nothing from the grid.
+      const chargeWh =
+        simByKey?.get(slot.key)?.actualChargeWh ?? energy.chargePerSlotWh;
+      total -= (chargeWh / 1000) * slot.rate.price_inc_vat;
     } else if (plan.dischargeKeys.has(slot.key)) {
       // Use actual discharge from simulation (supports partial discharge
       // when SOC is near the floor), falling back to the per-slot drain
@@ -653,7 +737,9 @@ function estimateStoredEnergyUnitCostBefore(
     }
 
     if (plan.chargeKeys.has(slot.key)) {
-      const chargedKwh = energy.chargePerSlotWh / 1000;
+      const actualChargeWh =
+        simulationByKey.get(slot.key)?.actualChargeWh ?? energy.chargePerSlotWh;
+      const chargedKwh = actualChargeWh / 1000;
       if (chargedKwh <= 0) continue;
       storedPurchasedKwh += chargedKwh;
       storedPurchasedCostPence += chargedKwh * slot.rate.price_inc_vat;
