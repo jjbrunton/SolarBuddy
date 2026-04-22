@@ -431,6 +431,25 @@ describe('reconcileInverterState', () => {
     expect(startGridCharging).not.toHaveBeenCalled();
   });
 
+  it('does not issue inverter commands from direct reconcile calls when watchdog is disabled', async () => {
+    currentSettings = buildSettings({ watchdog_enabled: 'false' });
+    planSlotRow = {
+      slot_start: '2026-04-01T10:00:00Z',
+      slot_end: '2026-04-01T10:30:00Z',
+      action: 'charge',
+      reason: 'Charge slot selected by the planner.',
+    };
+
+    await reconcileInverterState('manual override updated');
+
+    expect(startGridCharging).not.toHaveBeenCalled();
+    expect(stopGridCharging).not.toHaveBeenCalled();
+    expect(startGridDischarge).not.toHaveBeenCalled();
+    expect(stopGridDischarge).not.toHaveBeenCalled();
+    expect(startBatteryHold).not.toHaveBeenCalled();
+    expect(setLoadFirstStopDischarge).not.toHaveBeenCalled();
+  });
+
   it('does not consider hold satisfied when load_first_stop_discharge is far below SOC', async () => {
     currentState = buildState({
       battery_soc: 56,

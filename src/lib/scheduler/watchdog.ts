@@ -660,6 +660,10 @@ function checkSocTrajectoryDrift(intent: RuntimeIntent, state: InverterState, no
 }
 
 export async function reconcileInverterState(reason = 'manual trigger') {
+  if (!isWatchdogEnabled()) {
+    return;
+  }
+
   const runtime = getWatchdogState();
   if (runtime.running) {
     runtime.pendingReasons.add(reason);
