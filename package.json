@@ -30,7 +30,7 @@
     "verify": "npm run docs:check && npm run lint && npm test && npm run build && npm run test:smoke && npm run test:e2e"
   },
   "dependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.2.4",
     "better-sqlite3": "^12.8.0",
     "lucide-react": "^1.8.0",
     "mqtt": "^5.15.1",
