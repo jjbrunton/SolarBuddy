@@ -37,6 +37,7 @@ import {
   getBestSlots,
   getSchedulingEfficacy,
   _resetScoreMemoForTests,
+  _resetBacktestCacheForTests,
 } from '../engine';
 
 const BASE_SETTINGS = {
@@ -90,6 +91,7 @@ describe('runBacktest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetScoreMemoForTests();
+    _resetBacktestCacheForTests();
     getSettingsMock.mockReturnValue({ ...BASE_SETTINGS });
     simulatePassiveMock.mockReturnValue({ daily: [], summary: {} });
   });
@@ -199,6 +201,7 @@ describe('getWorstSlots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetScoreMemoForTests();
+    _resetBacktestCacheForTests();
     getSettingsMock.mockReturnValue({ ...BASE_SETTINGS });
   });
 
@@ -240,6 +243,7 @@ describe('getBestSlots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetScoreMemoForTests();
+    _resetBacktestCacheForTests();
     getSettingsMock.mockReturnValue({ ...BASE_SETTINGS });
   });
 
@@ -278,6 +282,7 @@ describe('getSchedulingEfficacy', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetScoreMemoForTests();
+    _resetBacktestCacheForTests();
     getSettingsMock.mockReturnValue({ ...BASE_SETTINGS });
   });
 

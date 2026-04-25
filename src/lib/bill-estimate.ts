@@ -186,11 +186,40 @@ function forecastSlotRange(
   };
 }
 
+// Bill estimate memo. Recomputing was hitting the daily PnL aggregate,
+// import/export rate windows, and PV forecast rows on every page load —
+// the dashboard fires this on top of attribution + slot scoring. The
+// cache key is the current half-hour slot start so the value naturally
+// invalidates on slot boundaries; within a slot a 5-minute TTL also
+// caps staleness as new readings arrive mid-slot.
+const BILL_ESTIMATE_TTL_MS = 5 * 60 * 1000;
+const BILL_ESTIMATE_SLOT_MS = 30 * 60 * 1000;
+let billEstimateMemo: { ts: number; slotKey: number; value: BillEstimateResult } | null = null;
+
+/** Test-only — clears the per-process bill estimate memo. */
+export function _resetBillEstimateCacheForTests(): void {
+  billEstimateMemo = null;
+}
+
 /**
  * Produce a bill estimate for today (actual + forecast) and tomorrow (forecast).
  */
 export function getEstimatedBill(): BillEstimateResult {
   const now = new Date();
+  const slotKey = Math.floor(now.getTime() / BILL_ESTIMATE_SLOT_MS);
+  if (
+    billEstimateMemo &&
+    billEstimateMemo.slotKey === slotKey &&
+    now.getTime() - billEstimateMemo.ts < BILL_ESTIMATE_TTL_MS
+  ) {
+    return billEstimateMemo.value;
+  }
+  const value = computeEstimatedBill(now);
+  billEstimateMemo = { ts: now.getTime(), slotKey, value };
+  return value;
+}
+
+function computeEstimatedBill(now: Date): BillEstimateResult {
   const settings = getSettings();
 
   // --- Time boundaries (local) ---

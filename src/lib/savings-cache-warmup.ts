@@ -1,6 +1,7 @@
 import { getDb } from './db';
 import { recomputeAttributionRange } from './attribution';
-import { recomputeSlotScoresForRange } from './backtest/engine';
+import { recomputeSlotScoresForRange, runBacktest } from './backtest/engine';
+import { getEstimatedBill } from './bill-estimate';
 import { appendEvent } from './events';
 
 // Warm the savings cache once on app boot if it looks empty. The daily
@@ -27,6 +28,24 @@ export function ensureSavingsCacheWarm(): void {
       const fromISO = new Date(today.getTime() - 90 * 86400000).toISOString();
       const toISO = today.toISOString();
       const slots = recomputeSlotScoresForRange({ fromISO, toISO });
+
+      // Warm the in-memory caches the savings page also hits on first
+      // load: baseline (no-overrides) backtest for the default 30d
+      // WhatIfPanel anchor, and the today/tomorrow bill estimate strip.
+      // Failures here do not mark the warmup as failed — the page paths
+      // fall back to live compute.
+      try {
+        const backtestFromISO = new Date(today.getTime() - 30 * 86400000).toISOString();
+        runBacktest({ fromISO: backtestFromISO, toISO });
+      } catch (err) {
+        console.warn('[savings-cache] baseline backtest warmup failed:', err);
+      }
+      try {
+        getEstimatedBill();
+      } catch (err) {
+        console.warn('[savings-cache] bill estimate warmup failed:', err);
+      }
+
       appendEvent({
         level: 'info',
         category: 'savings-cache',

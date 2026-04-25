@@ -42,7 +42,7 @@ vi.mock('../accounting', () => ({
   getDailyPnL: getDailyPnLMock,
 }));
 
-import { getEstimatedBill } from '../bill-estimate';
+import { getEstimatedBill, _resetBillEstimateCacheForTests } from '../bill-estimate';
 
 function slotsForDay(dayIso: string, importPrice = 20, exportPrice = 5) {
   // 48 half-hour slots covering the full day in local time — getEstimatedBill()
@@ -64,6 +64,7 @@ function slotsForDay(dayIso: string, importPrice = 20, exportPrice = 5) {
 }
 
 beforeEach(() => {
+  _resetBillEstimateCacheForTests();
   vi.useFakeTimers();
   // Use a fixed UTC midnight so local-time and UTC-time match in the test env.
   vi.setSystemTime(new Date('2026-04-10T00:00:00.000Z'));

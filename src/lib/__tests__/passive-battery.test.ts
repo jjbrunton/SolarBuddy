@@ -17,7 +17,11 @@ vi.mock('../config', () => ({
   getSettings: getSettingsMock,
 }));
 
-import { simulatePassiveBattery, calibrateRoundTripEfficiency } from '../passive-battery';
+import {
+  simulatePassiveBattery,
+  calibrateRoundTripEfficiency,
+  _resetCalibrationCacheForTests,
+} from '../passive-battery';
 
 // Each prepare() call returns an object whose `all` method is one of the
 // three mocks above, dispatched by SQL text.
@@ -42,6 +46,7 @@ function settings(overrides: Record<string, string> = {}) {
 describe('simulatePassiveBattery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetCalibrationCacheForTests();
     wireDb();
     settings();
     importRatesAllMock.mockReturnValue([]);
@@ -127,6 +132,7 @@ describe('simulatePassiveBattery', () => {
 describe('calibrateRoundTripEfficiency', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetCalibrationCacheForTests();
     wireDb();
     settings();
   });

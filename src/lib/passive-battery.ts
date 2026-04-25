@@ -89,6 +89,18 @@ export interface RoundTripCalibration {
   sample_count: number;
 }
 
+// In-memory memo for the rolling-30-day calibration. Recomputing on every
+// attribution / scoreSlots request was a 30-day readings scan even when
+// the cache was hot. RTE drifts slowly (battery degradation, weather
+// shifts), so a 30-min TTL is plenty fresh and avoids the repeated scan.
+const CALIBRATION_TTL_MS = 30 * 60 * 1000;
+const calibrationMemo = new Map<number, { ts: number; result: RoundTripCalibration }>();
+
+/** Test-only — clears the per-process RTE calibration memo. */
+export function _resetCalibrationCacheForTests(): void {
+  calibrationMemo.clear();
+}
+
 // Calibrate round-trip efficiency from observed history.
 //
 // Energy balance for each sample interval:
@@ -111,6 +123,16 @@ export function calibrateRoundTripEfficiency(
   capacityKwh: number,
   daysBack = 30,
 ): RoundTripCalibration {
+  const memoKey = Math.round(capacityKwh * 1000) + daysBack * 1_000_000;
+  const hit = calibrationMemo.get(memoKey);
+  if (hit && Date.now() - hit.ts < CALIBRATION_TTL_MS) return hit.result;
+
+  const result = computeCalibration(capacityKwh, daysBack);
+  calibrationMemo.set(memoKey, { ts: Date.now(), result });
+  return result;
+}
+
+function computeCalibration(capacityKwh: number, daysBack: number): RoundTripCalibration {
   const fallback: RoundTripCalibration = {
     round_trip_efficiency: FALLBACK_ROUND_TRIP_EFFICIENCY,
     source: 'fallback',

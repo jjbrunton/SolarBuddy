@@ -342,7 +342,43 @@ function periodFromWindow(fromISO: string): string {
   return `${days}d`;
 }
 
+// In-memory memo for the no-overrides baseline backtest. WhatIfPanel
+// fetches this on every /savings load to anchor the alt-config
+// comparison; the underlying replay scans the full window's readings,
+// rates, and runs the planner per slot, so it's the heaviest analytics
+// call by far. Overridden runs are interactive (user moved a knob) and
+// genuinely vary, so they bypass the memo.
+const BASELINE_BACKTEST_TTL_MS = 60 * 60 * 1000;
+const baselineBacktestMemo = new Map<string, { ts: number; result: BacktestResult }>();
+
+/** Test-only — clears the per-process baseline backtest memo. */
+export function _resetBacktestCacheForTests(): void {
+  baselineBacktestMemo.clear();
+}
+
+function isBaselineBacktest(params: BacktestParams): boolean {
+  const o = params.settingsOverrides;
+  if (!o) return true;
+  // includeSlots makes the result heavier and the cache mismatched if
+  // someone toggles it; treat as a different cache key by skipping the
+  // memo for the slots variant.
+  if (params.includeSlots) return false;
+  return Object.values(o).every((v) => v == null || v === '' || v === 'inherit');
+}
+
 export function runBacktest(params: BacktestParams): BacktestResult {
+  if (isBaselineBacktest(params)) {
+    const key = `${startOfUTCDay(params.fromISO)}|${startOfUTCDay(params.toISO)}`;
+    const hit = baselineBacktestMemo.get(key);
+    if (hit && Date.now() - hit.ts < BASELINE_BACKTEST_TTL_MS) return hit.result;
+    const result = runBacktestImpl(params);
+    baselineBacktestMemo.set(key, { ts: Date.now(), result });
+    return result;
+  }
+  return runBacktestImpl(params);
+}
+
+function runBacktestImpl(params: BacktestParams): BacktestResult {
   const fromISO = startOfUTCDay(params.fromISO);
   const toExclusiveISO = addDaysUTC(startOfUTCDay(params.toISO), 1);
 
