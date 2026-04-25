@@ -6,10 +6,11 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { FieldSet } from '@/components/ui/FieldSet';
 import { DescriptionList } from '@/components/ui/DescriptionList';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ConfigReadback } from '@/components/config/ConfigReadback';
 import { useSSE } from '@/hooks/useSSE';
-import { CheckCircle, XCircle, ExternalLink, Settings } from 'lucide-react';
+import { CheckCircle, XCircle, ExternalLink, Settings, Download } from 'lucide-react';
 
 interface SystemInfo {
   health: {
@@ -64,7 +65,34 @@ function formatBytes(bytes: number) {
 
 export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | null }) {
   const [info] = useState<SystemInfo | null>(initialInfo);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const { state } = useSSE();
+
+  async function downloadExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch('/api/system/export');
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const filename = match?.[1] || `solarbuddy-export-${new Date().toISOString()}.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   if (!info) {
     return <Card><p className="text-sb-text-muted">Loading system information...</p></Card>;
@@ -119,6 +147,23 @@ export default function SystemView({ initialInfo }: { initialInfo: SystemInfo | 
         <div className="mt-3">
           <p className="mb-1 text-xs text-sb-text-muted">Storage Used</p>
           <ProgressBar value={info.stats.db_size_bytes} max={100 * 1024 * 1024} size="sm" />
+        </div>
+      </Card>
+
+      {/* Data export */}
+      <Card>
+        <CardHeader
+          title="Data Export"
+          subtitle="Download a single JSON dump of scheduler settings, schedules, readings, and other telemetry tables for offline analysis. Connector credentials are redacted."
+        />
+        <div className="flex items-center gap-3">
+          <Button onClick={downloadExport} disabled={exporting} size="sm">
+            <Download size={14} />
+            {exporting ? 'Preparing…' : 'Download export'}
+          </Button>
+          {exportError && (
+            <span className="text-xs text-sb-danger">{exportError}</span>
+          )}
         </div>
       </Card>
 
