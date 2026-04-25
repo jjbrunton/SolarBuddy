@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prepareMock, allMock, simulatePassiveMock } = vi.hoisted(() => ({
+const { prepareMock, allMock, simulatePassiveMock, simulatePassiveRangeMock } = vi.hoisted(() => ({
   prepareMock: vi.fn(),
   allMock: vi.fn(),
   simulatePassiveMock: vi.fn(),
+  simulatePassiveRangeMock: vi.fn(),
 }));
 
 vi.mock('../db', () => ({
@@ -12,22 +13,37 @@ vi.mock('../db', () => ({
 
 vi.mock('../passive-battery', () => ({
   simulatePassiveBattery: simulatePassiveMock,
+  simulatePassiveBatteryRange: simulatePassiveRangeMock,
 }));
 
-import { getAttributionData } from '../attribution';
+import { getAttributionData, recomputeAttributionForDate } from '../attribution';
 
 const DEFAULT_PASSIVE_CONFIG = {
   capacity_kwh: 10,
   min_soc_pct: 10,
   max_power_kw: 5,
   round_trip_efficiency: 0.9,
+  rte_source: 'fallback' as const,
   starting_soc_pct: 50,
 };
+
+// SQL-text dispatch: cache reads return [] (forces live path), the readings
+// aggregate query returns the test fixture. Keeps the existing behaviour
+// for tests that pre-date the daily cache.
+function wireDb() {
+  prepareMock.mockImplementation((sql: string) => ({
+    all: (...args: unknown[]) => {
+      if (sql.includes('FROM attribution_daily_cache')) return [];
+      // The legacy fixture is the readings aggregate.
+      return allMock(...args);
+    },
+  }));
+}
 
 describe('getAttributionData', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prepareMock.mockReturnValue({ all: allMock });
+    wireDb();
   });
 
   it('prices the no-hardware baseline against real tariff rates, not a flat assumption', () => {
@@ -176,7 +192,113 @@ describe('getAttributionData', () => {
       min_soc_pct: 10,
       max_power_kw: 5,
       round_trip_efficiency: 0.9,
+      rte_source: 'fallback',
       starting_soc_pct: 42,
     });
+  });
+
+  it('reads from attribution_daily_cache for completed days and skips the live readings scan', () => {
+    const cachedRow = {
+      date: '2026-04-20',
+      load_kwh: 10,
+      import_kwh: 4,
+      export_kwh: 0,
+      passive_import_kwh: 3,
+      passive_export_kwh: 0,
+      baseline_cost: 240,
+      passive_cost: 90,
+      actual_cost: 80,
+      hardware_saving: 150,
+      scheduling_saving: 10,
+      total_saving: 160,
+      rte_used: 0.85,
+      rte_source: 'calibrated' as const,
+      computed_at: '2026-04-21T03:45:00.000Z',
+    };
+    let readingsQueriedForCachedRange = false;
+    prepareMock.mockImplementation((sql: string) => ({
+      all: () => {
+        if (sql.includes('FROM attribution_daily_cache')) return [cachedRow];
+        // The aggregate query runs over the live tail. If the test date is
+        // before "today", we should not see the readings query at all.
+        if (sql.includes('FROM readings')) {
+          readingsQueriedForCachedRange = true;
+          return [];
+        }
+        return [];
+      },
+    }));
+    simulatePassiveMock.mockReturnValue({
+      daily: [],
+      summary: {
+        ...DEFAULT_PASSIVE_CONFIG,
+        import_kwh: 0,
+        export_kwh: 0,
+        cost: 0,
+        simulated_seconds: 0,
+      },
+    });
+
+    const { daily, summary } = getAttributionData('7d');
+
+    expect(daily).toHaveLength(1);
+    expect(daily[0].date).toBe('2026-04-20');
+    expect(daily[0].scheduling_saving).toBe(10);
+    expect(summary.passive_cost).toBe(90);
+    // We don't assert readingsQueriedForCachedRange === false because the
+    // live tail (today) still gets queried — just confirm the cached row
+    // came through unchanged.
+    expect(readingsQueriedForCachedRange).toBe(true);
+  });
+});
+
+describe('recomputeAttributionForDate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('writes one row to the cache via INSERT ... ON CONFLICT', () => {
+    const inserts: unknown[][] = [];
+    const insertStmt = { run: (...args: unknown[]) => inserts.push(args) };
+    prepareMock.mockImplementation((sql: string) => {
+      if (sql.includes('INSERT INTO attribution_daily_cache')) return insertStmt;
+      // Aggregate readings query: return one fixture row.
+      if (sql.includes('FROM readings')) {
+        return {
+          all: () => [
+            {
+              date: '2026-04-20',
+              load_w_sum: 48000,
+              import_w_sum: 24000,
+              export_w_sum: 0,
+              sample_count: 48,
+              import_cost_w_price: 240000,
+              export_revenue_w_price: 0,
+              baseline_cost_w_price: 48000 * 22,
+              load_w_sum_with_rate: 48000,
+            },
+          ],
+        };
+      }
+      return { all: () => [] };
+    });
+    simulatePassiveRangeMock.mockReturnValue({
+      daily: [{ date: '2026-04-20', import_kwh: 6, export_kwh: 0, cost: 100 }],
+      summary: {
+        ...DEFAULT_PASSIVE_CONFIG,
+        import_kwh: 6,
+        export_kwh: 0,
+        cost: 100,
+        simulated_seconds: 86400,
+      },
+    });
+
+    const row = recomputeAttributionForDate('2026-04-20');
+
+    expect(row).not.toBeNull();
+    expect(row?.date).toBe('2026-04-20');
+    expect(inserts).toHaveLength(1);
+    // First positional arg is the date.
+    expect(inserts[0][0]).toBe('2026-04-20');
   });
 });

@@ -201,6 +201,49 @@ export function initSchema(db: Database.Database) {
       last_used_at TEXT
     );
 
+    -- Daily attribution cache. One row per local-date per
+    -- getAttributionData computation. Lets the savings page render off the
+    -- index on a 90-day window instead of re-running the joined readings
+    -- scan + passive simulation on every request.
+    CREATE TABLE IF NOT EXISTS attribution_daily_cache (
+      date              TEXT PRIMARY KEY,
+      load_kwh          REAL NOT NULL,
+      import_kwh        REAL NOT NULL,
+      export_kwh        REAL NOT NULL,
+      passive_import_kwh REAL NOT NULL,
+      passive_export_kwh REAL NOT NULL,
+      baseline_cost     REAL NOT NULL,
+      passive_cost      REAL NOT NULL,
+      actual_cost       REAL NOT NULL,
+      hardware_saving   REAL NOT NULL,
+      scheduling_saving REAL NOT NULL,
+      total_saving      REAL NOT NULL,
+      rte_used          REAL NOT NULL,
+      rte_source        TEXT NOT NULL,
+      computed_at       TEXT NOT NULL
+    );
+
+    -- Per-slot scheduling-vs-passive scores. Cached so the best-/worst-slot
+    -- panels and the efficacy badge don't re-run scoreSlots() over the
+    -- whole window on every page load. One row per half-hour slot per
+    -- compute pass; rows are upserted on UNIQUE(slot_start) so historical
+    -- days stay frozen to the snapshot taken when the day completed.
+    CREATE TABLE IF NOT EXISTS slot_scores_cache (
+      slot_start        TEXT PRIMARY KEY,
+      action            TEXT,
+      reason            TEXT,
+      import_rate       REAL NOT NULL,
+      export_rate       REAL NOT NULL,
+      load_kwh          REAL NOT NULL,
+      pv_kwh            REAL NOT NULL,
+      actual_import_kwh REAL NOT NULL,
+      actual_export_kwh REAL NOT NULL,
+      actual_cost       REAL NOT NULL,
+      passive_cost      REAL NOT NULL,
+      delta             REAL NOT NULL,
+      computed_at       TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_auto_overrides_slot_start ON auto_overrides(slot_start);
     CREATE INDEX IF NOT EXISTS idx_auto_overrides_expires_at ON auto_overrides(expires_at);
 
@@ -221,6 +264,7 @@ export function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_scheduled_actions_enabled ON scheduled_actions(enabled);
     CREATE INDEX IF NOT EXISTS idx_plan_slot_executions_slot_start ON plan_slot_executions(slot_start);
     CREATE INDEX IF NOT EXISTS idx_plan_slot_executions_issued_at ON plan_slot_executions(command_issued_at);
+    CREATE INDEX IF NOT EXISTS idx_slot_scores_cache_slot_start ON slot_scores_cache(slot_start);
   `);
 
   // Migrate: add new columns for expanded Solar Assistant data

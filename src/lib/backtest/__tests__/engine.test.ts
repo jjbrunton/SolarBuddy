@@ -13,6 +13,14 @@ vi.mock('../../db', () => ({
 
 vi.mock('../../passive-battery', () => ({
   simulatePassiveBattery: simulatePassiveMock,
+  calibrateRoundTripEfficiency: () => ({
+    round_trip_efficiency: 0.9,
+    source: 'fallback' as const,
+    charge_kwh: 0,
+    discharge_kwh: 0,
+    soc_delta_kwh: 0,
+    sample_count: 0,
+  }),
 }));
 
 vi.mock('../../config', () => ({
@@ -23,7 +31,12 @@ vi.mock('../../scheduler/engine', () => ({
   buildSchedulePlan: buildPlanMock,
 }));
 
-import { runBacktest, getWorstSlots } from '../engine';
+import {
+  runBacktest,
+  getWorstSlots,
+  getBestSlots,
+  getSchedulingEfficacy,
+} from '../engine';
 
 const BASE_SETTINGS = {
   battery_capacity_kwh: '10',
@@ -41,6 +54,35 @@ function mockQueryOrder(results: unknown[][]) {
   prepareMock.mockImplementation(() => ({
     all: () => results[i++] ?? [],
   }));
+}
+
+// SQL-text dispatch — robust against query reordering when new cache reads
+// or plumbing queries get added inside scoreSlots/recompute paths. Use this
+// for any test that exercises scoreSlots() and friends.
+function mockBySql(handlers: {
+  rates?: unknown[];
+  exportRates?: unknown[];
+  readings?: unknown[];
+  planSlots?: unknown[];
+  slotScoresCache?: unknown[];
+  attributionDailyCache?: unknown[];
+}) {
+  prepareMock.mockImplementation((sql: string) => ({
+    all: () => {
+      if (sql.includes('FROM slot_scores_cache')) return handlers.slotScoresCache ?? [];
+      if (sql.includes('FROM attribution_daily_cache')) return handlers.attributionDailyCache ?? [];
+      if (sql.includes('FROM plan_slots')) return handlers.planSlots ?? [];
+      if (sql.includes('FROM export_rates')) return handlers.exportRates ?? [];
+      if (sql.includes('FROM rates')) return handlers.rates ?? [];
+      if (sql.includes('FROM readings')) return handlers.readings ?? [];
+      return [];
+    },
+    run: () => undefined,
+  }));
+  // db.transaction returns a function that runs the callback synchronously
+  // — the cache writer uses it. With a stubbed Database we just no-op.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (prepareMock as any).transaction = undefined;
 }
 
 describe('runBacktest', () => {
@@ -158,7 +200,7 @@ describe('getWorstSlots', () => {
   });
 
   it('returns empty when no readings', () => {
-    mockQueryOrder([[], [], []]);
+    mockBySql({});
     expect(getWorstSlots({ fromISO: '2026-04-10T00:00:00Z', toISO: '2026-04-10T00:00:00Z' })).toEqual([]);
   });
 
@@ -179,7 +221,7 @@ describe('getWorstSlots', () => {
       { timestamp: '2026-04-10T10:10:00Z', load_power: 2000, pv_power: 0, grid_power: 2000, battery_soc: 80 },
       { timestamp: '2026-04-10T11:10:00Z', load_power: 400, pv_power: 0, grid_power: 400, battery_soc: 75 },
     ];
-    mockQueryOrder([rates, exportRates, readings, []]);
+    mockBySql({ rates, exportRates, readings });
     const worst = getWorstSlots({
       fromISO: '2026-04-10T00:00:00Z',
       toISO: '2026-04-10T00:00:00Z',
@@ -188,5 +230,92 @@ describe('getWorstSlots', () => {
     expect(worst.length).toBeGreaterThan(0);
     expect(worst[0].slot_start).toBe('2026-04-10T10:00:00.000Z');
     expect(worst[0].delta).toBeGreaterThan(0);
+  });
+});
+
+describe('getBestSlots', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getSettingsMock.mockReturnValue({ ...BASE_SETTINGS });
+  });
+
+  it('returns slots sorted by ascending delta (biggest scheduler wins first)', () => {
+    // Slot A: load 0.2 kWh, pv 0.5 kWh — passive would charge surplus into
+    // the battery. If actual exported the surplus instead at a high export
+    // rate, actual_cost is negative (revenue) and beats passive.
+    const rates = [
+      { valid_from: '2026-04-10T12:00:00Z', valid_to: '2026-04-10T12:30:00Z', price_inc_vat: 5 },
+      { valid_from: '2026-04-10T18:00:00Z', valid_to: '2026-04-10T18:30:00Z', price_inc_vat: 30 },
+    ];
+    const exportRates = [
+      { valid_from: '2026-04-10T12:00:00Z', valid_to: '2026-04-10T12:30:00Z', price_inc_vat: 25 },
+    ];
+    // Slot A: actual exported the PV surplus (good — high export rate),
+    // passive would have stored it (no immediate revenue).
+    // Slot B: bog-standard import, no scheduling difference.
+    const readings = [
+      { timestamp: '2026-04-10T12:10:00Z', load_power: 400, pv_power: 1000, grid_power: -600, battery_soc: 95 },
+      { timestamp: '2026-04-10T18:10:00Z', load_power: 800, pv_power: 0, grid_power: 800, battery_soc: 30 },
+    ];
+    mockBySql({ rates, exportRates, readings });
+
+    const best = getBestSlots({
+      fromISO: '2026-04-10T00:00:00Z',
+      toISO: '2026-04-10T00:00:00Z',
+      limit: 5,
+    });
+
+    expect(best.length).toBeGreaterThan(0);
+    expect(best[0].delta).toBeLessThanOrEqual(best[best.length - 1].delta);
+  });
+});
+
+describe('getSchedulingEfficacy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getSettingsMock.mockReturnValue({ ...BASE_SETTINGS });
+  });
+
+  it('returns zero summary when there is no data', () => {
+    mockBySql({});
+    const eff = getSchedulingEfficacy({
+      fromISO: '2026-04-10T00:00:00Z',
+      toISO: '2026-04-10T00:00:00Z',
+    });
+    expect(eff.total_slot_count).toBe(0);
+    expect(eff.efficacy_pct).toBe(0);
+    expect(eff.gross_wins_pence).toBe(0);
+    expect(eff.gross_losses_pence).toBe(0);
+  });
+
+  it('decomposes net scheduling value into wins, losses, and an efficacy percentage', () => {
+    const rates = [
+      { valid_from: '2026-04-10T10:00:00Z', valid_to: '2026-04-10T10:30:00Z', price_inc_vat: 30 },
+      { valid_from: '2026-04-10T11:00:00Z', valid_to: '2026-04-10T11:30:00Z', price_inc_vat: 30 },
+    ];
+    const exportRates: unknown[] = [];
+    // Slot 1 (10:00): load 1 kWh, pv 0, actual imported 1 kWh — passive at
+    // SOC=80% would have discharged. Actual costs more → loss.
+    // Slot 2 (11:00): load 0.2 kWh, pv 0.2 kWh, actual perfectly balanced —
+    // passive also balanced, delta ≈ 0 (neutral, excluded from ratio).
+    const readings = [
+      { timestamp: '2026-04-10T10:10:00Z', load_power: 2000, pv_power: 0, grid_power: 2000, battery_soc: 80 },
+      { timestamp: '2026-04-10T11:10:00Z', load_power: 400, pv_power: 400, grid_power: 0, battery_soc: 75 },
+    ];
+    mockBySql({ rates, exportRates, readings });
+
+    const eff = getSchedulingEfficacy({
+      fromISO: '2026-04-10T00:00:00Z',
+      toISO: '2026-04-10T00:00:00Z',
+    });
+
+    expect(eff.total_slot_count).toBeGreaterThan(0);
+    expect(eff.loss_slot_count).toBeGreaterThanOrEqual(1);
+    expect(eff.gross_losses_pence).toBeGreaterThan(0);
+    expect(eff.net_pence).toBeLessThanOrEqual(0);
+    // No wins → efficacy is 0% when activity exists but is all losses.
+    if (eff.gross_wins_pence === 0 && eff.gross_losses_pence > 0) {
+      expect(eff.efficacy_pct).toBe(0);
+    }
   });
 });

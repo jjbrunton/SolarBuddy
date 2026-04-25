@@ -31,7 +31,7 @@ import {
   type ReadingSample,
   type MeasuredSlot,
 } from './slot-aggregation';
-import { simulatePassiveBattery } from '../passive-battery';
+import { simulatePassiveBattery, calibrateRoundTripEfficiency } from '../passive-battery';
 
 export interface BacktestDay {
   date: string;
@@ -463,10 +463,13 @@ export interface WorstSlot {
   delta: number;
 }
 
-export function getWorstSlots(params: { fromISO: string; toISO: string; limit?: number }): WorstSlot[] {
+// Live, uncached scoring. Used by both the cache-fill path and as the
+// fallback for the in-progress current day. Splitting this out from
+// scoreSlots() lets the public function read from cache for completed days
+// and only invoke the heavy work for today.
+function scoreSlotsLive(params: { fromISO: string; toISO: string }): WorstSlot[] {
   const fromISO = startOfUTCDay(params.fromISO);
   const toExclusiveISO = addDaysUTC(startOfUTCDay(params.toISO), 1);
-  const limit = Math.max(1, Math.min(100, params.limit ?? 10));
 
   const db = getDb();
   const rates = loadRates(db, fromISO, toExclusiveISO);
@@ -486,7 +489,8 @@ export function getWorstSlots(params: { fromISO: string; toISO: string; limit?: 
   const minSocPct = parseFloat(settings.discharge_soc_floor) || 20;
   const maxPowerKw = parseFloat(settings.max_charge_power_kw) || 3.6;
   const minEnergyKwh = (capacityKwh * minSocPct) / 100;
-  const legEff = Math.sqrt(0.9);
+  const calibration = calibrateRoundTripEfficiency(capacityKwh);
+  const legEff = Math.sqrt(calibration.round_trip_efficiency);
 
   const startingSocPct = measured[0]?.starting_soc ?? 50;
   let energyKwh = Math.max(
@@ -551,6 +555,176 @@ export function getWorstSlots(params: { fromISO: string; toISO: string; limit?: 
     });
   }
 
+  return scored;
+}
+
+function readCachedSlotScores(fromISO: string, toExclusiveISO: string): WorstSlot[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT slot_start, action, reason, import_rate, export_rate, load_kwh, pv_kwh,
+        actual_import_kwh, actual_export_kwh, actual_cost, passive_cost, delta
+       FROM slot_scores_cache
+       WHERE slot_start >= ? AND slot_start < ?
+       ORDER BY slot_start ASC`,
+    )
+    .all(fromISO, toExclusiveISO) as WorstSlot[];
+}
+
+function upsertCachedSlotScores(rows: WorstSlot[]): void {
+  if (rows.length === 0) return;
+  const db = getDb();
+  const stmt = db.prepare(
+    `INSERT INTO slot_scores_cache (
+       slot_start, action, reason, import_rate, export_rate, load_kwh, pv_kwh,
+       actual_import_kwh, actual_export_kwh, actual_cost, passive_cost, delta, computed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(slot_start) DO UPDATE SET
+       action=excluded.action,
+       reason=excluded.reason,
+       import_rate=excluded.import_rate,
+       export_rate=excluded.export_rate,
+       load_kwh=excluded.load_kwh,
+       pv_kwh=excluded.pv_kwh,
+       actual_import_kwh=excluded.actual_import_kwh,
+       actual_export_kwh=excluded.actual_export_kwh,
+       actual_cost=excluded.actual_cost,
+       passive_cost=excluded.passive_cost,
+       delta=excluded.delta,
+       computed_at=excluded.computed_at`,
+  );
+  const now = new Date().toISOString();
+  const tx = db.transaction((items: WorstSlot[]) => {
+    for (const r of items) {
+      stmt.run(
+        r.slot_start,
+        r.action,
+        r.reason,
+        r.import_rate,
+        r.export_rate,
+        r.load_kwh,
+        r.pv_kwh,
+        r.actual_import_kwh,
+        r.actual_export_kwh,
+        r.actual_cost,
+        r.passive_cost,
+        r.delta,
+        now,
+      );
+    }
+  });
+  tx(rows);
+}
+
+// Recompute slot scores over a date range and persist to cache. Called by
+// the daily cron and the manual recompute button.
+export function recomputeSlotScoresForRange(params: { fromISO: string; toISO: string }): {
+  slots_recomputed: number;
+} {
+  const scored = scoreSlotsLive(params);
+  upsertCachedSlotScores(scored);
+  return { slots_recomputed: scored.length };
+}
+
+// Cache-aware scorer. Reads cached rows for completed days and live-scores
+// only the in-progress current day. On a healthy install the cron has
+// already populated the cache; if the cache is empty (fresh install, post-
+// migration) we fall back to a full live pass — slow but only once, the
+// next cron tick fills the cache and subsequent loads are fast.
+export function scoreSlots(params: { fromISO: string; toISO: string }): WorstSlot[] {
+  const fromISO = startOfUTCDay(params.fromISO);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const todayISO = today.toISOString();
+
+  // Cached slice ends at the start of today (today is always live).
+  const cachedTo = todayISO > fromISO ? todayISO : fromISO;
+  const cached = cachedTo > fromISO ? readCachedSlotScores(fromISO, cachedTo) : [];
+
+  // Empty-cache fallback: one full live pass over the requested window.
+  if (cached.length === 0) {
+    return scoreSlotsLive(params).sort((a, b) => a.slot_start.localeCompare(b.slot_start));
+  }
+
+  const cachedSlotStarts = new Set(cached.map((r) => r.slot_start));
+  const liveToday = scoreSlotsLive({ fromISO: cachedTo, toISO: params.toISO }).filter(
+    (s) => !cachedSlotStarts.has(s.slot_start),
+  );
+
+  return [...cached, ...liveToday].sort((a, b) => a.slot_start.localeCompare(b.slot_start));
+}
+
+export function getWorstSlots(params: { fromISO: string; toISO: string; limit?: number }): WorstSlot[] {
+  const limit = Math.max(1, Math.min(100, params.limit ?? 10));
+  const scored = scoreSlots(params);
   scored.sort((a, b) => b.delta - a.delta);
   return scored.slice(0, limit);
+}
+
+// Mirror of getWorstSlots for the wins side: slots where the real plan beat
+// a passive self-use battery. Same scoring, just sorted ascending so the
+// biggest savings come first.
+export function getBestSlots(params: { fromISO: string; toISO: string; limit?: number }): WorstSlot[] {
+  const limit = Math.max(1, Math.min(100, params.limit ?? 10));
+  const scored = scoreSlots(params);
+  scored.sort((a, b) => a.delta - b.delta);
+  return scored.slice(0, limit);
+}
+
+export interface SchedulingEfficacy {
+  // Sum of |delta| over slots where actual was cheaper than passive.
+  gross_wins_pence: number;
+  // Sum of delta over slots where actual was more expensive than passive.
+  gross_losses_pence: number;
+  // wins − losses. Matches AttributionSummary.scheduling_saving over the
+  // same window, modulo rounding.
+  net_pence: number;
+  // Ratio of beneficial activity. 100 = every active slot helped, 50 =
+  // break-even, 0 = every active slot hurt. NaN guarded → 0 when there is
+  // no scheduler activity at all.
+  efficacy_pct: number;
+  win_slot_count: number;
+  loss_slot_count: number;
+  // Slots where actual ≈ passive (delta within ±0.1p). Excluded from the
+  // ratio because they're not really "scheduler activity".
+  neutral_slot_count: number;
+  total_slot_count: number;
+}
+
+const NEUTRAL_DELTA_PENCE = 0.1;
+
+export function getSchedulingEfficacy(params: { fromISO: string; toISO: string }): SchedulingEfficacy {
+  const scored = scoreSlots(params);
+
+  let grossWins = 0;
+  let grossLosses = 0;
+  let winCount = 0;
+  let lossCount = 0;
+  let neutralCount = 0;
+
+  for (const slot of scored) {
+    if (slot.delta < -NEUTRAL_DELTA_PENCE) {
+      grossWins += -slot.delta;
+      winCount++;
+    } else if (slot.delta > NEUTRAL_DELTA_PENCE) {
+      grossLosses += slot.delta;
+      lossCount++;
+    } else {
+      neutralCount++;
+    }
+  }
+
+  const activity = grossWins + grossLosses;
+  const efficacyPct = activity > 0 ? (grossWins / activity) * 100 : 0;
+
+  return {
+    gross_wins_pence: round2(grossWins),
+    gross_losses_pence: round2(grossLosses),
+    net_pence: round2(grossWins - grossLosses),
+    efficacy_pct: Math.round(efficacyPct * 10) / 10,
+    win_slot_count: winCount,
+    loss_slot_count: lossCount,
+    neutral_slot_count: neutralCount,
+    total_slot_count: scored.length,
+  };
 }

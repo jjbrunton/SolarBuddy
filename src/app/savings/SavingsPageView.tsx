@@ -8,10 +8,16 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PeriodSelector } from '@/components/analytics/PeriodSelector';
 import { StatCard } from '@/components/analytics/StatCard';
+import { BestSlotsPanel } from '@/components/analytics/BestSlotsPanel';
+import { SchedulingEfficacyBadge } from '@/components/analytics/SchedulingEfficacyBadge';
 import { WhatIfPanel } from '@/components/analytics/WhatIfPanel';
 import { WorstSlotsPanel } from '@/components/analytics/WorstSlotsPanel';
 import { formatCost } from '@/lib/forecast';
 
+// 30 days is the default window: weekly numbers are too noisy for the
+// scheduling-saving signal to be meaningful (one calm sunny week can swing
+// the result by more than the scheduler ever earns). Detail panels still
+// follow whatever the user picks.
 const PERIODS = [
   { label: '7 Days', value: '7d' },
   { label: '30 Days', value: '30d' },
@@ -38,6 +44,7 @@ interface PassiveConfig {
   min_soc_pct: number;
   max_power_kw: number;
   round_trip_efficiency: number;
+  rte_source: 'calibrated' | 'fallback';
   starting_soc_pct: number;
 }
 
@@ -75,7 +82,7 @@ function signedCost(p: number) {
 
 export default function SavingsPageView() {
   const searchParams = useSearchParams();
-  const period = searchParams.get('period') || '7d';
+  const period = searchParams.get('period') || '30d';
 
   const [summary, setSummary] = useState<AttributionSummary | null>(null);
   const [daily, setDaily] = useState<AttributionDay[]>([]);
@@ -125,6 +132,10 @@ export default function SavingsPageView() {
           context, with no visual competition for the top spot. */}
       <HeroBand summary={summary} />
 
+      {/* Decompose the headline net number into wins vs losses + a slot
+          efficacy score so a small net result doesn't read as inactivity. */}
+      <SchedulingEfficacyBadge period={period} />
+
       {/* Bill estimate strip */}
       {bill ? (
         <Card tone="subtle" padding="sm">
@@ -163,6 +174,10 @@ export default function SavingsPageView() {
 
       {/* Historical backtest / A-B comparison */}
       <WhatIfPanel period={period} />
+
+      {/* Best individual slot decisions: concrete wins to balance the
+          worst-slot panel and make the scheduling-saving number tangible. */}
+      <BestSlotsPanel period={period} />
 
       {/* Worst individual slot decisions */}
       <WorstSlotsPanel period={period} />
@@ -369,7 +384,11 @@ function ScenarioBreakdown({ summary }: { summary: AttributionSummary }) {
           <span className="text-sb-text">
             {Math.round(summary.passive_config.round_trip_efficiency * 100)}% round-trip
           </span>
-          {', starting SOC '}
+          {' ('}
+          <span className="text-sb-text">
+            {summary.passive_config.rte_source === 'calibrated' ? 'calibrated from history' : 'spec fallback'}
+          </span>
+          {'), starting SOC '}
           <span className="text-sb-text">{summary.passive_config.starting_soc_pct.toFixed(0)}%</span>.
         </p>
       </div>

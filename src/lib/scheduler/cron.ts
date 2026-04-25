@@ -26,6 +26,8 @@ import { notify } from '../notifications/dispatcher';
 import { evaluateAutoOverrides } from './auto-override';
 import { reconcileInverterState } from './watchdog';
 import { runRetentionPrune } from '../db/prune';
+import { recomputeAttributionRange } from '../attribution';
+import { recomputeSlotScoresForRange } from '../backtest/engine';
 
 const SCHEDULER_TIME_ZONE = 'Europe/London';
 const windowTimeFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -118,6 +120,7 @@ let usageProfileJob: cron.ScheduledTask | null = null;
 let autoOverrideJob: cron.ScheduledTask | null = null;
 let nordpoolJob: cron.ScheduledTask | null = null;
 let retentionJob: cron.ScheduledTask | null = null;
+let savingsCacheJob: cron.ScheduledTask | null = null;
 
 export type ScheduleCycleStatus = 'scheduled' | 'no_rates' | 'no_windows' | 'missing_config' | 'error';
 
@@ -492,6 +495,38 @@ export function startCronJobs() {
     }
   });
 
+  // Savings cache refresh at 03:45 — runs after retention prune (03:30) so
+  // the cache is built against trimmed log tables, not soon-to-be-pruned
+  // ones. Recomputes the trailing 90 days of attribution + slot scores.
+  // Failures are logged but never thrown; the savings page falls back to
+  // live compute if the cache is missing.
+  savingsCacheJob = cron.schedule('45 3 * * *', () => {
+    try {
+      const startedAt = Date.now();
+      const attribution = recomputeAttributionRange(90);
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const fromISO = new Date(today.getTime() - 90 * 86400000).toISOString();
+      const toISO = today.toISOString();
+      const slots = recomputeSlotScoresForRange({ fromISO, toISO });
+      appendEvent({
+        level: 'info',
+        category: 'savings-cache',
+        message: `Savings cache refresh: ${attribution.days_recomputed} days, ${slots.slots_recomputed} slots in ${Date.now() - startedAt}ms.`,
+      });
+    } catch (err) {
+      try {
+        appendEvent({
+          level: 'error',
+          category: 'savings-cache',
+          message: `Savings cache refresh failed: ${(err as Error).message}`,
+        });
+      } catch {
+        // swallow — cron must never throw
+      }
+    }
+  });
+
   console.log('[Cron] Scheduled rate fetch: afternoon (4:05pm-8pm) + evening (11:05pm-00:05am)');
   console.log('[Cron] Scheduled replan: every 30 minutes at :02 and :32');
   console.log('[Cron] Scheduled time sync: daily at 03:00, tariff check: every 4h at :03');
@@ -499,6 +534,7 @@ export function startCronJobs() {
   console.log('[Cron] Scheduled auto-override evaluation: every 5 minutes');
   console.log('[Cron] Scheduled Nordpool day-ahead forecast: 11:15am-11:45am');
   console.log('[Cron] Scheduled DB retention prune: daily at 03:30');
+  console.log('[Cron] Scheduled savings cache refresh: daily at 03:45');
 }
 
 export function stopCronJobs() {
@@ -537,6 +573,10 @@ export function stopCronJobs() {
   if (retentionJob) {
     retentionJob.stop();
     retentionJob = null;
+  }
+  if (savingsCacheJob) {
+    savingsCacheJob.stop();
+    savingsCacheJob = null;
   }
 }
 

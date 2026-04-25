@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Play, RefreshCw, Trash2 } from 'lucide-react';
+import { Play, RefreshCw, Trash2, Calculator } from 'lucide-react';
 
 interface TaskResult {
   success: boolean;
@@ -51,6 +51,13 @@ export default function TasksView() {
       schedule: 'Daily at 3:30 AM',
       endpoint: '/api/system/retention-prune',
       icon: Trash2,
+    },
+    {
+      name: 'Recompute Savings',
+      description: 'Rebuild the savings cache for the trailing 90 days. Lets the savings page render off the cache instead of re-running the full readings scan on every load.',
+      schedule: 'Daily at 3:45 AM',
+      endpoint: '/api/system/recompute-savings',
+      icon: Calculator,
     },
   ];
 
