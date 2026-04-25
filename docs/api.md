@@ -14,6 +14,7 @@ This document lists the HTTP routes currently exposed by the Next.js App Router 
 | `POST` | `/api/system/time-sync` | Trigger an inverter clock synchronization and return the outcome. |
 | `POST` | `/api/system/tariff-check` | Trigger a tariff-change check against the configured Octopus account and return the result. |
 | `POST` | `/api/system/retention-prune` | Run the daily DB retention prune on demand and return the per-table delete counts. |
+| `GET` | `/api/system/export` | Return a single JSON dump of scheduler settings (with connector credentials redacted) and all telemetry tables for offline analysis. Served as a downloadable attachment. |
 | `GET` | `/api/virtual-inverter` | Return the current virtual runtime status, selected scenario, playback state, and available controls. |
 | `POST` | `/api/virtual-inverter` | Enable, start, pause, reset, or disable the virtual inverter runtime. |
 | `GET` | `/api/virtual-inverter/scenarios` | Return the catalog of built-in virtual inverter scenarios. |
