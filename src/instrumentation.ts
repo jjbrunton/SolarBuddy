@@ -8,6 +8,7 @@ export async function register() {
     const { scheduleStartupReplan } = await import('./lib/scheduler/reevaluate');
     const { syncVirtualInverterSetting, isVirtualModeEnabled } = await import('./lib/virtual-inverter/runtime');
     const { syncHomeAssistantSetting } = await import('./lib/home-assistant/runtime');
+    const { ensureSavingsCacheWarm } = await import('./lib/savings-cache-warmup');
 
     console.log('[Init] Starting background services...');
     if (!isVirtualModeEnabled()) {
@@ -22,5 +23,9 @@ export async function register() {
     // HA publisher runs in both real and virtual modes — the shared state
     // store is populated identically.
     await syncHomeAssistantSetting();
+    // Warm the savings cache in the background so the first /savings load
+    // doesn't pay the full-window readings scan. Non-blocking — failures
+    // are logged and the page falls back to live-compute.
+    ensureSavingsCacheWarm();
   }
 }

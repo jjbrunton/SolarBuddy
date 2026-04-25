@@ -1,8 +1,9 @@
 import { getDb } from './db';
 import { periodToISO, wattSamplesToKwh } from './analytics';
+import { getSettings } from './config';
 import {
-  simulatePassiveBattery,
   simulatePassiveBatteryRange,
+  calibrateRoundTripEfficiency,
   type PassiveBatteryConfig,
 } from './passive-battery';
 
@@ -272,10 +273,10 @@ export function getAttributionData(period: string) {
   // import_rate for actual cost — symmetrical pricing, so the delta isolates
   // the hardware/scheduling effect.
   //
-  // Read path: cached completed days come from attribution_daily_cache,
-  // today is computed live since its readings are still arriving. The
-  // passive simulator runs unconditionally over the full window because its
-  // SOC trace is path-dependent — the cheap part is the per-day cost.
+  // Read path: serve cached completed days from attribution_daily_cache and
+  // run the passive simulator only over the uncached tail (typically just
+  // today on a healthy install). Period totals are aggregated from the
+  // daily rows so the simulator never needs to scan the whole window.
   const from = periodToISO(period);
   const fromDate = from.slice(0, 10);
   const today = todayUtcDate();
@@ -283,12 +284,31 @@ export function getAttributionData(period: string) {
   const cached = readCachedDays(fromDate, today);
   const cachedDates = new Set(cached.map((r) => r.date));
 
-  const passive = simulatePassiveBattery(period);
-  const passiveByDate = new Map(passive.daily.map((d) => [d.date, d]));
+  // Live tail starts at the earliest uncached date in the window — either
+  // today (cache fully populated) or further back if the cron has not
+  // caught up yet. Running the simulator from there keeps SOC seeded
+  // close to reality without re-scanning days we already have.
+  let liveFromISO = `${today}T00:00:00.000Z`;
+  if (cached.length > 0) {
+    // Find the earliest uncached date by walking the requested window day
+    // by day. This finds an off-axis missing day (rare) without forcing a
+    // full re-scan when the cache is contiguous up to today.
+    for (let d = fromDate; d < today; d = dateAddDays(d, 1)) {
+      if (!cachedDates.has(d)) {
+        liveFromISO = `${d}T00:00:00.000Z`;
+        break;
+      }
+    }
+  } else if (fromDate < today) {
+    // Empty cache — first load before the cron has run. Fall back to a
+    // single live pass over the whole window. Subsequent loads use the
+    // cache (filled by the cron at 03:45 or the manual button).
+    liveFromISO = from;
+  }
 
-  // Live-compute today (and any uncached older dates that the cron hasn't
-  // filled yet — typically just today on a healthy install).
-  const liveRows = computeAttributionRowsForRange(from, null, passiveByDate).filter(
+  const passive = simulatePassiveBatteryRange({ fromISO: liveFromISO });
+  const passiveByDate = new Map(passive.daily.map((d) => [d.date, d]));
+  const liveRows = computeAttributionRowsForRange(liveFromISO, null, passiveByDate).filter(
     (r) => !cachedDates.has(r.date),
   );
 
@@ -316,6 +336,8 @@ export function getAttributionData(period: string) {
   const totalLoad = sum('load_kwh');
   const totalImport = sum('import_kwh');
   const totalExport = sum('export_kwh');
+  const totalPassiveImport = sum('passive_import_kwh');
+  const totalPassiveExport = sum('passive_export_kwh');
   const baselineTotal = round2(sum('baseline_cost'));
   const passiveTotal = round2(sum('passive_cost'));
   const actualTotal = round2(sum('actual_cost'));
@@ -328,12 +350,21 @@ export function getAttributionData(period: string) {
     ? Math.round((baselineTotal / totalLoadForRate) * 10) / 10
     : 0;
 
+  // passive_config describes the simulation parameters. When the cache is
+  // doing the heavy lifting we still surface the live calibration (cheap —
+  // same 30-day calibrate query) so the UI can show "calibrated" honestly.
+  const settings = getSettings();
+  const capacityKwh = parseFloat(settings.battery_capacity_kwh) || 5.12;
+  const minSocPct = parseFloat(settings.discharge_soc_floor) || 20;
+  const maxPowerKw = parseFloat(settings.max_charge_power_kw) || 3.6;
+  const calibration = calibrateRoundTripEfficiency(capacityKwh);
+
   const summary: AttributionSummary = {
     load_kwh: round2(totalLoad),
     import_kwh: round2(totalImport),
     export_kwh: round2(totalExport),
-    passive_import_kwh: passive.summary.import_kwh,
-    passive_export_kwh: passive.summary.export_kwh,
+    passive_import_kwh: round2(totalPassiveImport),
+    passive_export_kwh: round2(totalPassiveExport),
     avg_import_rate: avgImportRate,
     baseline_cost: baselineTotal,
     passive_cost: passiveTotal,
@@ -342,11 +373,11 @@ export function getAttributionData(period: string) {
     scheduling_saving: round2(passiveTotal - actualTotal),
     total_saving: round2(baselineTotal - actualTotal),
     passive_config: {
-      capacity_kwh: passive.summary.capacity_kwh,
-      min_soc_pct: passive.summary.min_soc_pct,
-      max_power_kw: passive.summary.max_power_kw,
-      round_trip_efficiency: passive.summary.round_trip_efficiency,
-      rte_source: passive.summary.rte_source,
+      capacity_kwh: capacityKwh,
+      min_soc_pct: minSocPct,
+      max_power_kw: maxPowerKw,
+      round_trip_efficiency: calibration.round_trip_efficiency,
+      rte_source: calibration.source,
       starting_soc_pct: passive.summary.starting_soc_pct,
     },
   };

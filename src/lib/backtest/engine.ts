@@ -626,12 +626,38 @@ export function recomputeSlotScoresForRange(params: { fromISO: string; toISO: st
   return { slots_recomputed: scored.length };
 }
 
+// Tiny in-process memo so the three endpoints that each call scoreSlots()
+// for the same window (best, worst, efficacy) share one live-scoring pass
+// when fired in parallel from the savings page. TTL is short — we'd
+// rather pay a few extra ms than serve stale data — and the cache key
+// includes the requested range so different periods don't collide.
+const SCORE_MEMO_TTL_MS = 5_000;
+const scoreMemo = new Map<string, { ts: number; rows: WorstSlot[] }>();
+
+function memoizedScoreSlots(params: { fromISO: string; toISO: string }): WorstSlot[] {
+  const key = `${params.fromISO}|${params.toISO}`;
+  const hit = scoreMemo.get(key);
+  if (hit && Date.now() - hit.ts < SCORE_MEMO_TTL_MS) return hit.rows;
+  const rows = scoreSlotsImpl(params);
+  scoreMemo.set(key, { ts: Date.now(), rows });
+  return rows;
+}
+
+/** Test-only — clears the per-process scoreSlots memo. */
+export function _resetScoreMemoForTests(): void {
+  scoreMemo.clear();
+}
+
 // Cache-aware scorer. Reads cached rows for completed days and live-scores
 // only the in-progress current day. On a healthy install the cron has
 // already populated the cache; if the cache is empty (fresh install, post-
 // migration) we fall back to a full live pass — slow but only once, the
 // next cron tick fills the cache and subsequent loads are fast.
 export function scoreSlots(params: { fromISO: string; toISO: string }): WorstSlot[] {
+  return memoizedScoreSlots(params);
+}
+
+function scoreSlotsImpl(params: { fromISO: string; toISO: string }): WorstSlot[] {
   const fromISO = startOfUTCDay(params.fromISO);
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);

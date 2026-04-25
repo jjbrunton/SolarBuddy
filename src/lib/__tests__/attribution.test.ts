@@ -1,19 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prepareMock, allMock, simulatePassiveMock, simulatePassiveRangeMock } = vi.hoisted(() => ({
-  prepareMock: vi.fn(),
-  allMock: vi.fn(),
-  simulatePassiveMock: vi.fn(),
-  simulatePassiveRangeMock: vi.fn(),
-}));
+const { prepareMock, allMock, simulatePassiveRangeMock, getSettingsMock, calibrateMock } =
+  vi.hoisted(() => ({
+    prepareMock: vi.fn(),
+    allMock: vi.fn(),
+    simulatePassiveRangeMock: vi.fn(),
+    getSettingsMock: vi.fn(),
+    calibrateMock: vi.fn(),
+  }));
 
 vi.mock('../db', () => ({
   getDb: () => ({ prepare: prepareMock }),
 }));
 
 vi.mock('../passive-battery', () => ({
-  simulatePassiveBattery: simulatePassiveMock,
   simulatePassiveBatteryRange: simulatePassiveRangeMock,
+  calibrateRoundTripEfficiency: calibrateMock,
+}));
+
+vi.mock('../config', () => ({
+  getSettings: getSettingsMock,
 }));
 
 import { getAttributionData, recomputeAttributionForDate } from '../attribution';
@@ -44,6 +50,19 @@ describe('getAttributionData', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wireDb();
+    getSettingsMock.mockReturnValue({
+      battery_capacity_kwh: '10',
+      discharge_soc_floor: '10',
+      max_charge_power_kw: '5',
+    });
+    calibrateMock.mockReturnValue({
+      round_trip_efficiency: 0.9,
+      source: 'fallback' as const,
+      charge_kwh: 0,
+      discharge_kwh: 0,
+      soc_delta_kwh: 0,
+      sample_count: 0,
+    });
   });
 
   it('prices the no-hardware baseline against real tariff rates, not a flat assumption', () => {
@@ -65,7 +84,7 @@ describe('getAttributionData', () => {
         load_w_sum_with_rate: 48000,
       },
     ]);
-    simulatePassiveMock.mockReturnValue({
+    simulatePassiveRangeMock.mockReturnValue({
       daily: [{ date: '2026-04-10', import_kwh: 10, export_kwh: 4, cost: 80 }],
       summary: {
         ...DEFAULT_PASSIVE_CONFIG,
@@ -102,7 +121,7 @@ describe('getAttributionData', () => {
         load_w_sum_with_rate: 48000,
       },
     ]);
-    simulatePassiveMock.mockReturnValue({
+    simulatePassiveRangeMock.mockReturnValue({
       daily: [],
       summary: {
         ...DEFAULT_PASSIVE_CONFIG,
@@ -132,7 +151,7 @@ describe('getAttributionData', () => {
         load_w_sum_with_rate: 48000,
       },
     ]);
-    simulatePassiveMock.mockReturnValue({
+    simulatePassiveRangeMock.mockReturnValue({
       daily: [{ date: '2026-04-11', import_kwh: 12, export_kwh: 0, cost: 200 }],
       summary: {
         ...DEFAULT_PASSIVE_CONFIG,
@@ -152,7 +171,7 @@ describe('getAttributionData', () => {
 
   it('handles empty periods gracefully', () => {
     allMock.mockReturnValue([]);
-    simulatePassiveMock.mockReturnValue({
+    simulatePassiveRangeMock.mockReturnValue({
       daily: [],
       summary: {
         ...DEFAULT_PASSIVE_CONFIG,
@@ -173,7 +192,7 @@ describe('getAttributionData', () => {
 
   it('exposes passive config details in the summary for UI transparency', () => {
     allMock.mockReturnValue([]);
-    simulatePassiveMock.mockReturnValue({
+    simulatePassiveRangeMock.mockReturnValue({
       daily: [],
       summary: {
         ...DEFAULT_PASSIVE_CONFIG,
@@ -228,7 +247,7 @@ describe('getAttributionData', () => {
         return [];
       },
     }));
-    simulatePassiveMock.mockReturnValue({
+    simulatePassiveRangeMock.mockReturnValue({
       daily: [],
       summary: {
         ...DEFAULT_PASSIVE_CONFIG,
